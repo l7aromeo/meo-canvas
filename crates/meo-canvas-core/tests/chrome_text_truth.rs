@@ -175,9 +175,9 @@ const CHROME_LINE_BOXES: [(Option<f32>, f32, f32); 4] = [
 ];
 
 /// A line box is the face's metrics with the leading split above and below: the
-/// baseline is `(box - content) / 2 + ascent`, Chrome's 23 at `2` and 11 at
-/// `0.5` -- below an 8px box. Skia's paragraph scales the metrics instead, to
-/// 25.76 and 6.44: a different model, not a different rounding.
+/// baseline is `floor((box - content) / 2) + ascent`, Chrome's 23 at `2` and 11
+/// at `0.5` -- below an 8px box. Skia's paragraph scales the metrics instead,
+/// to 25.76 and 6.44: a different model, not a different rounding.
 #[test]
 fn a_line_box_places_its_baseline_where_chrome_does() {
     let (_fonts, mut base) = fixture_style();

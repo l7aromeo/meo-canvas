@@ -21,9 +21,10 @@
 //! the glyphs overlap their neighbours rather than moving the baseline, which
 //! is what CSS says.
 //!
-//! So the baseline of a line is `top + leading / 2 + ascent`, and a line's
-//! ascent comes from the **face** rather than from the string. That is why
-//! [`METRICS_STRING`] exists and why its contents do not matter.
+//! So the baseline of a line is `top + floor(leading / 2) + ascent`, floored as
+//! Chrome floors it, and a line's ascent comes from the **face** rather than
+//! from the string. That is why [`METRICS_STRING`] exists and why its contents
+//! do not matter.
 //!
 //! # Spaces are runs of no width
 //!
@@ -523,12 +524,19 @@ pub struct Line {
 impl Line {
     /// The distance from the line box's top to its baseline.
     ///
-    /// Half the leading, then the ascent. **The leading goes negative** for a
-    /// line box shorter than the face needs, which is the case where CSS lets
-    /// the glyphs escape the box rather than moving the baseline inside it.
+    /// Half the leading, floored, then the ascent. **The leading goes
+    /// negative** for a line box shorter than the face needs, which is the
+    /// case where CSS lets the glyphs escape the box rather than moving the
+    /// baseline inside it.
+    ///
+    /// Floored as Chrome floors it, for either sign and for a box that is not
+    /// a whole pixel: Oswald at 13px and `line-height: 1.5` is a 19.5px box
+    /// over 20px of content, and Chrome puts the baseline at 16 + floor(-0.25),
+    /// 15, where half the leading unfloored gives 15.75. Pinned by every row
+    /// of `line-height-normal.tsv` in `tests/chrome_line_height.rs`.
     #[must_use]
     pub fn baseline_from_top(&self) -> f32 {
-        (self.height - self.content_height) / 2.0 + self.ascent
+        ((self.height - self.content_height) / 2.0).floor() + self.ascent
     }
 }
 
