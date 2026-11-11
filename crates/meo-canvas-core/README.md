@@ -34,22 +34,28 @@ std::fs::write("out.png", png)?;
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
+## Building
+
+A build needs `SKIA_BINARIES_URL` in `.cargo/config.toml`'s `[env]`, the line
+[`meo-canvas`]'s README gives: this crate links meo-skia-canvas's patched Skia,
+downloaded from the archives it names, and a build without it stops and prints
+the line.
+
 ## System libraries
 
-This crate links Skia, so on Linux it needs freetype and fontconfig from the
-system — the npm package ships a binary with them already inside, and a Rust
-build does not.
+This crate links Skia, so on Linux it needs fontconfig from the system — the
+npm package ships a binary with it already inside, and a Rust build does not.
+FreeType is inside the downloaded Skia.
 
 ```text
-Debian/Ubuntu   libfontconfig1 libfreetype6   (build: libfontconfig1-dev libfreetype-dev pkg-config)
-RHEL/Alma/Rocky fontconfig freetype           (build: fontconfig-devel freetype-devel pkg-config)
+Debian/Ubuntu   libfontconfig1   (build: libfontconfig1-dev pkg-config)
+RHEL/Alma/Rocky fontconfig       (build: fontconfig-devel pkg-config)
 ```
 
-`pkg-config` is the one to get right. Skia is built here without
-`embed-freetype`, so `rust-skia` probes pkg-config for both libraries and
-**falls back to bare library names when the probe fails, silently** — the error
-you get is `unable to find library -lfreetype`, which points at freetype rather
-than at the missing prober.
+`pkg-config` is the one to get right. `rust-skia` probes it for fontconfig and
+**falls back to a bare library name when the probe fails, silently** — the error
+you get is `unable to find library -lfontconfig`, which points at fontconfig
+rather than at the missing prober.
 
 `cmake` is also needed at build time, for libaom, and on x86_64 an assembler:
 `yasm`, or `nasm` older than 3, whose help text libaom 3.11 cannot read.
@@ -57,3 +63,4 @@ than at the missing prober.
 macOS and Windows need none of this: Skia uses CoreText and DirectWrite there.
 
 [`Scene`]: https://crates.io/crates/meo-canvas-scene
+[`meo-canvas`]: https://crates.io/crates/meo-canvas

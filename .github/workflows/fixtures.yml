@@ -1,9 +1,9 @@
 name: fixtures
 
-# Renders the goldens on another platform and uploads them. Anti-aliased edges
-# rasterise differently per architecture, so `tests/fixtures.rs` compares
-# against `expected.<os>-<arch>.png` where one exists. It commits nothing: a
-# person looks at the images, so a regression cannot become a commit unseen.
+# Renders the goldens on a platform and uploads them: `expected.png` on the macOS
+# reference, `expected.<os>-<arch>.png` elsewhere, which `tests/fixtures.rs`
+# compares against where one exists. It commits nothing: a person looks at the
+# images, so a regression cannot become a commit unseen.
 run-name: >-
   fixtures — render the goldens
 
@@ -32,6 +32,8 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # As `ci.yml` sets it, whose cache this restores: the key hashes `CARGO*`.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 # Every `run:` here is bash, and `windows-latest` defaults to PowerShell.
 defaults:
@@ -53,6 +55,18 @@ jobs:
     timeout-minutes: 90
 
     steps:
+      # Skia picks its SIMD path from the CPU at run time and the patched Skia
+      # draws the same bytes on each, so a golden is checked against the machine
+      # that drew it.
+      - name: The CPU this runner draws on
+        if: runner.os == 'Linux'
+        run: |
+          grep -m1 '^model name' /proc/cpuinfo
+          flags=" $(grep -m1 '^flags' /proc/cpuinfo | cut -d: -f2) "
+          for flag in avx2 avx512f avx_vnni avx512_vnni; do
+            case "$flags" in *" $flag "*) echo "$flag: yes" ;; *) echo "$flag: no" ;; esac
+          done
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # No `setup-just`: the steps call `cargo` directly, reproducing the bare
@@ -65,6 +79,11 @@ jobs:
           channel=$(grep -m1 '^channel' rust-toolchain.toml | cut -d'"' -f2)
           test -n "$channel" || { echo "::error::rust-toolchain.toml named no channel"; exit 1; }
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          # Every cargo call here builds meo-skia-canvas's `patched-skia`, which
+          # refuses a build without the archives the justfile names.
+          url=$(sed -n 's/^export SKIA_BINARIES_URL := "\(.*\)"$/\1/p' justfile)
+          test -n "$url" || { echo "::error::the justfile named no SKIA_BINARIES_URL"; exit 1; }
+          echo "SKIA_BINARIES_URL=$url" >> "$GITHUB_ENV"
           nightly=$(sed -n 's/^fmt_toolchain := "\(.*\)"$/\1/p' justfile)
           test -n "$nightly" || { echo "::error::the justfile named no fmt_toolchain"; exit 1; }
           echo "nightly=$nightly" >> "$GITHUB_OUTPUT"
@@ -166,13 +185,15 @@ jobs:
             MEO_FIXTURE_ACCEPT="$name" cargo test -p meo-canvas-core --test fixtures
           done
 
-      # Both the accepted goldens and the `actual`/`expected`/`diff` triples the
-      # harness writes on a mismatch, so a reviewer can look at what changed
-      # rather than take the run's word for it.
+      # The goldens, the reference and every variant, by their exact names rather
+      # than `expected*.png`, and the `actual`/`diff` pairs the harness writes on a
+      # mismatch, so a reviewer can look at what changed rather than take the
+      # run's word for it.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fixtures-${{ inputs.os || matrix.os }}
           path: |
+            fixtures/**/expected.png
             fixtures/**/expected.*.png
             target/fixtures/**
           if-no-files-found: error

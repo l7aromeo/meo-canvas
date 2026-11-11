@@ -166,8 +166,8 @@ but the wrong typeface in a picture nobody looks at twice.
 So faces belong at start-up rather than per request. A server that registers one
 tenant's face per request is a server where the next request renders in the
 previous tenant's font. Naming the same list on every render is fine: a file
-whose bytes were already registered under that family on the thread is read and
-compared, not registered again. Varying the list is the hazard.
+whose bytes the thread already holds under that family adds no face. Varying the
+list is the hazard.
 
 Worker threads each keep their own registry, so each has to register its own
 faces and each is affected only by itself. Two renders already in flight keep

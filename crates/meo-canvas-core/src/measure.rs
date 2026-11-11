@@ -556,7 +556,7 @@ fn skia_style(
         font_families: if style.family.is_empty() {
             Vec::new()
         } else {
-            vec![style.family.clone()]
+            vec![style.family.as_str().into()]
         },
         font_size: style.size,
         font_weight: i32::from(style.weight.get()),
@@ -1045,7 +1045,10 @@ mod tests {
             style.family = TEST_FAMILY.to_owned();
             style.letter_spacing = Spacing::Em(0.1);
             let translated = super::skia_style(&style, &paragraph, &[]);
-            assert_eq!(translated.font_families, vec![TEST_FAMILY.to_owned()]);
+            assert_eq!(
+                translated.font_families,
+                vec![meo_skia_canvas::FontFamily::from(TEST_FAMILY)]
+            );
             assert_eq!(translated.max_lines, Some(2));
             assert_eq!(translated.ellipsis.as_deref(), Some("..."));
             assert!((translated.font_size - style.size).abs() < f32::EPSILON);

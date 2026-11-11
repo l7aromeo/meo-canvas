@@ -108,9 +108,7 @@ and names what it has not measured.
 fonts and whatever caches the passes keep. **Nothing in this crate is
 process-wide.** Two `Renderer`s on two threads share no state and cannot
 contend. The registry that outlives a `Renderer` is outside this crate:
-`meo-skia-canvas` keeps one per thread. Beside it this crate keeps one
-per-thread record, of the face bytes registered on that thread, so that the
-same bytes are not registered twice (`l7aromeo/meo-canvas#203`).
+`meo-skia-canvas` keeps one per thread, and this crate adds no second.
 
 `Renderer::render` returns a `RenderedCanvas`, and encoding is a separate call
 on it, so two formats of one picture cost one resolve, measure, layout and paint
@@ -431,6 +429,29 @@ a negative child still paints behind the parent's background.
 mirror: the declaration is a promise about the future value, and Chrome
 honours the promise.
 
+**A `filter` Chrome refuses creates none.** `blur(4 px)`, `blur(-1px)` and an
+empty string compute to `none` in Chrome 153, and a `z-index: -1` child stays
+under its parent's background. `resolve` drops such a chain with a diagnostic
+before stacking is decided, so a dropped chain makes no context here either.
+`filter-stacking.tsv` pins both against Chrome. A `none` chain is not dropped,
+and still makes a context here where Chrome makes none
+(`l7aromeo/meo-canvas#210`, waiting on `l7aromeo/meo-skia-canvas#624`).
+
+### Where this does not match Chrome
+
+The rule is to match Chrome, and these are the places the maintainer has decided
+otherwise, each with the reason and its source.
+
+**Blur is the exact Gaussian.** `filter: blur()`, `drop-shadow()`,
+`backdrop-filter` and blurred box shadows follow `meo-skia-canvas` 0.17, which
+blurs what a draw paints exactly, the Gaussian of Filter Effects Level 1 sampled
+at whole pixels and rounded once, where Chrome's blur approximates it. Its
+`docs/browser-differences.md`, "A blurred path is the exact Gaussian blur of
+what it draws, and Chrome's is not", is the source. Ramps can differ from
+Chrome's by a few levels: over the pixels 0.17 moved in
+`fixtures/backdrop-filter`'s `blur(4px)` panel, the mean distance to Chrome is
+1.7 levels, where 0.16.3's was 0.6.
+
 ## Errors and diagnostics
 
 The core returns `Result<_, MeoError>` with a variant per failure class. The
@@ -444,6 +465,15 @@ still draw the text. `Root::into_scene` returns
 and a diagnostic means a scene with something in it the caller wrote and did
 not get. `Element::into_scene` carries the same pair; on the JavaScript side it
 is `canvas.diagnostics`, a `readonly Diagnostic[]`.
+
+**Two places raise one.** The markup parser, while a scene is built, and
+`resolve`, for a `filter` or `backdrop_filter` chain `meo-skia-canvas` refuses:
+the chain is dropped, as Chrome drops an invalid declaration, and the node is
+drawn as though it were not set, stacking context included. `resolve` is the
+one stage every door passes, so a scene read from disk by the CLI is treated as
+one built in Rust or JavaScript. `RenderedCanvas::diagnostics` carries those,
+`Canvas::diagnostics` and `canvas.diagnostics` carry both kinds, and the CLI
+prints each as a `meo-canvas: diagnostic:` line on stderr.
 
 **A `Diagnostic` names a path rather than a property**, because a value nested
 inside another property has no single name that finds it: `<color=zzz>` and
@@ -515,18 +545,27 @@ by construction, and the crate ships them together.
 
 ## Dependencies
 
-| crate             |        |                                                           |
-| ----------------- | ------ | --------------------------------------------------------- |
-| `meo-skia-canvas` | 0.16.3 | Skia, text shaping, encoding. `default-features = false`. |
-| `taffy`           | 0.15   | Flexbox, CSS grid, block layout. Without `calc`.          |
-| `csscolorparser`  | 0.8    | CSS colour syntax. Channels are `f32`; see design notes.  |
-| `neon`            | 1.1    | Node addon.                                               |
-| `clap`            | 4.6    | CLI.                                                      |
-| `thiserror`       | 2.0    | Error types.                                              |
-| `ureq`            | 3.5.1  | Remote images, behind the optional `net` feature.         |
-| `rustls-webpki`   | 0.103  | A floor, not a use -- see `Cargo.toml`. Under `net`.      |
-| `rayon`           | 1.11   | The addon's asynchronous encode. Not an async runtime.    |
-| `skia-safe`       | 0.153  | Test only. Held at `meo-skia-canvas`'s, not 0.157.        |
+| crate             |        |                                                          |
+| ----------------- | ------ | -------------------------------------------------------- |
+| `meo-skia-canvas` | 0.17.2 | Skia, text shaping, encoding. `patched-skia`, see below. |
+| `taffy`           | 0.15   | Flexbox, CSS grid, block layout. Without `calc`.         |
+| `csscolorparser`  | 0.8    | CSS colour syntax. Channels are `f32`; see design notes. |
+| `neon`            | 1.1    | Node addon.                                              |
+| `clap`            | 4.6    | CLI.                                                     |
+| `thiserror`       | 2.0    | Error types.                                             |
+| `ureq`            | 3.5.1  | Remote images, behind the optional `net` feature.        |
+| `rustls-webpki`   | 0.103  | A floor, not a use -- see `Cargo.toml`. Under `net`.     |
+| `rayon`           | 1.11   | The addon's asynchronous encode. Not an async runtime.   |
+
+**`patched-skia` is always on.** With it, `meo-skia-canvas` links the patched
+Skia its npm package draws with, downloaded from the archives the justfile's
+`SKIA_BINARIES_URL` names, rather than crates.io's, on which CPU blend modes
+draw by the machine's SIMD level (`l7aromeo/meo-skia-canvas#642`) and GPU text
+by what was drawn before it (`l7aromeo/meo-skia-canvas#622`). A build without
+the URL is refused with the line to add, and
+`crates/meo-canvas-core/tests/patched_skia.rs` fails on any other Skia. The URL
+names the patch set, so a `meo-skia-canvas` release that changes the patches
+changes it.
 
 | tool       |       |                                                                |
 | ---------- | ----- | -------------------------------------------------------------- |

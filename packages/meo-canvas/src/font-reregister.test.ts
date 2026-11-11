@@ -19,7 +19,7 @@ const FACE = resolve(HERE, '../../../crates/meo-canvas-core/tests/assets/fonts/O
 /** A family nothing else in this package registers. */
 const FAMILY = 'MeoReregisterProbe'
 
-/** On the GPU the pixels move every third registration here, so twelve crosses three moves. */
+/** A registry adding a typeface per registration moves these GPU pixels from the fourth on (l7aromeo/meo-skia-canvas#611). */
 const RENDERS = 12
 
 /**

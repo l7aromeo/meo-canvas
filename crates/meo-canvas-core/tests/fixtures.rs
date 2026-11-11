@@ -52,7 +52,7 @@ fn host_variant() -> String {
 
 /// The image this host is checked against: its own variant where one exists,
 /// the reference otherwise. Anti-aliased edges rasterise differently per
-/// architecture (8 of 23 fixtures on `linux-x86_64`), so a variant exists only
+/// architecture (12 of 23 fixtures on `linux-x86_64`), so a variant exists only
 /// where a platform measurably differs, and there is no tolerance.
 fn expected_path(name: &str) -> PathBuf {
     let dir = fixtures_dir().join(name);

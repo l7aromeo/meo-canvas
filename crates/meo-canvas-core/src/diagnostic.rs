@@ -29,10 +29,11 @@ pub struct Diagnostic {
     ///
     /// A path rather than a name, since a nested value has no single property
     /// name: `<color=zzz>` and `segments[2].color` are paths, and `color` is a
-    /// field. Every diagnostic raised is a markup tag, so the path is the tag
-    /// as written, value included: `<weight=1500>` rather than `<weight>`. A
-    /// diagnostic about a scene value would take the property-path spelling,
-    /// with [`Diagnostic::offset`] `None`; nothing raises one.
+    /// field. A markup diagnostic's path is the tag as written, value
+    /// included: `<weight=1500>` rather than `<weight>`. A refused filter
+    /// chain is named by its CSS property, `filter` or `backdrop-filter`,
+    /// the one spelling every surface shares, with the node in the detail
+    /// and [`Diagnostic::offset`] `None`.
     pub path: String,
     /// What was wrong with it, and what was done instead.
     pub detail: String,

@@ -612,9 +612,11 @@ impl Root {
     /// renderer does not hold, an image it cannot read, a URL it does not
     /// fetch.
     pub fn render(self, renderer: &Renderer) -> Result<Canvas, BuildError> {
-        let (scene, diagnostics) = self.into_scene()?;
+        let (scene, mut diagnostics) = self.into_scene()?;
+        let painted = renderer.render(&scene)?;
+        diagnostics.extend_from_slice(painted.diagnostics());
         Ok(Canvas {
-            painted: renderer.render(&scene)?,
+            painted,
             diagnostics,
         })
     }
@@ -640,14 +642,17 @@ impl Styled for Root {
 pub struct Canvas {
     /// The painted pages.
     painted: RenderedCanvas,
-    /// What the caller's markup said that could not be used, raised while the
-    /// scene was built and carried here for a caller of [`Root::render`]; one
-    /// who builds the scene takes them from [`Root::into_scene`].
+    /// What the caller wrote that could not be used: markup, raised while the
+    /// scene was built, then a filter chain the render dropped. A caller who
+    /// builds the scene takes the first from [`Root::into_scene`] and the
+    /// second from `RenderedCanvas::diagnostics`.
     diagnostics: Vec<Diagnostic>,
 }
 
 impl Canvas {
-    /// What this render's markup said that could not be used.
+    /// What this render's input said that could not be used: a markup tag, or
+    /// a `filter` or `backdrop_filter` chain the renderer refuses, which is
+    /// drawn as though it were not set.
     ///
     /// **Separate from an image warning**, which reports that the world did
     /// not answer. A diagnostic reports that the input did not say what it

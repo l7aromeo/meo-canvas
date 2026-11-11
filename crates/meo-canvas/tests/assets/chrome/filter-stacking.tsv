@@ -1,0 +1,49 @@
+# Chrome, through `just conformance`. Whether a filter chain stacks.
+# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+#
+# A 40x30 relative #dc2828 parent carrying the chain, holding a
+# 20x20 #2850dc child, absolute at 5,5, `z-index: -1`. `top` is
+# what `elementFromPoint` finds at the child's centre: the child when the
+# parent stacks, the parent when the child is hoisted beneath it.
+# Each chain is set with `style.setProperty`; `declared` is what the inline
+# style kept, empty where Chrome refused the value. `chain`, `declared` and
+# `computed` are JSON strings.
+# Written by packages/meo-canvas/tools/conformance/filterstacking.mjs.
+#
+# property	chain	declared	computed	top
+filter	"none"	"none"	"none"	parent
+filter	"NONE"	"none"	"none"	parent
+filter	" none "	"none"	"none"	parent
+filter	"/* c */ none"	"none"	"none"	parent
+filter	"grayscale(1)"	"grayscale(1)"	"grayscale(1)"	child
+filter	"blur(2px)"	"blur(2px)"	"blur(2px)"	child
+filter	"blur(0px)"	"blur(0px)"	"blur(0px)"	child
+filter	"opacity(1)"	"opacity(1)"	"opacity(1)"	child
+filter	"drop-shadow(2px 2px 0 blue)"	"drop-shadow(blue 2px 2px 0px)"	"drop-shadow(rgb(0, 0, 255) 2px 2px 0px)"	child
+filter	"grayscale(1) blur(2px)"	"grayscale(1) blur(2px)"	"grayscale(1) blur(2px)"	child
+filter	"blur(4 px)"	""	"none"	parent
+filter	"blur(-1px)"	""	"none"	parent
+filter	""	""	"none"	parent
+filter	"blur(2px), grayscale(1)"	""	"none"	parent
+filter	"blur("	"blur()"	"blur(0px)"	child
+filter	"grayscale(1) blur("	"grayscale(1) blur()"	"grayscale(1) blur(0px)"	child
+filter	"brightness(-1)"	""	"none"	parent
+filter	"blur(2)"	""	"none"	parent
+backdrop-filter	"none"	"none"	"none"	parent
+backdrop-filter	"NONE"	"none"	"none"	parent
+backdrop-filter	" none "	"none"	"none"	parent
+backdrop-filter	"/* c */ none"	"none"	"none"	parent
+backdrop-filter	"grayscale(1)"	"grayscale(1)"	"grayscale(1)"	child
+backdrop-filter	"blur(2px)"	"blur(2px)"	"blur(2px)"	child
+backdrop-filter	"blur(0px)"	"blur(0px)"	"blur(0px)"	child
+backdrop-filter	"opacity(1)"	"opacity(1)"	"opacity(1)"	child
+backdrop-filter	"drop-shadow(2px 2px 0 blue)"	"drop-shadow(blue 2px 2px 0px)"	"drop-shadow(rgb(0, 0, 255) 2px 2px 0px)"	child
+backdrop-filter	"grayscale(1) blur(2px)"	"grayscale(1) blur(2px)"	"grayscale(1) blur(2px)"	child
+backdrop-filter	"blur(4 px)"	""	"none"	parent
+backdrop-filter	"blur(-1px)"	""	"none"	parent
+backdrop-filter	""	""	"none"	parent
+backdrop-filter	"blur(2px), grayscale(1)"	""	"none"	parent
+backdrop-filter	"blur("	"blur()"	"blur(0px)"	child
+backdrop-filter	"grayscale(1) blur("	"grayscale(1) blur()"	"grayscale(1) blur(0px)"	child
+backdrop-filter	"brightness(-1)"	""	"none"	parent
+backdrop-filter	"blur(2)"	""	"none"	parent

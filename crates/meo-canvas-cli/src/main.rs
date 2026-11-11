@@ -26,7 +26,7 @@ use std::{
 use clap::{Parser, Subcommand};
 use meo_canvas_core::{
     Error, FetchFailure, ImageFormat, ImageWarning, Renderer, chained,
-    encode::EncodeOptions,
+    diagnostic::Diagnostic, encode::EncodeOptions,
 };
 use meo_canvas_scene::Scene;
 
@@ -78,15 +78,22 @@ struct RenderArgs {
     #[arg(long = "font", value_name = "FAMILY=PATH")]
     fonts: Vec<String>,
 
-    /// Lossy quality from 0.0 to 1.0, read by JPEG, WebP and AVIF. WebP at 1.0
-    /// is lossless; AVIF at 1.0 is not.
+    /// Lossy quality from 0.0 to 1.0, read by JPEG, WebP and AVIF. A WebP at
+    /// 1.0, with no --lossless, is lossless; AVIF at 1.0 is not.
     #[arg(long)]
     quality: Option<f32>,
 
-    /// Encode AVIF without loss. Other formats refuse it; a lossless WebP is
-    /// --quality 1.
-    #[arg(long)]
-    lossless: bool,
+    /// Encode a WebP or an AVIF without loss, or with `--lossless=false` a
+    /// lossy WebP at any quality. Refused beside a quality below 1.0, and by
+    /// every other format.
+    #[arg(
+        long,
+        value_name = "BOOL",
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "true"
+    )]
+    lossless: Option<bool>,
 
     /// Which page a single-page format writes, counting from zero.
     #[arg(long)]
@@ -233,12 +240,12 @@ fn build_renderer(pairs: &[String]) -> Result<Renderer, Failure> {
 }
 
 /// Turns the flags into the encoder's options.
-fn encode_options(args: &RenderArgs) -> EncodeOptions {
+const fn encode_options(args: &RenderArgs) -> EncodeOptions {
     EncodeOptions {
         quality: args.quality,
-        // Only sent when asked for: a `false` here would override the
-        // renderer's own default rather than leave it alone.
-        lossless: args.lossless.then_some(true),
+        // `None` when not named: a `Some(false)` would force a lossy WebP where
+        // the quality alone would choose.
+        lossless: args.lossless,
         matte: None,
         page: args.page,
         fps: args.fps,
@@ -310,6 +317,16 @@ fn warning_line(warning: &ImageWarning) -> String {
     )
 }
 
+/// One diagnostic as one stderr line, in the shape of [`warning_line`]: the
+/// path is one token and `detail` runs to the end of the line.
+fn diagnostic_line(diagnostic: &Diagnostic) -> String {
+    format!(
+        "meo-canvas: diagnostic: path={} detail={}",
+        diagnostic.path,
+        diagnostic.detail.replace(['\n', '\r'], " "),
+    )
+}
+
 /// Reads the scene, renders it, and writes the result.
 fn render(args: &RenderArgs) -> Result<(), Failure> {
     let format = resolve_format(args)?;
@@ -322,6 +339,9 @@ fn render(args: &RenderArgs) -> Result<(), Failure> {
     let mut canvas = renderer.render(&scene).map_err(fail)?;
     for warning in canvas.warnings() {
         eprintln!("{}", warning_line(warning));
+    }
+    for diagnostic in canvas.diagnostics() {
+        eprintln!("{}", diagnostic_line(diagnostic));
     }
     let image = canvas.to_buffer(format, &options).map_err(fail)?;
 
@@ -361,7 +381,7 @@ mod tests {
             format: None,
             fonts: Vec::new(),
             quality: None,
-            lossless: false,
+            lossless: None,
             page: None,
             fps: None,
             loops: None,
