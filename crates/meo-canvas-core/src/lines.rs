@@ -15,16 +15,23 @@
 //!
 //! A line's **content height** is the face's own ascent plus descent, taken as
 //! the maximum over the runs on that line. Its **box height** is what
-//! `line_height` asks for, or the content height when it asks for nothing. The
-//! difference is **leading**, split half above and half below -- and it is
-//! allowed to be negative: a `line_height` tighter than the face needs makes
-//! the glyphs overlap their neighbours rather than moving the baseline, which
-//! is what CSS says.
+//! `line_height` asks for. The difference is **leading**, split half above and
+//! half below -- and it is allowed to be negative: a `line_height` tighter than
+//! the face needs makes the glyphs overlap their neighbours rather than moving
+//! the baseline, which is what CSS says. So the baseline of a line is
+//! `top + floor(leading / 2) + ascent`, floored as Chrome floors it.
 //!
-//! So the baseline of a line is `top + floor(leading / 2) + ascent`, floored as
-//! Chrome floors it, and a line's ascent comes from the **face** rather than
-//! from the string. That is why [`METRICS_STRING`] exists and why its contents
-//! do not matter.
+//! When `line_height` asks for nothing, which is CSS's `normal`, each face on
+//! the line asks for its own ascent, descent and line gap, with the gap as its
+//! leading: `floor(gap / 2) + ascent` above the baseline and the rest of the
+//! gap plus the descent below it. The line box is the largest of each, which is
+//! what Chrome builds when faces with different gaps share a line, and it is
+//! also the content height, so the leading is zero and the baseline sits at the
+//! largest reach above.
+//!
+//! Every one of those numbers comes from the **face** rather than from the
+//! string. That is why [`METRICS_STRING`] exists and why its contents do not
+//! matter.
 //!
 //! # Spaces are runs of no width
 //!
@@ -99,9 +106,9 @@ struct FontKey {
 
 /// What one measurement answers.
 ///
-/// Snapshotted rather than held as a backend object: the `actual` pair
-/// describes the string and the `font` pair describes the face, and a line box
-/// is built from the second.
+/// Snapshotted rather than held as a backend object: the width describes the
+/// string, and the ascent and descent describe the face, which is what a line
+/// box is built from.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Measurement {
     /// The advance width of the string.
@@ -121,6 +128,20 @@ pub struct Measurement {
     pub ascent: f32,
     /// The face's descent below the baseline, rounded with the ascent.
     pub descent: f32,
+}
+
+/// A measurement with the face's own line gap beside it.
+///
+/// Kept apart from [`Measurement`], whose fields are public, so the gap reaches
+/// a line box without changing what a measurement is to a caller.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Answer {
+    /// What [`TextMeasurer::measure`] returns.
+    measurement: Measurement,
+    /// The line gap `line-height: normal` adds, rounded apart from the ascent
+    /// and descent as Chrome rounds it: 13px Poppins has 13.65, 4.55 and 1.3,
+    /// a 20px box from 14 + 5 + 1 where the sum rounds to 19.
+    line_gap: f32,
 }
 
 /// One run's style, resolved down to what a measurement needs.
@@ -352,7 +373,7 @@ pub struct TextMeasurer {
     /// font library is the thread's, so this sees every face registered on it.
     canvas: Canvas,
     /// Answers, keyed by the font and the string.
-    answers: HashMap<(FontKey, u32, String), Measurement>,
+    answers: HashMap<(FontKey, u32, String), Answer>,
     /// Keys in the order they were inserted, so the oldest can be dropped:
     /// first in, first out, which decides only which entry survives a full
     /// cache and not what any of them say.
@@ -407,6 +428,16 @@ impl TextMeasurer {
         letter_spacing: f32,
         text: &str,
     ) -> Measurement {
+        self.answer(style, letter_spacing, text).measurement
+    }
+
+    /// [`Self::measure`], with the face's line gap, through the same cache.
+    fn answer(
+        &mut self,
+        style: &RunStyle,
+        letter_spacing: f32,
+        text: &str,
+    ) -> Answer {
         let key = (style.key(), letter_spacing.to_bits(), text.to_owned());
         if let Some(hit) = self.answers.get(&key) {
             return *hit;
@@ -421,6 +452,7 @@ impl TextMeasurer {
         context.set_font_variant(caps, &features);
         context.set_letter_spacing(letter_spacing);
         let metrics = context.measure_text(text, None);
+        let face = context.font_metrics();
         let measurement = Measurement {
             width: metrics.width,
             ascent: if metrics.font_bounding_box_ascent > 0.0 {
@@ -434,6 +466,10 @@ impl TextMeasurer {
                 (style.size * FALLBACK_DESCENT).round()
             },
         };
+        let answer = Answer {
+            measurement,
+            line_gap: face.line_gap.round(),
+        };
 
         if self.answers.len() >= MEASUREMENT_LIMIT
             && let Some(oldest) = self.order.pop_front()
@@ -441,8 +477,8 @@ impl TextMeasurer {
             self.answers.remove(&oldest);
         }
         self.order.push_back(key.clone());
-        self.answers.insert(key, measurement);
-        measurement
+        self.answers.insert(key, answer);
+        answer
     }
 
     /// The width of a run, which is what the backend measures and nothing more.
@@ -509,9 +545,20 @@ impl Run {
 pub struct Line {
     /// The runs on the line, in order, spaces included.
     pub runs: Vec<Run>,
-    /// The face's ascent, taken as the maximum over the line's words.
+    /// How far the baseline sits below the top of the content area.
+    ///
+    /// For a stated `line_height`, the largest ascent among the line's faces.
+    /// At `normal`, the most any face reaches above the baseline: its ascent
+    /// and the upper half of its line gap, floored. That is not the largest
+    /// ascent plus the largest half gap: 25px Oswald beside 25px Poppins
+    /// reaches 30, from Oswald's ascent, where those give 31.
     pub ascent: f32,
-    /// Ascent plus descent: what the line needs.
+    /// The height the leading is split around.
+    ///
+    /// For a stated `line_height`, the largest ascent plus the largest
+    /// descent. At `normal`, the box itself: the most any face reaches above
+    /// the baseline plus the most any reaches below it, each with its share
+    /// of its line gap, so the leading is zero.
     pub content_height: f32,
     /// What the line box occupies, which `line_height` may make smaller.
     pub height: f32,
@@ -527,7 +574,8 @@ impl Line {
     /// Half the leading, floored, then the ascent. **The leading goes
     /// negative** for a line box shorter than the face needs, which is the
     /// case where CSS lets the glyphs escape the box rather than moving the
-    /// baseline inside it.
+    /// baseline inside it. At `normal` the leading is zero and this is the
+    /// ascent.
     ///
     /// Floored as Chrome floors it, for either sign and for a box that is not
     /// a whole pixel: Oswald at 13px and `line-height: 1.5` is a 19.5px box
@@ -969,11 +1017,62 @@ fn truncate_with(
     }
 }
 
+/// The faces on one line, as the maxima its box is built from.
+#[derive(Debug, Default)]
+struct Extent {
+    /// The largest ascent.
+    ascent: f32,
+    /// The largest descent.
+    descent: f32,
+    /// The most any face reaches above the baseline at `normal`: its ascent
+    /// and the upper half of its line gap.
+    above: f32,
+    /// The most any face reaches below it: its descent and the rest of its
+    /// gap.
+    below: f32,
+}
+
+impl Extent {
+    /// Adds one face. The gap's upper half is floored, as Chrome floors every
+    /// half-leading, so an odd gap puts its spare pixel below the baseline.
+    fn add(&mut self, face: Answer) {
+        let Answer {
+            measurement:
+                Measurement {
+                    ascent, descent, ..
+                },
+            line_gap,
+        } = face;
+        let half = (line_gap / 2.0).floor();
+        self.ascent = self.ascent.max(ascent);
+        self.descent = self.descent.max(descent);
+        self.above = self.above.max(ascent + half);
+        self.below = self.below.max(descent + line_gap - half);
+    }
+
+    /// Sets `line`'s three heights for a stated height or `normal`, which
+    /// [`Line::baseline_from_top`] turns into the baseline.
+    fn place(&self, line: &mut Line, line_height: Option<f32>) {
+        if let Some(height) = line_height {
+            // What `line_height` asks for, **even when it is less than the
+            // face needs**: CSS lets a tight line box overlap its neighbours
+            // rather than quietly growing.
+            line.ascent = self.ascent;
+            line.content_height = self.ascent + self.descent;
+            line.height = height;
+        } else {
+            line.ascent = self.above;
+            line.content_height = self.above + self.below;
+            line.height = line.content_height;
+        }
+    }
+}
+
 /// Fills in every line's three heights.
 ///
-/// The ascent and descent come from the **face**, per run, taken as maxima
-/// over the line's words; a line with no words takes the node's own face, so
-/// an empty line between two paragraphs is as tall as a line of text.
+/// The ascent, descent and line gap come from the **face**, per run, taken as
+/// maxima over the line's words; a line with no words takes the node's own
+/// face, so an empty line between two paragraphs is as tall as a line of text.
 pub fn measure_lines(
     measurer: &mut TextMeasurer,
     base: &ResolvedText,
@@ -982,32 +1081,23 @@ pub fn measure_lines(
 ) {
     let base_style = RunStyle::base(base);
     for line in lines {
-        let mut ascent = 0.0_f32;
-        let mut descent = 0.0_f32;
+        let mut extent = Extent::default();
         for run in line.runs.iter().filter(|run| !run.is_space()) {
-            let face = measurer.measure(
+            extent.add(measurer.answer(
                 &run.style,
                 metrics.letter_spacing,
                 METRICS_STRING,
-            );
-            ascent = ascent.max(face.ascent);
-            descent = descent.max(face.descent);
+            ));
         }
-        if ascent == 0.0 && descent == 0.0 {
-            let face = measurer.measure(
+        if extent.ascent == 0.0 && extent.descent == 0.0 {
+            extent = Extent::default();
+            extent.add(measurer.answer(
                 &base_style,
                 metrics.letter_spacing,
                 METRICS_STRING,
-            );
-            ascent = face.ascent;
-            descent = face.descent;
+            ));
         }
-        line.ascent = ascent;
-        line.content_height = ascent + descent;
-        // What `line_height` asks for, **even when it is less than the face
-        // needs**: CSS lets a tight line box overlap its neighbours rather
-        // than quietly growing.
-        line.height = metrics.line_height.unwrap_or(line.content_height);
+        extent.place(line, metrics.line_height);
     }
 }
 
@@ -1114,8 +1204,9 @@ mod tests {
     use meo_skia_canvas::TextEngine;
 
     use super::{
-        Line, METRICS_STRING, Metrics, Run, RunStyle, TextMeasurer, layout,
-        line_width, pieces, spacing_pixels, wrap,
+        Answer, Extent, Line, METRICS_STRING, Measurement, Metrics, Run,
+        RunStyle, TextMeasurer, layout, line_width, pieces, spacing_pixels,
+        wrap,
     };
     use crate::{
         FINITE_CEILING,
@@ -1576,12 +1667,16 @@ mod tests {
     fn the_strut_is_whole_pixels_because_chrome_rounds_it() {
         let mut measurer = TextMeasurer::new();
         let base = RunStyle::base(&style());
-        let face = measurer.measure(&base, 0.0, METRICS_STRING);
+        let answer = measurer.answer(&base, 0.0, METRICS_STRING);
+        let face = answer.measurement;
         assert!((face.ascent - face.ascent.round()).abs() < f32::EPSILON);
         assert!((face.descent - face.descent.round()).abs() < f32::EPSILON);
-        // The identity that matters more than either value: Chrome's `normal`
-        // line box is exactly the sum, and an unrounded pair misses it by
-        // 0.288 every line.
+        assert!(
+            (answer.line_gap - answer.line_gap.round()).abs() < f32::EPSILON
+        );
+        // The identity that matters more than any one value: Chrome's
+        // `normal` line box is exactly the sum, and an unrounded pair misses
+        // it by 0.288 every line.
         let base_style = style();
         let block = layout(
             &mut measurer,
@@ -1592,7 +1687,9 @@ mod tests {
             Metrics::of(&base_style),
         );
         assert!(
-            (block.lines[0].height - (face.ascent + face.descent)).abs()
+            (block.lines[0].height
+                - (face.ascent + face.descent + answer.line_gap))
+                .abs()
                 < f32::EPSILON
         );
     }
@@ -1871,7 +1968,66 @@ mod tests {
             height: 20.0,
             hard_break: false,
         };
-        // Four of leading, two above, then the ascent.
+        // Eight of leading, four above, then the ascent.
         assert!((line.baseline_from_top() - 14.0).abs() < f32::EPSILON);
+    }
+
+    /// Asserts the height and baseline `extent` places a line at.
+    fn assert_places(
+        extent: &Extent,
+        line_height: Option<f32>,
+        (height, baseline): (f32, f32),
+    ) {
+        let mut line = Line {
+            runs: Vec::new(),
+            ascent: 0.0,
+            content_height: 0.0,
+            height: 0.0,
+            hard_break: false,
+        };
+        extent.place(&mut line, line_height);
+        let placed = (line.height, line.baseline_from_top());
+        assert!(
+            (placed.0 - height).abs() < f32::EPSILON
+                && (placed.1 - baseline).abs() < f32::EPSILON,
+            "{placed:?}, not ({height}, {baseline})"
+        );
+    }
+
+    /// A face's rounded parts, as a measurement carries them.
+    fn face(ascent: f32, descent: f32, line_gap: f32) -> Answer {
+        Answer {
+            measurement: Measurement {
+                width: 0.0,
+                ascent,
+                descent,
+            },
+            line_gap,
+        }
+    }
+
+    #[test]
+    fn a_stated_height_splits_its_leading_around_the_largest_face() {
+        let mut extent = Extent::default();
+        extent.add(face(10.0, 2.0, 0.0));
+        // Eight of leading, four above, then the ascent.
+        assert_places(&extent, Some(20.0), (20.0, 14.0));
+    }
+
+    #[test]
+    fn normal_puts_an_odd_gap_s_spare_pixel_below_the_baseline() {
+        let mut extent = Extent::default();
+        extent.add(face(26.0, 9.0, 3.0));
+        assert_places(&extent, None, (38.0, 27.0));
+    }
+
+    #[test]
+    fn normal_takes_each_face_s_half_gaps_rather_than_the_largest_gap() {
+        // 25px Oswald and Poppins, as Chrome's `line-height-normal.tsv` row
+        // gives them: 41 and 30, where the largest of each part gives 42, 31.
+        let mut extent = Extent::default();
+        extent.add(face(30.0, 7.0, 0.0));
+        extent.add(face(26.0, 9.0, 3.0));
+        assert_places(&extent, None, (41.0, 30.0));
     }
 }

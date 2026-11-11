@@ -1,7 +1,7 @@
-//! Line boxes against Chrome's HTML layout, at `line-height: normal` and two
-//! multiples, on a face with no line gap and one with a gap of a tenth of its
-//! em. Every row of `line-height-normal.tsv` is built from its own columns and
-//! compared on the box and the first baseline.
+//! Line boxes against Chrome's HTML layout, at `line-height: normal` and three
+//! multiples, on a face with no line gap, one with a gap of a tenth of its em,
+//! and lines holding both. Every row of `line-height-normal.tsv` is built from
+//! its own columns and compared on the box and the first baseline.
 
 use meo_canvas_core::{
     lines::{Metrics, TextMeasurer, layout},
@@ -28,37 +28,9 @@ const WIDTH: f32 = 400.0;
 /// noise of summing whole pixels.
 const SLACK: f32 = 0.01;
 
-/// The rows this renderer answers differently, by family, line height, size,
-/// line count and span: `normal` leaves the line gap of every face on the line
-/// out of the box (`l7aromeo/meo-canvas#232`), as meo-skia-canvas exposes no
-/// line gap to add (`l7aromeo/meo-skia-canvas#689`). Asserted both ways, so the
-/// fix fails this test until the list is emptied.
-const KNOWN: &[&str] = &[
-    "Poppins normal 12 1",
-    "Poppins normal 12 2",
-    "Poppins normal 13 1",
-    "Poppins normal 13 2",
-    "Poppins normal 15 1",
-    "Poppins normal 15 2",
-    "Poppins normal 16 1",
-    "Poppins normal 16 2",
-    "Poppins normal 17 1",
-    "Poppins normal 17 2",
-    "Poppins normal 20 1",
-    "Poppins normal 20 2",
-    "Poppins normal 25 1",
-    "Poppins normal 25 2",
-    "Poppins normal 40 1",
-    "Poppins normal 40 2",
-    "Fixture normal 13 1 + Poppins 13",
-    "Poppins normal 13 1 + Fixture 13",
-    "Fixture normal 15 1 + Poppins 15",
-    "Poppins normal 15 1 + Fixture 15",
-    "Fixture normal 25 1 + Poppins 25",
-    "Poppins normal 25 1 + Fixture 25",
-    "Poppins normal 13 1 + Poppins 25",
-    "Fixture normal 13 1 + Poppins 25",
-];
+/// The rows this renderer answers differently: empty. Asserted both ways, so a
+/// row named here that agrees fails and says to delete the entry.
+const KNOWN: &[&str] = &[];
 
 /// One row: family, line height as written, size, lines, the span's family
 /// and size where the line holds one, Chrome's box and first baseline.
