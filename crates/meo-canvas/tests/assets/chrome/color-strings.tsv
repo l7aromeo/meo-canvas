@@ -1,0 +1,98 @@
+# Chrome, through `just conformance`. What a colour string paints as a background.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
+# Written by packages/meo-canvas/tools/conformance/colorstrings.mjs.
+#
+# Each string is a div’s `background-color`, after a sentinel declaration of
+# rgb(1, 2, 3) in the same rule: a string Chrome refuses leaves the sentinel,
+# and the row says `refused`. Each is drawn over a white page and over a black
+# one, so an opaque colour reads the same on both and an alpha is one minus
+# their difference over 255. Read from screenshot pixels.
+#
+# css	group	chrome	white r	g	b	black r	g	b
+"black"	basic	painted	0	0	0	0	0	0
+"rebeccapurple"	basic	painted	102	51	153	102	51	153
+"#f00"	basic	painted	255	0	0	255	0	0
+"#ff0000"	basic	painted	255	0	0	255	0	0
+"#ff0000ff"	basic	painted	255	0	0	255	0	0
+"#ff000080"	basic	painted	255	127	127	128	0	0
+"#ff00"	basic	painted	255	255	255	0	0	0
+"#808080"	basic	painted	128	128	128	128	128	128
+"#f2aa4c"	basic	painted	242	170	76	242	170	76
+"#3366cc"	basic	painted	51	102	204	51	102	204
+"rgb(255, 0, 0)"	basic	painted	255	0	0	255	0	0
+"rgb(255 0 0)"	basic	painted	255	0	0	255	0	0
+"rgba(255, 0, 0, 1)"	basic	painted	255	0	0	255	0	0
+"rgba(0, 0, 0, 0.5)"	basic	painted	127	127	127	0	0	0
+"hsl(0 100% 50%)"	basic	painted	255	0	0	255	0	0
+"hsl(210 80% 50%)"	basic	painted	25	128	230	25	128	230
+"lab(29.2345% 39.3825 20.0664)"	lab	painted	125	35	41	125	35	41
+"lab(52.2345% 40.1645 59.9971)"	lab	painted	198	93	6	198	93	6
+"lab(60.2345 -5.3654 58.956)"	lab	painted	157	147	24	157	147	24
+"lab(62.2345% -34.9638 47.7721)"	lab	painted	104	166	57	104	166	57
+"lab(67.5345% -8.6911 -41.6019)"	lab	painted	98	172	239	98	172	239
+"lch(29.2345% 44.2 27)"	lab	painted	125	35	41	125	35	41
+"lch(52.2345% 72.2 56.2)"	lab	painted	198	93	6	198	93	6
+"lch(60.2345 59.2 95.2)"	lab	painted	157	147	24	157	147	24
+"lch(62.2345% 59.2 126.2)"	lab	painted	104	166	57	104	166	57
+"lch(67.5345% 42.5 258.2)"	lab	painted	98	172	239	98	172	239
+"lab(50 40% 30%)"	lab	painted	201	76	58	201	76	58
+"lab(none 40 30)"	lab	painted	56	0	0	56	0	0
+"lch(50 40 0.25turn)"	lab	painted	134	118	47	134	118	47
+"lch(50 40 -30)"	lab	painted	163	96	154	163	96	154
+"lch(50 200 30)"	lab	painted	255	0	3	255	0	3
+"lab(1e30 0 0)"	lab	painted	255	255	255	255	255	255
+"oklab(1 0 0)"	lab	painted	255	255	255	255	255	255
+"oklch(1 0 0)"	lab	painted	255	255	255	255	255	255
+"hsl(120 1 0.5)"	hsl	painted	1	1	1	1	1	1
+"hsl(120 100 50)"	hsl	painted	0	255	0	0	255	0
+"hsl(30 60 40)"	hsl	painted	163	102	41	163	102	41
+"hsl(30 60% 40)"	hsl	painted	163	102	41	163	102	41
+"hsl(30 60 40%)"	hsl	painted	163	102	41	163	102	41
+"hwb(120 20 30)"	hsl	painted	51	179	51	51	179	51
+"color(srgb 1 0 0)"	color	painted	255	0	0	255	0	0
+"color(srgb 1.0 0.0 0.0 / 1)"	color	painted	255	0	0	255	0	0
+"color(srgb 0 0 0 / 0.5)"	color	painted	127	127	127	0	0	0
+"color(srgb 1.2 -0.1 0.5)"	color	painted	255	0	128	255	0	128
+"color(srgb 100% 0% 0%)"	color	painted	255	0	0	255	0	0
+"color(srgb none 0 0)"	color	painted	0	0	0	0	0	0
+"color(srgb-linear 0.5 0.5 0.5)"	color	painted	188	188	188	188	188	188
+"color(srgb-linear 0.214 0.214 0.214)"	color	painted	127	127	127	127	127	127
+"color(srgb-linear 50% 50% 50%)"	color	painted	188	188	188	188	188	188
+"color(xyz 0.4124 0.2126 0.0193)"	color	painted	255	0	0	255	0	0
+"color(xyz 0.2 0.2 0.2)"	color	painted	135	121	118	135	121	118
+"color(xyz-d65 0.2 0.2 0.2)"	color	painted	135	121	118	135	121	118
+"color(xyz-d50 0.2 0.2 0.2)"	color	painted	125	122	137	125	122	137
+"color(xyz 50% 50% 50%)"	color	painted	204	183	180	204	183	180
+"color(display-p3 1 0 0)"	color	painted	255	0	0	255	0	0
+"color(rec2020 1 0 0)"	color	painted	255	0	0	255	0	0
+"color(a98-rgb 1 0 0)"	color	painted	255	0	0	255	0	0
+"color(prophoto-rgb 1 0 0)"	color	painted	255	0	0	255	0	0
+"color(from red srgb calc(r / 2) g b)"	color	painted	128	0	0	128	0	0
+"color(from color(srgb 0.5 0.5 0.5) srgb r g b)"	color	painted	128	128	128	128	128	128
+"rgb(from color(srgb 1 0 0) r g b)"	color	painted	255	0	0	255	0	0
+"color(srgb 1 0 0 / 0)"	color	painted	255	255	255	0	0	0
+"COLOR(xyz 1 0 0 / 0)"	color	painted	255	255	255	0	0	0
+"color(srgb-linear 1 0 0/0)"	color	painted	255	255	255	0	0	0
+"color(from red srgb r g b / 0)"	color	painted	255	255	255	0	0	0
+"color(srgb 1 0 0 / 2)"	color	painted	255	0	0	255	0	0
+"color(srgb 1 0 0 0)"	refused	refused	1	2	3	1	2	3
+"color(srgb 0.5 0.5 0.5 0.25)"	refused	refused	1	2	3	1	2	3
+"color(xyz 1 0 0 0)"	refused	refused	1	2	3	1	2	3
+"color(srgb-linear 1 0 0 0)"	refused	refused	1	2	3	1	2	3
+"color(srgb 1,0,0)"	refused	refused	1	2	3	1	2	3
+"color(xyz 0.2, 0.2, 0.2)"	refused	refused	1	2	3	1	2	3
+"color(srgb 1 0 0, 0.5)"	refused	refused	1	2	3	1	2	3
+"color(srgb 1 0 0 / 0.5 0.5)"	refused	refused	1	2	3	1	2	3
+"color (srgb 1 0 0)"	refused	refused	1	2	3	1	2	3
+"color(srgb 1 0)"	refused	refused	1	2	3	1	2	3
+"not-a-colour"	refused	refused	1	2	3	1	2	3
+"color(--profile 1 0 0)"	refused	refused	1	2	3	1	2	3
+"lab(50, 40, 30)"	refused	refused	1	2	3	1	2	3
+"rgb(1 2 3 4)"	refused	refused	1	2	3	1	2	3
+"hsl(120, 100, 50)"	refused	refused	1	2	3	1	2	3
+"ff0000"	refused	refused	1	2	3	1	2	3
+"f00"	refused	refused	1	2	3	1	2	3
+"hwba(120, 0%, 0%, 1)"	refused	refused	1	2	3	1	2	3
+"hsv(120, 100%, 100%)"	refused	refused	1	2	3	1	2	3
+"hsva(120, 100%, 100%, 1)"	refused	refused	1	2	3	1	2	3
+"color(display-p3-linear 1 0 0)"	unread	painted	255	0	0	255	0	0

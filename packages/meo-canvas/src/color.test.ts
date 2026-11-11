@@ -42,6 +42,9 @@ describe('one parser serves both surfaces', () => {
     ['rgb(1 2 3)', [1, 2, 3]],
     ['hsl(0 100% 50%)', [255, 0, 0]],
     ['rebeccapurple', [102, 51, 153]],
+    // Chrome's bytes for both, from `color-strings.tsv`.
+    ['hsl(30 60 40)', [163, 102, 41]],
+    ['lab(67.5345% -8.6911 -41.6019)', [98, 172, 239]],
   ])('agrees with the renderer about %s', async (css, expected) => {
     const parsed = addon().parseColor(css)
     expect(parsed).not.toBeNull()
@@ -49,11 +52,8 @@ describe('one parser serves both surfaces', () => {
     expect(await painted(css)).toEqual(expected)
   })
 
-  // **The case a second parser would have got wrong.** `csscolorparser` has no
-  // `color()` branch at all — 0.8.3 is its newest release — so this string is
-  // read by the pre-pass rather than by the library, and it is the only CSS
-  // syntax that can name a colour outside the gamut.
-  it('reads color(srgb ...), which the library underneath cannot', async () => {
+  // `color()` has no legacy form, so a parser that knows only CSS 3 refuses it.
+  it('reads color(srgb ...)', async () => {
     const parsed = addon().parseColor('color(srgb 0.2 0.4 0.6)')
     expect(parsed).not.toBeNull()
     expect([Math.round(parsed!.r), Math.round(parsed!.g), Math.round(parsed!.b)]).toEqual([51, 102, 153])
@@ -82,20 +82,30 @@ describe('one parser serves both surfaces', () => {
     expect(addon().parseColor('#ffffff')!.r).toBe(255)
   })
 
-  // Refused by name rather than as an unparseable string: reading `display-p3`
-  // numbers as sRGB would draw a wrong colour in silence, and a caller can act
-  // on "this space is unsupported" where they cannot act on "bad syntax".
-  it('refuses a colour space it does not support, rather than guessing', () => {
-    expect(addon().parseColor('color(display-p3 1 0 0)')).toBeNull()
-    expect(addon().isColor('color(display-p3 1 0 0)')).toBe(false)
-    expect(addon().isColor('color(srgb 1 0 0)')).toBe(true)
+  // A wide-gamut colour reads back outside sRGB, unclamped for animation, and
+  // paints as the clamp Chrome paints; a space CSS does not name is refused.
+  it('converts a wide-gamut space and refuses an unknown one', async () => {
+    const parsed = addon().parseColor('color(display-p3 1 0 0)')
+    expect(parsed?.r).toBeGreaterThan(255)
+    expect(await painted('color(display-p3 1 0 0)')).toEqual([255, 0, 0])
+    expect(addon().parseColor('color(bananas 1 0 0)')).toBeNull()
+    expect(addon().isColor('color(bananas 1 0 0)')).toBe(false)
+  })
+
+  // The reader answers black for it; CSS means the node's text colour, which a
+  // string parsed alone has none of.
+  it('refuses currentColor rather than reading it as black', () => {
+    for (const css of ['currentColor', ' CURRENTCOLOR ', 'color-mix(in srgb, currentColor 50%, white)']) {
+      expect(addon().parseColor(css)).toBeNull()
+      expect(addon().isColor(css)).toBe(false)
+    }
   })
 
   // Two functions that can disagree about one string are a defect waiting for
   // the first caller who uses both, so `isColor` is defined as the parse
   // succeeding rather than as its own check.
   it('answers isColor exactly when parseColor answers', () => {
-    for (const css of ['#3366cc', 'rebeccapurple', 'color(srgb 1 0 0)', 'color(display-p3 1 0 0)', 'not-a-colour', '']) {
+    for (const css of ['#3366cc', 'rebeccapurple', 'color(srgb 1 0 0)', 'color(display-p3 1 0 0)', 'color(bananas 1 0 0)', 'not-a-colour', '']) {
       expect(addon().isColor(css)).toBe(addon().parseColor(css) !== null)
     }
   })

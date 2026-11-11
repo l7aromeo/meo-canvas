@@ -433,9 +433,10 @@ honours the promise.
 empty string compute to `none` in Chrome 153, and a `z-index: -1` child stays
 under its parent's background. `resolve` drops such a chain with a diagnostic
 before stacking is decided, so a dropped chain makes no context here either.
-`filter-stacking.tsv` pins both against Chrome. A `none` chain is not dropped,
-and still makes a context here where Chrome makes none
-(`l7aromeo/meo-canvas#210`, waiting on `l7aromeo/meo-skia-canvas#624`).
+`none` creates none either, in any case and with comments around it: `resolve`
+asks `meo-skia-canvas`'s `css_filter_is_none` and drops it without a
+diagnostic, since it is valid. `filter-stacking.tsv` pins the refusals and
+four spellings of `none` against Chrome, on both properties.
 
 ### Where this does not match Chrome
 
@@ -549,7 +550,6 @@ by construction, and the crate ships them together.
 | ----------------- | ------ | -------------------------------------------------------- |
 | `meo-skia-canvas` | 0.17.2 | Skia, text shaping, encoding. `patched-skia`, see below. |
 | `taffy`           | 0.15   | Flexbox, CSS grid, block layout. Without `calc`.         |
-| `csscolorparser`  | 0.8    | CSS colour syntax. Channels are `f32`; see design notes. |
 | `neon`            | 1.1    | Node addon.                                              |
 | `clap`            | 4.6    | CLI.                                                     |
 | `thiserror`       | 2.0    | Error types.                                             |
@@ -591,15 +591,18 @@ length as a tagged pointer, so `Style` itself holds a `*const ()`. A tree is
 built and consumed on one thread and never crosses a boundary, which costs
 nothing because `Scene` carries its own style type.
 
-**`csscolorparser::Color` is `f32` on all four channels**, so
-`rgba(0, 0, 0, 0.1)` would read back as `0.10000000149011612` on both surfaces.
-The parser returns the number the author wrote, with the browser as tiebreak:
-an alpha written as a decimal or a percentage is presented as the shortest
-decimal that round-trips to its `f32`, and an alpha written as a hex byte is
-`byte / 255`, computed where the byte is known, since no decimal-shortening
-reaches 127/255 from an `f32`. Scaling to 0..255 stays in `f32`, where it is
-exact, and the widening happens to the product; widening first lands `#808080`
-a hair under 128, which the colour tests pin.
+**CSS colours are read by `meo-skia-canvas`'s `Srgba::from_css`**, the reader
+behind its own fills and `filter` colours, so a fill and a `drop-shadow()` of
+the same string come from one parser. It answers straight, unclamped sRGB in
+`f64` as written: `rgba(0, 0, 0, 0.1)` reads back as `0.1`, a hex byte as
+`byte / 255`, `#808080` as exactly 128, and a colour at alpha 0 keeps its hue.
+A colour converted from another space can land a few units in the last place
+outside the gamut, `oklab(1 0 0)` at a red of 255.0000000000001, and nothing
+snaps it back. `currentColor` is refused, alone or nested: the reader answers
+it with black, and a string read here has no node whose text colour it names.
+`color-strings.tsv` holds the reader to Chrome on 87 strings, and pins the one
+it refuses where Chrome paints, `color(display-p3-linear ...)`
+(`l7aromeo/meo-skia-canvas#687`).
 
 ## Performance baseline
 

@@ -1596,9 +1596,10 @@ mod tests {
                 "rgb(40 80 220 / 60%)".to_owned(),
                 Color::rgba(40, 80, 220, 153),
             ),
+            // Red is 25.5 exactly; Chrome paints 25 (`color-strings.tsv`).
             (
                 "hsl(210 80% 50%)".to_owned(),
-                Color::rgba(26, 128, 230, 255),
+                Color::rgba(25, 128, 230, 255),
             ),
         ] {
             let (writer, colour) = Writer::default().text_value(&written);

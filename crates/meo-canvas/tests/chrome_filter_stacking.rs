@@ -21,21 +21,6 @@ const CHILD_CENTRE: (u32, u32) = (15, 15);
 /// beyond a 2px blur's reach, so it shows the parent alone however it stacks.
 const PARENT_ALONE: (u32, u32) = (32, 15);
 
-/// The rows that stack where Chrome does not, the spellings of `none`, which
-/// is not dropped (`l7aromeo/meo-canvas#210`); it waits on a way to ask msc
-/// whether a chain filters anything (`l7aromeo/meo-skia-canvas#624`). Asserted
-/// both ways, so the fix fails this test until the list is emptied.
-const KNOWN_NONE_STACKING: [&str; 8] = [
-    "filter \"none\"",
-    "filter \"NONE\"",
-    "filter \" none \"",
-    "filter \"/* c */ none\"",
-    "backdrop-filter \"none\"",
-    "backdrop-filter \"NONE\"",
-    "backdrop-filter \" none \"",
-    "backdrop-filter \"/* c */ none\"",
-];
-
 /// One row: the property, the chain, whether Chrome refused the declaration,
 /// and whether the child shows at its centre.
 struct Row {
@@ -119,7 +104,6 @@ fn a_filter_chain_stacks_and_is_refused_as_chrome_decides() {
     let mut renderer = Renderer::new();
     renderer.set_gpu(false);
     let mut wrong = Vec::new();
-    let mut listed = 0;
     for row in rows() {
         let name = format!("{} {:?}", row.property, row.chain);
         let mut canvas = page(&row)
@@ -140,24 +124,12 @@ fn a_filter_chain_stacks_and_is_refused_as_chrome_decides() {
                 row.refused
             ));
         }
-        let known = KNOWN_NONE_STACKING.contains(&name.as_str());
-        if (child_on_top == row.child_on_top) == known {
+        if child_on_top != row.child_on_top {
             wrong.push(format!(
-                "{name}: child on top {child_on_top}, in Chrome {}{}",
-                row.child_on_top,
-                if known {
-                    "; listed in KNOWN_NONE_STACKING, so remove it"
-                } else {
-                    ""
-                }
+                "{name}: child on top {child_on_top}, in Chrome {}",
+                row.child_on_top
             ));
         }
-        listed += usize::from(known);
     }
-    assert_eq!(
-        listed,
-        KNOWN_NONE_STACKING.len(),
-        "KNOWN_NONE_STACKING names a row the table does not hold"
-    );
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }

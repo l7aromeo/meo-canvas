@@ -5,17 +5,16 @@
 //! [`crate::markup`] reading a `<color=…>` tag, and a Rust caller writing a
 //! name. Three callers, one answer.
 //!
-//! # Why `csscolorparser`
+//! # Why `meo-skia-canvas`'s reader
 //!
-//! `meo-skia-canvas` parses its own colour strings with it, so it is already in
-//! the graph, and a colour resolved here agrees with one the backend resolves
-//! by construction. A second implementation of CSS Color 4 would be a
-//! disagreement nothing reports.
-//!
-//! Its default `named-colors` feature is what makes `"black"` resolve rather
-//! than fail.
+//! [`Srgba::from_css`] is the parser behind the backend's own fills and the
+//! colours inside a `filter` string, which `paint` hands it as CSS. Reading
+//! here with it makes a fill and a `drop-shadow()` of one string agree by
+//! construction; a second implementation of CSS Color 4 would be a
+//! disagreement nothing reports. `color-strings.tsv` holds it to Chrome.
 
 use meo_canvas_scene::style::paint::Color;
+use meo_skia_canvas::color::Srgba;
 
 /// Parses a CSS colour string.
 ///
@@ -47,115 +46,84 @@ pub fn parse_color(css: &str) -> Option<Color> {
 ///
 /// # Why unclamped, and why this is not [`parse_color`]
 ///
-/// `color(srgb 1.25 1.25 1.25)` is a real colour outside the gamut, and the
-/// only CSS syntax that can express one. A scene stores four bytes, so
+/// `color(srgb 1.25 1.25 1.25)` and `color(display-p3 1 0 0)` are real
+/// colours outside the sRGB gamut. A scene stores four bytes, so
 /// [`parse_color`] clamps. An animation mixing colours needs room outside the
 /// gamut between two of them, so the clamp belongs where a colour becomes paint
-/// and not at the parse.
-///
-/// Both spellings come through here, the `color(srgb ...)` pre-pass and
-/// everything `csscolorparser` reads, which is why the addon exports this
-/// rather than each surface parsing for itself.
+/// and not at the parse. The addon exports this, so both surfaces read a
+/// string the same way.
 ///
 /// # The number a channel reads back as
 ///
-/// `csscolorparser` holds channels as `f32`, so `rgba(0, 0, 0, 0.1)` arrives as
-/// the nearest `f32` to `0.1`. An alpha written as a decimal or a percentage is
-/// presented as the shortest decimal naming that `f32`, which reads back as
-/// written. An alpha written as a hex byte is `byte / 255`, computed where the
-/// byte is known: `7f` is a byte, and no shortest decimal reaches `127/255`
-/// from an `f32`. The browser answers `0.1` here, and is the tiebreak, as it is
-/// for the mix clamp in [`crate::animate::color`].
+/// The one the string names, in `f64`: `rgba(0, 0, 0, 0.1)` has an alpha of
+/// `0.1`, `#0000007f` one of `127/255`, and `#808080` channels of exactly 128.
+/// An alpha outside 0 to 1 is clamped into it, as CSS clamps it. A colour at
+/// alpha 0 keeps its hue, which a mix toward it needs. A colour converted from
+/// another space can sit a few units in the last place outside the gamut:
+/// `oklab(1 0 0)` has a red of 255.0000000000001.
+///
+/// # `currentColor`
+///
+/// Refused, alone or inside `color-mix()` or a relative colour. It names the
+/// node's text colour, which a string read here has no node to take from, and
+/// the reader answers it with opaque black.
 #[must_use]
 pub fn parse_channels(css: &str) -> Option<[f64; 4]> {
-    if let Some([r, g, b, a]) = extended_srgb(css) {
-        // Already parsed at `f64` from the text, so there is nothing to
-        // recover: these are the author's numbers.
-        return Some([r * 255.0, g * 255.0, b * 255.0, a]);
-    }
-
-    let parsed = csscolorparser::parse(css).ok()?;
-    // The scaling stays in `f32`, where `#808080` gives exactly `128.0`.
-    // Widening first and multiplying in `f64` would land a byte a hair below
-    // itself, which is a worse answer than the one being fixed.
-    let [r, g, b] =
-        [parsed.r, parsed.g, parsed.b].map(|channel| widen(channel * 255.0));
-    Some([r, g, b, hex_alpha(css).unwrap_or_else(|| widen(parsed.a))])
-}
-
-/// An `f32` as the shortest decimal that identifies it. For anything a person
-/// types, seven significant digits or fewer, that is what they typed; `Display`
-/// for `f32` prints exactly that string, and distinct `f32`s stay distinct.
-fn widen(channel: f32) -> f64 {
-    channel
-        .to_string()
-        .parse()
-        .unwrap_or_else(|_| f64::from(channel))
-}
-
-/// The alpha of a hex colour, as the author's byte over 255, or `None` for any
-/// other spelling, including hex with no alpha. `#0000007f` is `127/255`, where
-/// the shortest decimal naming the `f32` is `0.49803922`, neither of the two.
-fn hex_alpha(css: &str) -> Option<f64> {
-    let digits = css.trim().strip_prefix('#')?;
-    if !digits.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+    if names_current_color(css) {
         return None;
     }
-    let byte = match digits.len() {
-        // `#rgba`, where each digit is a doubled nibble: `8` is `0x88`.
-        4 => {
-            let nibble = u8::from_str_radix(&digits[3..], 16).ok()?;
-            nibble * 17
-        }
-        8 => u8::from_str_radix(&digits[6..], 16).ok()?,
-        _ => return None,
-    };
-    Some(f64::from(byte) / 255.0)
+    let Srgba { r, g, b, a } = Srgba::from_css(css).ok()?;
+    Some([r * 255.0, g * 255.0, b * 255.0, a])
 }
 
-/// The channels of a `color(srgb …)` string, unclamped, or `None`. A pre-pass:
-/// `csscolorparser`'s `parse_abs` has no `color()`. Other spaces return `None`,
-/// since there is no conversion for them and their numbers read as sRGB would
-/// draw a wrong colour silently.
-pub(crate) fn extended_srgb(css: &str) -> Option<[f64; 4]> {
-    let (space, values) = color_function(css)?;
-    if !space.eq_ignore_ascii_case("srgb") {
-        return None;
-    }
-    let (channels, alpha) = values
-        .split_once('/')
-        .map_or((values, None), |(rgb, a)| (rgb, Some(a)));
-    let mut numbers = channels.split_whitespace();
-    let mut next = || numbers.next()?.parse::<f64>().ok();
-    let (red, green, blue) = (next()?, next()?, next()?);
-    if numbers.next().is_some() {
-        return None;
-    }
-    let alpha = match alpha {
-        None => 1.0,
-        Some(text) => text.trim().parse::<f64>().ok()?,
-    };
-    Some([red, green, blue, alpha])
+/// The identifier CSS reads as the text colour, compared in lower case.
+const CURRENT_COLOR: &str = "currentcolor";
+
+/// Whether `css` holds `currentColor` as a whole identifier, in any case: not
+/// as part of a longer name such as `--currentcolor-x`.
+fn names_current_color(css: &str) -> bool {
+    let lower = css.to_ascii_lowercase();
+    let ident =
+        |byte: u8| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_';
+    lower.match_indices(CURRENT_COLOR).any(|(at, _)| {
+        let before = at.checked_sub(1).map(|index| lower.as_bytes()[index]);
+        let after = lower.as_bytes().get(at + CURRENT_COLOR.len()).copied();
+        !before.is_some_and(ident) && !after.is_some_and(ident)
+    })
 }
 
-/// The colour space of a `color()` string we cannot convert, if that is why it
-/// was refused.
+/// The space of a well-formed `color()` string that [`parse_color`] refuses
+/// for its space alone, or `None`.
 ///
 /// So a caller can say which half is missing: [`parse_color`] returns `None`
-/// for `"bananas"` and for `color(display-p3 1 0 0)` alike, and only the second
-/// is a colour, in a space with no conversion here.
+/// for `color(srgb 1 0)` and for `color(display-p3-linear 1 0 0)` alike, and
+/// only the second has well-formed channels in a space the reader does not
+/// convert. Those spaces are `display-p3-linear`, which Chrome paints and
+/// `meo-skia-canvas` 0.17.2 refuses (`l7aromeo/meo-skia-canvas#687`), a custom
+/// `--name` profile, and an identifier CSS does not name.
 ///
-/// Returns `None` for `srgb`, which is supported, and for anything that is not
-/// a `color()` function.
+/// Well-formed means the same channels in `srgb` parse. Returns `None` for a
+/// string that parses, for a malformed `color()`, and for anything else.
 #[must_use]
 pub fn unsupported_space(css: &str) -> Option<&str> {
-    let (space, _) = color_function(css)?;
-    (!space.eq_ignore_ascii_case("srgb")).then_some(space)
+    let (space, channels) = color_function(css)?;
+    if Srgba::from_css(css).is_ok() {
+        return None;
+    }
+    Srgba::from_css(&format!("color(srgb {channels})"))
+        .is_ok()
+        .then_some(space)
 }
 
-/// The space and the values of a `color(space values)` string.
+/// The space and the channels of a `color(space channels)` string, its
+/// function name in any case, as CSS reads it.
 fn color_function(css: &str) -> Option<(&str, &str)> {
-    let inner = css.trim().strip_prefix("color(")?.strip_suffix(')')?;
+    let css = css.trim();
+    let name = css.get(..6)?;
+    let inner = name
+        .eq_ignore_ascii_case("color(")
+        .then(|| css.get(6..))??
+        .strip_suffix(')')?;
     inner.trim().split_once(char::is_whitespace)
 }
 
@@ -183,8 +151,8 @@ mod tests {
 
     #[test]
     fn an_alpha_a_person_wrote_reads_back_as_they_wrote_it() {
-        // `csscolorparser` holds channels as `f32`, so a plain widening answers
-        // `0.10000000149011612` for `0.1`. The browser answers `0.1`.
+        // A reader holding channels as `f32` answers `0.10000000149011612`
+        // for `0.1`. The browser answers `0.1`.
         for (css, alpha) in [
             ("rgba(0, 0, 0, 0.1)", 0.1_f64),
             ("rgba(0, 0, 0, 0.33)", 0.33),
@@ -301,7 +269,7 @@ mod tests {
 
     #[test]
     fn a_color_function_in_srgb_resolves() {
-        // `csscolorparser` has no `color()` at all, and Chrome draws this.
+        // `color()` is the one syntax with no legacy form, and Chrome draws it.
         let red = Some(Color::rgba(255, 0, 0, 255));
         assert_eq!(parse_color("color(srgb 1 0 0)"), red);
         assert_eq!(parse_color("color(srgb 1.0 0.0 0.0 / 1)"), red);
@@ -360,27 +328,85 @@ mod tests {
 
     #[test]
     fn an_unsupported_space_is_named_rather_than_merely_refused() {
-        // The difference a caller can act on: `"bananas"` is not a colour and
-        // `color(display-p3 1 0 0)` is one we cannot convert. Both are `None`
-        // from `parse_color`, and only one has a space to report.
+        use super::unsupported_space;
+        // Chrome 158 paints this one; it turns `None` the day the reader
+        // converts it (`l7aromeo/meo-skia-canvas#687`).
         assert_eq!(
-            super::unsupported_space("color(display-p3 1 0 0)"),
-            Some("display-p3")
+            unsupported_space("color(display-p3-linear 1 0 0)"),
+            Some("display-p3-linear")
         );
-        assert_eq!(super::unsupported_space("color(xyz 1 0 0)"), Some("xyz"));
-        assert_eq!(super::unsupported_space("color(srgb 1 0 0)"), None);
-        assert_eq!(super::unsupported_space("bananas"), None);
-        assert_eq!(super::unsupported_space("#ff0000"), None);
+        assert_eq!(
+            unsupported_space("COLOR(--profile 1 0 0 / 0.5)"),
+            Some("--profile")
+        );
+        assert_eq!(unsupported_space("color(bananas 1 0 0)"), Some("bananas"));
+        // Converted spaces, a malformed string in one, the relative form and
+        // strings that are not `color()` name nothing.
+        for css in [
+            "color(display-p3 1 0 0)",
+            "color(xyz 1 0 0)",
+            "color(srgb 1 0)",
+            "color(display-p3 1 0)",
+            "color(from red srgb r g b)",
+            "bananas",
+            "#ff0000",
+        ] {
+            assert_eq!(unsupported_space(css), None, "{css}");
+        }
     }
 
     #[test]
-    fn a_colour_space_we_cannot_convert_is_refused() {
-        // Not a syntax we fail to read: a space we have no conversion for.
-        // Reading its numbers as sRGB would draw a wrong colour in silence.
-        assert_eq!(parse_color("color(display-p3 1 0 0)"), None);
-        assert_eq!(parse_color("color(rec2020 1 0 0)"), None);
+    fn a_wide_gamut_colour_converts_and_a_malformed_one_is_refused() {
+        // Chrome paints both wide-gamut reds as sRGB's red, clamped at paint;
+        // `color-strings.tsv` has the rows.
+        let red = Some(Color::rgba(255, 0, 0, 255));
+        assert_eq!(parse_color("color(display-p3 1 0 0)"), red);
+        assert_eq!(parse_color("color(rec2020 1 0 0)"), red);
+        let [r, ..] = parse_channels("color(display-p3 1 0 0)")
+            .unwrap_or_else(|| unreachable!("a display-p3 colour"));
+        assert!(r > 255.0, "display-p3's red is outside sRGB, at {r}");
+        // A fourth channel needs a slash, and a space needs a name CSS knows.
         assert_eq!(parse_color("color(srgb 1 0)"), None);
         assert_eq!(parse_color("color(srgb 1 0 0 0)"), None);
+        assert_eq!(parse_color("color(bananas 1 0 0)"), None);
+    }
+
+    #[test]
+    fn current_color_is_refused_rather_than_read_as_black() {
+        // The reader answers opaque black for it; a node's text colour is what
+        // CSS means, and nothing here knows the node.
+        for css in [
+            "currentColor",
+            " CURRENTCOLOR ",
+            "currentcolor",
+            "color-mix(in srgb, currentColor 50%, white)",
+            "rgb(from currentColor r g b)",
+        ] {
+            assert_eq!(parse_channels(css), None, "{css}");
+        }
+        // The control: a colour beside a longer name is still read.
+        assert_eq!(parse_color("black"), Some(Color::rgba(0, 0, 0, 255)));
+        assert!(!super::names_current_color("--currentcolor-x"));
+        assert!(!super::names_current_color("currentcolors"));
+    }
+
+    #[test]
+    fn an_alpha_past_either_end_is_clamped_and_the_hue_kept() {
+        // CSS clamps a declared alpha to 0..1, so an animation from this
+        // colour starts opaque rather than at 2.
+        assert_eq!(
+            parse_channels("color(srgb 1 0 0 / 2)"),
+            Some([255.0, 0.0, 0.0, 1.0])
+        );
+        // At alpha 0 the hue stays, which a mix toward the colour needs.
+        assert_eq!(
+            parse_channels("color(srgb 1 0 0 / -1)"),
+            Some([255.0, 0.0, 0.0, 0.0])
+        );
+        assert_eq!(
+            parse_channels("hsl(120 100% 50% / 0)"),
+            Some([0.0, 255.0, 0.0, 0.0])
+        );
     }
 
     #[test]

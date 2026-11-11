@@ -127,6 +127,25 @@ describe('a filter the renderer refuses', () => {
     }
   })
 
+  // `none` is valid, so it is not reported, and it computes to no filter, so it
+  // stacks nothing: the child stays under the parent, as `filter-stacking.tsv`
+  // records Chrome doing.
+  it('draws none as no filter, without a report', async () => {
+    const plain = await draw({})
+    for (const chain of ['none', 'NONE', ' none ', '/* c */ none']) {
+      for (const key of ['filter', 'backdropFilter'] as const) {
+        const { raw, found } = await draw({ [key]: chain })
+        expect(found).toEqual([])
+        expect(raw.equals(plain.raw)).toBe(true)
+      }
+    }
+    // The control: a chain that filters nothing still stacks, so the child
+    // shows and the bytes differ.
+    const stacked = await draw({ filter: 'blur(0px)' })
+    expect(stacked.found).toEqual([])
+    expect(stacked.raw.equals(plain.raw)).toBe(false)
+  })
+
   it('keeps a chain it draws', async () => {
     const plain = await draw({})
     const blurred = await draw({ filter: 'blur(2px)' })

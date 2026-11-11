@@ -159,8 +159,7 @@ fn backend(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
 
 /// A CSS colour string as `{ r, g, b, a }` -- channels 0 to 255 and alpha 0 to
 /// 1, unclamped so an animation can pass outside the gamut -- or `null`. Parsed
-/// here so both surfaces share the renderer's parser, including the
-/// `color(srgb ...)` pre-pass `csscolorparser` lacks.
+/// here so both surfaces share the renderer's parser.
 fn parse_color(mut cx: FunctionContext<'_>) -> JsResult<'_, JsValue> {
     let css = cx.argument::<JsString>(0)?.value(&mut cx);
     let Some([red, green, blue, alpha]) =

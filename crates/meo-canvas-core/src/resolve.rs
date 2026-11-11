@@ -100,7 +100,7 @@ use meo_canvas_scene::{
         },
     },
 };
-use meo_skia_canvas::image::Svg;
+use meo_skia_canvas::{filter::css_filter_is_none, image::Svg};
 
 use crate::{Error, FetchFailure, ImageWarning, diagnostic::Diagnostic};
 
@@ -544,11 +544,11 @@ impl DecodedImage {
 }
 
 /// The nodes whose `filter` or `backdrop_filter` resolve dropped, because
-/// `meo-skia-canvas` refuses the chain.
+/// `meo-skia-canvas` refuses the chain or reads it as `none`.
 ///
-/// Dropped as Chrome drops an invalid declaration: the node is drawn as though
-/// the property were not set, which includes establishing no stacking context
-/// on its account.
+/// Dropped as Chrome drops an invalid declaration, and as `none` computes: the
+/// node is drawn as though the property were not set, which includes
+/// establishing no stacking context on its account.
 #[derive(Debug, Default)]
 pub struct DroppedFilters {
     filter: HashSet<NodeId>,
@@ -591,22 +591,6 @@ impl DroppedFilters {
             .as_deref()
             .filter(|_| !self.backdrop.contains(&id))
     }
-}
-
-/// Why `meo-skia-canvas` refuses `css` as a filter chain, or `None` when it
-/// draws it.
-///
-/// Asked of a one-pixel raster canvas, since the parser is reachable only
-/// through a context. Its answer does not depend on the canvas: what a chain's
-/// units resolve against changes the numbers, never whether it parses.
-fn filter_refusal(css: &str) -> Option<String> {
-    let mut canvas = meo_skia_canvas::Canvas::new(1.0, 1.0);
-    canvas.set_gpu(false);
-    canvas
-        .context()
-        .set_filter_css(css)
-        .err()
-        .map(|error| error.to_string())
 }
 
 /// A scene whose images are decoded and whose text styles are resolved.
@@ -703,10 +687,16 @@ impl<'scene> Resolved<'scene> {
         Ok(resolved)
     }
 
-    /// Drops each `filter` and `backdrop_filter` `meo-skia-canvas` refuses,
-    /// with a diagnostic, asking once per distinct chain.
+    /// Drops each `filter` and `backdrop_filter` that is `none`, silently, and
+    /// each one `meo-skia-canvas` refuses, with a diagnostic, asking once per
+    /// distinct chain.
+    ///
+    /// `none` is the keyword only: `blur(0px)` filters nothing and still
+    /// stacks, as Filter Effects 1 says and `filter-stacking.tsv` records
+    /// Chrome doing.
     fn check_filters(&mut self) {
-        let mut asked: HashMap<&'scene str, Option<String>> = HashMap::new();
+        let mut asked: HashMap<&'scene str, Result<bool, String>> =
+            HashMap::new();
         for (index, node) in self.scene.nodes.iter().enumerate() {
             // The cast is exact: the arena is bounded by `MAX_NODES`, a `u32`.
             let id = NodeId::new(index as u32);
@@ -716,18 +706,24 @@ impl<'scene> Resolved<'scene> {
             ];
             for (property, chain) in chains {
                 let Some(css) = chain else { continue };
-                let Some(reason) = asked
+                let reason = match asked
                     .entry(css)
-                    .or_insert_with(|| filter_refusal(css))
+                    .or_insert_with(|| {
+                        css_filter_is_none(css)
+                            .map_err(|error| error.to_string())
+                    })
                     .clone()
-                else {
-                    continue;
+                {
+                    Ok(false) => continue,
+                    Ok(true) => None,
+                    Err(reason) => Some(reason),
                 };
                 let dropped = match property {
                     "filter" => &mut self.dropped.filter,
                     _ => &mut self.dropped.backdrop,
                 };
                 dropped.insert(id);
+                let Some(reason) = reason else { continue };
                 self.diagnostics.push(Diagnostic::new(
                     property,
                     format!(
