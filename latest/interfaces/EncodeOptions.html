@@ -1,6 +1,6 @@
 <!DOCTYPE html><html class="default" lang="en" data-base="../"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>EncodeOptions | meo-canvas</title><meta name="description" content="Documentation for meo-canvas"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="../assets/style.css"/><link rel="stylesheet" href="../assets/highlight.css"/><script defer src="../assets/main.js"></script><script async src="../assets/icons.js" id="tsd-icons-script"></script><script async src="../assets/search.js" id="tsd-search-script"></script><script async src="../assets/navigation.js" id="tsd-nav-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
 <div class="tsd-toolbar-contents container"><a href="../index.html" class="title">meo-canvas</a>
-<div id="tsd-toolbar-links"><a href="https://github.com/l7aromeo/meo-canvas/tree/main">Source</a><a href="https://www.npmjs.com/package/meo-canvas">npm</a></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
+<div id="tsd-toolbar-links"><a href="https://github.com/l7aromeo/meo-canvas/tree/main">Source</a><a href="https://www.npmjs.com/package/meo-canvas">npm</a><a href="https://docs.rs/meo-canvas">Rust API</a></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
 <ul role="listbox" id="tsd-search-results"></ul>
 <div id="tsd-search-status" aria-live="polite" aria-atomic="true">
 <div>Preparing search index...</div></div></dialog><a href="#" class="tsd-widget menu" id="tsd-toolbar-menu-trigger" data-toggle="menu" aria-label="Menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-menu"></use></svg></a></div></header>
@@ -19,7 +19,7 @@ still image asked for something that did not happen.</p>
 </div></section>
 <div class="tsd-signature"><span class="tsd-signature-keyword">interface</span> <span class="tsd-kind-interface">EncodeOptions</span> <span class="tsd-signature-symbol">{</span><br/>    <a class="tsd-kind-property" href="#fps">fps</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#framedelays">frameDelays</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-keyword">readonly</span> <span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">[]</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#loop">loop</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#lossless">lossless</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#matte">matte</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#page">page</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#quality">quality</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">;</span><br/><span class="tsd-signature-symbol">}</span></div><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:42</li></ul></aside>
+<li>Defined in canvas.d.ts:18</li></ul></aside>
 <section class="tsd-panel-group tsd-index-group">
 <section class="tsd-panel tsd-index-panel">
 <details class="tsd-index-content tsd-accordion" open><summary class="tsd-accordion-summary tsd-index-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
@@ -44,35 +44,40 @@ still image asked for something that did not happen.</p>
 <div class="tsd-comment tsd-typography"><p>Frames per second for an animated format.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:62</li></ul></aside></section>
+<li>Defined in canvas.d.ts:52</li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="framedelays"><code class="tsd-tag">Optional</code> <code class="tsd-tag">Readonly</code><span>frame<wbr/>Delays</span><a href="#framedelays" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">frameDelays</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-keyword">readonly</span> <span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">[]</span></div>
 <div class="tsd-comment tsd-typography"><p>Per-frame durations in milliseconds, one per written page.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:64</li></ul></aside></section>
+<li>Defined in canvas.d.ts:54</li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="loop"><code class="tsd-tag">Optional</code> <code class="tsd-tag">Readonly</code><span>loop</span><a href="#loop" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">loop</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">number</span></div>
 <div class="tsd-comment tsd-typography"><p>How many times an animation plays. Absent plays it forever.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:66</li></ul></aside></section>
+<li>Defined in canvas.d.ts:56</li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="lossless"><code class="tsd-tag">Optional</code> <code class="tsd-tag">Readonly</code><span>lossless</span><a href="#lossless" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">lossless</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span></div>
-<div class="tsd-comment tsd-typography"><p>Encode WebP without loss.</p>
+<div class="tsd-comment tsd-typography"><p>Whether a WebP or AVIF encode is lossless. Left out, each format follows its own
+rule, which for WebP is the <code>quality</code>: lossless at <code>1</code>.</p>
+<p><code>true</code> writes a lossless WebP, still or animated, and a lossless AVIF; beside a
+<code>quality</code> below <code>1</code> it is refused, and so it is for every other format. <code>false</code>
+writes a lossy WebP at any quality, its finest at <code>1</code>. Passed to
+meo-skia-canvas's <code>EncodeOptions::lossless</code> as it is.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:46</li></ul></aside></section>
+<li>Defined in canvas.d.ts:36</li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="matte"><code class="tsd-tag">Optional</code> <code class="tsd-tag">Readonly</code><span>matte</span><a href="#matte" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">matte</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span></div>
 <div class="tsd-comment tsd-typography"><p>The colour transparency is flattened against, for a format with no alpha.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:48</li></ul></aside></section>
+<li>Defined in canvas.d.ts:38</li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="page"><code class="tsd-tag">Optional</code> <code class="tsd-tag">Readonly</code><span>page</span><a href="#page" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">page</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">number</span></div>
@@ -85,14 +90,17 @@ last one.</p>
 <p>An index past the last page is refused rather than clamped.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:60</li></ul></aside></section>
+<li>Defined in canvas.d.ts:50</li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="quality"><code class="tsd-tag">Optional</code> <code class="tsd-tag">Readonly</code><span>quality</span><a href="#quality" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">quality</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">number</span></div>
-<div class="tsd-comment tsd-typography"><p>Lossy quality from <code>0</code> to <code>1</code>, read by JPEG, WebP and AVIF.</p>
+<div class="tsd-comment tsd-typography"><p>Lossy quality from <code>0</code> to <code>1</code>, read by JPEG, WebP and AVIF. Left out, each
+format takes its own default.</p>
+<p>A WebP at <code>1</code>, with <code>lossless</code> left out, is lossless. AVIF at <code>1</code> is its finest
+lossy quantizer, not lossless.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:44</li></ul></aside></section></section></details></div>
+<li>Defined in canvas.d.ts:26</li></ul></aside></section></section></details></div>
 <div class="col-sidebar">
 <div class="page-menu">
 <div class="tsd-navigation settings">
@@ -110,7 +118,7 @@ last one.</p>
 <details open class="tsd-accordion tsd-page-navigation-section"><summary class="tsd-accordion-summary" data-key="section-Properties"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>Properties</summary>
 <div><a href="#fps"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>fps</span></a><a href="#framedelays"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>frame<wbr/>Delays</span></a><a href="#loop"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>loop</span></a><a href="#lossless"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>lossless</span></a><a href="#matte"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>matte</span></a><a href="#page"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>page</span></a><a href="#quality"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>quality</span></a></div></details></div></details></div>
 <div class="site-menu">
-<nav id="tsd-sidebar-links" class="tsd-navigation"><a href="https://github.com/l7aromeo/meo-canvas/tree/main" class="tsd-nav-link">Source</a><a href="https://www.npmjs.com/package/meo-canvas" class="tsd-nav-link">npm</a></nav>
+<nav id="tsd-sidebar-links" class="tsd-navigation"><a href="https://github.com/l7aromeo/meo-canvas/tree/main" class="tsd-nav-link">Source</a><a href="https://www.npmjs.com/package/meo-canvas" class="tsd-nav-link">npm</a><a href="https://docs.rs/meo-canvas" class="tsd-nav-link">Rust API</a></nav>
 <nav class="tsd-navigation"><a href="../modules.html">meo-canvas</a>
 <ul class="tsd-small-nested-navigation" id="tsd-nav-container">
 <li>Loading...</li></ul></nav></div></div></div><footer>

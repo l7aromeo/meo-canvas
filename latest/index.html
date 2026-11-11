@@ -1,6 +1,6 @@
 <!DOCTYPE html><html class="default" lang="en" data-base="./"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>meo-canvas</title><meta name="description" content="Documentation for meo-canvas"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="assets/style.css"/><link rel="stylesheet" href="assets/highlight.css"/><script defer src="assets/main.js"></script><script async src="assets/icons.js" id="tsd-icons-script"></script><script async src="assets/search.js" id="tsd-search-script"></script><script async src="assets/navigation.js" id="tsd-nav-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
 <div class="tsd-toolbar-contents container"><a href="index.html" class="title">meo-canvas</a>
-<div id="tsd-toolbar-links"><a href="https://github.com/l7aromeo/meo-canvas/tree/main">Source</a><a href="https://www.npmjs.com/package/meo-canvas">npm</a></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
+<div id="tsd-toolbar-links"><a href="https://github.com/l7aromeo/meo-canvas/tree/main">Source</a><a href="https://www.npmjs.com/package/meo-canvas">npm</a><a href="https://docs.rs/meo-canvas">Rust API</a></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
 <ul role="listbox" id="tsd-search-results"></ul>
 <div id="tsd-search-status" aria-live="polite" aria-atomic="true">
 <div>Preparing search index...</div></div></dialog><a href="#" class="tsd-widget menu" id="tsd-toolbar-menu-trigger" data-toggle="menu" aria-label="Menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-menu"></use></svg></a></div></header>
@@ -19,10 +19,11 @@
 <pre><code class="text">npm install meo-canvas
 </code><button type="button">Copy</button></pre>
 
-<p><strong>A bare install gives you 10.x.</strong> This line continues v9's package name rather
-than starting a new one, so <code>latest</code> moved from 9.x to 10.x when 10.0.0 shipped.
+<p><strong>A bare install gives you this renderer, 10.0.0 or later.</strong> This line continues
+v9's package name rather than starting a new one, so <code>latest</code> moved from 9.x to
+10.x when 10.0.0 shipped.
 If you want to stay on 9.x, ask for it by name: <code>npm install meo-canvas@9</code>.</p>
-<p>To run 9.x and 10.x side by side, alias one of them. npm resolves one directory
+<p>To run 9.x and this renderer side by side, alias one of them. npm resolves one directory
 per package name, so two names is what it takes:</p>
 <pre><code class="text">npm install meo-canvas-v9@npm:meo-canvas@9 meo-canvas
 </code><button type="button">Copy</button></pre>
@@ -127,16 +128,18 @@ byte.</p>
 <pre><code class="ts"><span class="hl-0">import</span><span class="hl-1"> { </span><span class="hl-2">Root</span><span class="hl-1">, </span><span class="hl-2">Text</span><span class="hl-1"> } </span><span class="hl-0">from</span><span class="hl-1"> </span><span class="hl-3">&#39;meo-canvas&#39;</span><br/><br/><span class="hl-4">const</span><span class="hl-1"> </span><span class="hl-5">FONTS</span><span class="hl-1"> = [{ </span><span class="hl-2">family:</span><span class="hl-1"> </span><span class="hl-3">&#39;Brand&#39;</span><span class="hl-1">, </span><span class="hl-2">paths:</span><span class="hl-1"> [</span><span class="hl-3">&#39;./fonts/Brand-Regular.ttf&#39;</span><span class="hl-1">, </span><span class="hl-3">&#39;./fonts/Brand-Bold.ttf&#39;</span><span class="hl-1">] }]</span><br/><br/><span class="hl-4">const</span><span class="hl-1"> </span><span class="hl-5">canvas</span><span class="hl-1"> = </span><span class="hl-0">await</span><span class="hl-1"> </span><span class="hl-6">Root</span><span class="hl-1">({</span><br/><span class="hl-1">  </span><span class="hl-2">width:</span><span class="hl-1"> </span><span class="hl-7">600</span><span class="hl-1">,</span><br/><span class="hl-1">  </span><span class="hl-2">height:</span><span class="hl-1"> </span><span class="hl-7">400</span><span class="hl-1">,</span><br/><span class="hl-1">  </span><span class="hl-2">fonts:</span><span class="hl-1"> </span><span class="hl-5">FONTS</span><span class="hl-1">,</span><br/><span class="hl-1">  </span><span class="hl-2">children:</span><span class="hl-1"> [</span><span class="hl-6">Text</span><span class="hl-1">(</span><span class="hl-3">&#39;Hello&#39;</span><span class="hl-1">, { </span><span class="hl-2">fontFamily:</span><span class="hl-1"> </span><span class="hl-3">&#39;Brand&#39;</span><span class="hl-1">, </span><span class="hl-2">fontSize:</span><span class="hl-1"> </span><span class="hl-7">24</span><span class="hl-1"> })],</span><br/><span class="hl-1">})</span><br/><span class="hl-2">canvas</span><span class="hl-1">.</span><span class="hl-6">release</span><span class="hl-1">()</span>
 </code><button type="button">Copy</button></pre>
 
-<p><strong>Registration is process-wide and permanent.</strong> A family registered by one
-render is registered for every render after it, nothing unregisters anything,
-and giving different files under the same name changes what that name draws from
-then on. A render that names a family it never registered does not fail — it
-uses whatever an earlier render left behind, which means the failure is not an
-error in a log but the wrong typeface in a picture nobody looks at twice.</p>
+<p><strong>Registration lasts the thread that made it, and cannot be undone.</strong> A family
+registered by one render is registered for every render after it on that thread,
+for as long as that thread runs; nothing unregisters anything, and giving
+different files under the same name changes what that name draws from then on. A
+render that names a family it never registered does not fail — it uses whatever
+an earlier render left behind, which means the failure is not an error in a log
+but the wrong typeface in a picture nobody looks at twice.</p>
 <p>So faces belong at start-up rather than per request. A server that registers one
 tenant's face per request is a server where the next request renders in the
-previous tenant's font. Registering the same list on every render is fine, and
-costs nothing beyond reading the files; varying it is the hazard.</p>
+previous tenant's font. Naming the same list on every render is fine: a file
+whose bytes the thread already holds under that family adds no face. Varying the
+list is the hazard.</p>
 <p>Worker threads each keep their own registry, so each has to register its own
 faces and each is affected only by itself. Two renders already in flight keep
 the faces they were given.</p>
@@ -205,10 +208,12 @@ end, which is about 73 a second on one thread</strong>: ~9 ms of paint, ~4 ms of
 same thread does about four a second at 4000×4000, where the encode alone is
 ~256 ms.</p>
 <p><strong>&quot;Paint&quot; here is the whole native call</strong> — the arena decode, resolve, measure,
-layout and the drawing. <code>AGENTS.md</code>'s benchmark table splits the same render
-differently, at 2.86 ms of <em>drawing</em> against 9.16 ms of encode, because its
-<code>draw</code> is only the last of those stages. The two agree on the total and measure
-different things; the roughly 6 ms between them is where the flat floor lives.</p>
+layout and the drawing. The
+<a href="https://github.com/l7aromeo/meo-canvas/blob/main/docs/design.md#performance-baseline">benchmark table</a>
+splits the same render differently, at 2.86 ms of <em>drawing</em> against 9.16 ms of
+encode, because its <code>draw</code> is only the last of those stages. The two agree on
+the total and measure different things; the roughly 6 ms between them is where
+the flat floor lives.</p>
 <p>So plan with the whole render rather than the floor. <strong>A thumbnail and a poster
 cost the same to paint and nothing like the same to encode</strong>, and the floor is
 what stops small scenes being free.</p>
@@ -347,7 +352,7 @@ comparing bytes.</p>
 <li><a href="#types"><span>Types</span></a></li>
 <li><a href="#licence"><span>Licence</span></a></li></ul></div></details></div>
 <div class="site-menu">
-<nav id="tsd-sidebar-links" class="tsd-navigation"><a href="https://github.com/l7aromeo/meo-canvas/tree/main" class="tsd-nav-link">Source</a><a href="https://www.npmjs.com/package/meo-canvas" class="tsd-nav-link">npm</a></nav>
+<nav id="tsd-sidebar-links" class="tsd-navigation"><a href="https://github.com/l7aromeo/meo-canvas/tree/main" class="tsd-nav-link">Source</a><a href="https://www.npmjs.com/package/meo-canvas" class="tsd-nav-link">npm</a><a href="https://docs.rs/meo-canvas" class="tsd-nav-link">Rust API</a></nav>
 <nav class="tsd-navigation"><a href="modules.html">meo-canvas</a>
 <ul class="tsd-small-nested-navigation" id="tsd-nav-container">
 <li>Loading...</li></ul></nav></div></div></div><footer>

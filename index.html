@@ -131,7 +131,7 @@
 
       <a class="headline" href="latest/">
         <span class="what">Latest stable</span>
-        <span class="v">v10.0.4</span>
+        <span class="v">v11.0.0</span>
         <span class="go">Read the reference →</span>
       </a>
       <p class="note">
@@ -141,7 +141,8 @@
 
       <h2>All releases</h2>
       <ul class="releases">
-          <li><a href="v10.0.4/"><span class="v">v10.0.4</span><span class="tags"><span class="tag here">latest/</span><span class="tag stable">stable</span></span></a></li>
+          <li><a href="v11.0.0/"><span class="v">v11.0.0</span><span class="tags"><span class="tag here">latest/</span><span class="tag stable">stable</span></span></a></li>
+          <li><a href="v10.0.4/"><span class="v">v10.0.4</span><span class="tags"><span class="tag stable">stable</span></span></a></li>
           <li><a href="v10.0.3/"><span class="v">v10.0.3</span><span class="tags"><span class="tag stable">stable</span></span></a></li>
           <li><a href="v10.0.2/"><span class="v">v10.0.2</span><span class="tags"><span class="tag stable">stable</span></span></a></li>
           <li><a href="v10.0.1/"><span class="v">v10.0.1</span><span class="tags"><span class="tag stable">stable</span></span></a></li>
@@ -151,25 +152,13 @@
           <li><a href="v10.0.0-alpha.5/"><span class="v">v10.0.0-alpha.5</span><span class="tags"><span class="tag pre">prerelease</span></span></a></li>
       </ul>
 
-      <!-- Two links are absent rather than forgotten: docs.rs and crates.io.
-           The crate has never been published -- index.crates.io answers
-           NoSuchKey for meo-canvas, which is the decisive check, since
-           crates.io and npmjs both answer 403 to curl and prove nothing --
-           and docs.rs is 404 in consequence. A dead "Rust reference" on the
-           landing page of a library whose Rust surface is the primary one is
-           worse than no link, because a reader cannot tell a "not yet" from a
-           "broken".
-
-           **Put both back the day the crate is published**, which is blocked
-           behind the branch swap, which is blocked behind a taffy release --
-           so this is weeks rather than days and not worth a placeholder. They
-           are not conditional on anything this script can see: a landing page
-           that needs the network to build is one that fails to build, which is
-           the same reason there are no dates. A footer that changes when a
-           fact changes beats a footer that explains itself. -->
+      <!-- The source, both registries, and the Rust API reference on docs.rs.
+           Fixed URLs, so the page builds without the network. -->
       <footer>
         <a href="https://github.com/l7aromeo/meo-canvas">Source</a>
         <a href="https://www.npmjs.com/package/meo-canvas">npm</a>
+        <a href="https://crates.io/crates/meo-canvas">crates.io</a>
+        <a href="https://docs.rs/meo-canvas">Rust API</a>
       </footer>
     </div>
   </body>

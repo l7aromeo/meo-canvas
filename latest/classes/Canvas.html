@@ -1,6 +1,6 @@
 <!DOCTYPE html><html class="default" lang="en" data-base="../"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>Canvas | meo-canvas</title><meta name="description" content="Documentation for meo-canvas"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="../assets/style.css"/><link rel="stylesheet" href="../assets/highlight.css"/><script defer src="../assets/main.js"></script><script async src="../assets/icons.js" id="tsd-icons-script"></script><script async src="../assets/search.js" id="tsd-search-script"></script><script async src="../assets/navigation.js" id="tsd-nav-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
 <div class="tsd-toolbar-contents container"><a href="../index.html" class="title">meo-canvas</a>
-<div id="tsd-toolbar-links"><a href="https://github.com/l7aromeo/meo-canvas/tree/main">Source</a><a href="https://www.npmjs.com/package/meo-canvas">npm</a></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
+<div id="tsd-toolbar-links"><a href="https://github.com/l7aromeo/meo-canvas/tree/main">Source</a><a href="https://www.npmjs.com/package/meo-canvas">npm</a><a href="https://docs.rs/meo-canvas">Rust API</a></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
 <ul role="listbox" id="tsd-search-results"></ul>
 <div id="tsd-search-status" aria-live="polite" aria-atomic="true">
 <div>Preparing search index...</div></div></dialog><a href="#" class="tsd-widget menu" id="tsd-toolbar-menu-trigger" data-toggle="menu" aria-label="Menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-menu"></use></svg></a></div></header>
@@ -16,7 +16,7 @@
 and nothing else, so every method here is an encode of work already done.</p>
 </div></section><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:150</li></ul></aside>
+<li>Defined in canvas.d.ts:140</li></ul></aside>
 <section class="tsd-panel-group tsd-index-group">
 <section class="tsd-panel tsd-index-panel">
 <details class="tsd-index-content tsd-accordion" open><summary class="tsd-accordion-summary tsd-index-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
@@ -68,16 +68,8 @@ and nothing else, so every method here is an encode of work already done.</p>
 <li class="">
 <div class="tsd-signature tsd-anchor-link" id="constructorcanvas"><span class="tsd-signature-keyword">new</span> <span class="tsd-kind-constructor-signature">Canvas</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">native</span><span class="tsd-signature-symbol">:</span> <a href="../interfaces/NativeCanvas.html" class="tsd-signature-type tsd-kind-interface">NativeCanvas</a><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <a href="" class="tsd-signature-type tsd-kind-class">Canvas</a><a href="#constructorcanvas" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
 <div class="tsd-description">
-<div class="tsd-comment tsd-typography"><p>Wraps a native surface.</p>
-<p><strong>One argument, where there were three.</strong> The other two were a filesystem,
-injected so this class could be tested without a disk. They cannot survive
-the encode moving into the file: <code>toFile</code> no longer produces a buffer for
-anyone to write, so a caller supplying a writer would have been passing
-something nothing could call — a documented capability that silently did
-nothing.</p>
-<p>The seam did not go, it moved. A test substitutes a <a href="../interfaces/NativeCanvas.html" class="tsd-kind-interface">NativeCanvas</a>,
-which is where <code>encode</code> was always mocked anyway, and a host without
-<code>node:fs</code> supplies one too. One injection point instead of two.</p>
+<div class="tsd-comment tsd-typography"><p>Wraps a native surface. This is the one injection point: a test, or a host
+without <code>node:fs</code>, substitutes a <a href="../interfaces/NativeCanvas.html" class="tsd-kind-interface">NativeCanvas</a>.</p>
 </div>
 <div class="tsd-parameters">
 <h4 class="tsd-parameters-title">Parameters</h4>
@@ -85,7 +77,7 @@ which is where <code>encode</code> was always mocked anyway, and a host without
 <li><span><span class="tsd-kind-parameter">native</span>: <a href="../interfaces/NativeCanvas.html" class="tsd-signature-type tsd-kind-interface">NativeCanvas</a></span></li></ul></div>
 <h4 class="tsd-returns-title">Returns <a href="" class="tsd-signature-type tsd-kind-class">Canvas</a></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:166</li></ul></aside></div></li></ul></section></section></details>
+<li>Defined in canvas.d.ts:146</li></ul></aside></div></li></ul></section></section></details>
 <details class="tsd-panel-group tsd-member-group tsd-accordion" open><summary class="tsd-accordion-summary" data-key="section-Accessors"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
 <h2 class="tsd-anchor-link" id="accessors-1">Accessors<a href="#accessors-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h2></summary>
 <section>
@@ -99,7 +91,7 @@ which is where <code>encode</code> was always mocked anyway, and a host without
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">Uint8Array</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">ArrayBufferLike</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:269</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:226</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="avif"><span>avif</span><a href="#avif" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -110,7 +102,7 @@ which is where <code>encode</code> was always mocked anyway, and a host without
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">Uint8Array</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">ArrayBufferLike</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:259</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:216</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="bmp"><span>bmp</span><a href="#bmp" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -121,14 +113,16 @@ which is where <code>encode</code> was always mocked anyway, and a host without
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">Uint8Array</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">ArrayBufferLike</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:261</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:218</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="diagnostics"><span>diagnostics</span><a href="#diagnostics" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
 <li>
 <div class="tsd-signature" id="diagnosticsdiagnostics"><span class="tsd-signature-keyword">get</span> <span class="tsd-kind-get-signature">diagnostics</span><span class="tsd-signature-symbol">()</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-keyword">readonly</span> <a href="../interfaces/Diagnostic.html" class="tsd-signature-type tsd-kind-interface">Diagnostic</a><span class="tsd-signature-symbol">[]</span></div>
 <div class="tsd-description">
-<div class="tsd-comment tsd-typography"><p>What this render's input said that could not be used.</p>
+<div class="tsd-comment tsd-typography"><p>What this render's input said that could not be used: a markup tag, or a
+<code>filter</code> or <code>backdropFilter</code> chain the renderer refuses, which is drawn as
+though it were not set, as Chrome drops an invalid declaration.</p>
 <p><strong>Separate from <a href="#warnings" class="tsd-kind-accessor">Canvas.warnings</a>, and the distinction is the
 point.</strong> A warning says the world did not answer — a fetch that failed. A
 diagnostic says the input did not say what it meant, which is the
@@ -141,7 +135,7 @@ in the picture can tell them apart.</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-keyword">readonly</span> <a href="../interfaces/Diagnostic.html" class="tsd-signature-type tsd-kind-interface">Diagnostic</a><span class="tsd-signature-symbol">[]</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:351</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:308</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="engine"><span>engine</span><a href="#engine" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -151,14 +145,12 @@ in the picture can tell them apart.</p>
 <div class="tsd-comment tsd-typography"><p>Which rasteriser drew the pages: <code>'gpu'</code> or <code>'cpu'</code>.</p>
 <p>The outcome rather than the request, and they disagree: a build with no GPU
 backend compiled, a driver that declines, and a float <code>colorType</code> all
-rasterise on the CPU whatever <code>gpu</code> says. v1 reports both for this reason,
-and without it a caller who asks for the GPU and gets the CPU has no way to
-find out — the same shape of invisibility that hid a missing build feature
-from this project for a session.</p>
+rasterise on the CPU whatever <code>gpu</code> says. Without this, a caller who asks
+for the GPU and gets the CPU has no way to find out.</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">string</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:305</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:260</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="gif"><span>gif</span><a href="#gif" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -169,7 +161,7 @@ from this project for a session.</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">Uint8Array</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">ArrayBufferLike</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:267</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:224</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="gpu"><span>gpu</span><a href="#gpu" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -183,7 +175,7 @@ the renderer's own default.</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">boolean</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:294</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:251</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="ico"><span>ico</span><a href="#ico" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -194,7 +186,7 @@ the renderer's own default.</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">Uint8Array</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">ArrayBufferLike</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:263</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:220</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="jpg"><span>jpg</span><a href="#jpg" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -205,7 +197,7 @@ the renderer's own default.</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">Uint8Array</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">ArrayBufferLike</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:255</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:212</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="pagecount"><span>page<wbr/>Count</span><a href="#pagecount" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -218,7 +210,7 @@ for PDF and TIFF, one size of the same icon for ICO.</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">number</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:312</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:267</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="pdf"><span>pdf</span><a href="#pdf" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -229,7 +221,7 @@ for PDF and TIFF, one size of the same icon for ICO.</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">Uint8Array</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">ArrayBufferLike</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:273</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:230</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="png"><span>png</span><a href="#png" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -240,7 +232,7 @@ for PDF and TIFF, one size of the same icon for ICO.</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">Uint8Array</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">ArrayBufferLike</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:253</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:210</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="raw"><span>raw</span><a href="#raw" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -251,7 +243,7 @@ for PDF and TIFF, one size of the same icon for ICO.</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">Uint8Array</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">ArrayBufferLike</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:275</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:232</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="released"><span>released</span><a href="#released" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -262,7 +254,7 @@ for PDF and TIFF, one size of the same icon for ICO.</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">boolean</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:286</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:243</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="scale"><span>scale</span><a href="#scale" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -275,7 +267,7 @@ about where things sit.</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">number</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:319</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:274</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="svg"><span>svg</span><a href="#svg" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -286,7 +278,7 @@ about where things sit.</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">Uint8Array</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">ArrayBufferLike</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:271</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:228</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="tiff"><span>tiff</span><a href="#tiff" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -297,7 +289,7 @@ about where things sit.</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">Uint8Array</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">ArrayBufferLike</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:265</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:222</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="warnings"><span>warnings</span><a href="#warnings" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -317,7 +309,7 @@ Each entry is a picture that was asked for and did not arrive.</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-keyword">readonly</span> <a href="../interfaces/ImageWarning.html" class="tsd-signature-type tsd-kind-interface">ImageWarning</a><span class="tsd-signature-symbol">[]</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:335</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:290</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="webp"><span>webp</span><a href="#webp" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -328,7 +320,7 @@ Each entry is a picture that was asked for and did not arrive.</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">Uint8Array</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">ArrayBufferLike</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:257</li></ul></aside></div></li></ul></section></section></details>
+<li>Defined in canvas.d.ts:214</li></ul></aside></div></li></ul></section></section></details>
 <details class="tsd-panel-group tsd-member-group tsd-accordion" open><summary class="tsd-accordion-summary" data-key="section-Methods"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
 <h2 class="tsd-anchor-link" id="methods-1">Methods<a href="#methods-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h2></summary>
 <section>
@@ -346,7 +338,7 @@ every other method throws afterwards rather than reading freed memory.</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">void</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:284</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:241</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="tobuffer"><span>to<wbr/>Buffer</span><a href="#tobuffer" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -359,14 +351,10 @@ drawing rather than a bitmap. So this is what costs time in proportion to
 the canvas area — about 11 ms at 800×800, 65 ms at 2000×2000 and 256 ms at
 4000×4000 on one machine — and this is what throws when the area is more
 than the host can allocate, however long ago the size was chosen.</p>
-<p><strong>That time is not spent on the event loop.</strong> It used to be: this method
-returned a promise that was already settled, having blocked every other
-request in the process for the whole encode, so <code>await</code> bought a tick and
-nothing else. What crosses to the worker is the recorded pages, not the
-scene — the drawing is already shaped, so the worker consults no font and
-cannot substitute one.</p>
-<p>The remaining loop time is the half of an export that needs the canvas,
-which is small and does not grow with area the way the encode does.</p>
+<p><strong>That time is not spent on the event loop.</strong> What crosses to the worker is
+the recorded pages, not the scene — the drawing is already shaped, so the
+worker consults no font and cannot substitute one. The loop keeps only the
+half of an export that needs the canvas, which does not grow with area.</p>
 <p>See <a href="#tobuffersync" class="tsd-kind-method">Canvas.toBufferSync</a> for why the type is <code>Buffer</code>.</p>
 </div>
 <div class="tsd-parameters">
@@ -376,7 +364,7 @@ which is small and does not grow with area the way the encode does.</p>
 <li><span><code class="tsd-tag">Optional</code><span class="tsd-kind-parameter">options</span>: <a href="../interfaces/EncodeOptions.html" class="tsd-signature-type tsd-kind-interface">EncodeOptions</a></span></li></ul></div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">Buffer</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">ArrayBufferLike</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:188</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:163</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="tobuffersync"><span>to<wbr/>Buffer<wbr/>Sync</span><a href="#tobuffersync" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -385,20 +373,10 @@ which is small and does not grow with area the way the encode does.</p>
 <div class="tsd-description">
 <div class="tsd-comment tsd-typography"><p>Encodes the canvas and returns the bytes.</p>
 <p>The same bytes <a href="#tobuffer" class="tsd-kind-method">Canvas.toBuffer</a> resolves with, produced on the
-calling thread instead of a worker. <strong>A genuine choice rather than the
-same call twice</strong>: this one blocks the event loop for the whole encode,
-which is what a script wants and what a server does not.</p>
-<h1 id="why-and-not" class="tsd-anchor-link">Why <code>Buffer</code> and not <code>Uint8Array</code><a href="#why-and-not" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h1>
-<p><strong>Because a <code>Buffer</code> is what already came back.</strong> The addon returns a
-Neon <code>JsBuffer</code> and always has; the declaration said <code>Uint8Array</code>, which
-was a false statement about the value. <code>Buffer</code> extends <code>Uint8Array</code>, so
-this narrows the type without changing a byte, and every caller that
-wanted either is satisfied.</p>
-<p><strong>It is not a fix for sharp.</strong> sharp accepts a plain <code>Uint8Array</code> — its
-<code>SharpInput</code> names the type, and 0.34.5, 0.35.3 and 0.35.4 each read one
-back to <code>png 410x140</code> when measured. Whatever a caller hit handing this to
-sharp, this was not it, and the type being honest is worth having on its
-own.</p>
+calling thread instead of a worker: this one blocks the event loop for the
+whole encode, which is what a script wants and what a server does not.</p>
+<p>A <code>Buffer</code>, because that is the value the addon returns; <code>Buffer</code> extends
+<code>Uint8Array</code>, so a caller wanting either is satisfied.</p>
 </div>
 <div class="tsd-parameters">
 <h4 class="tsd-parameters-title">Parameters</h4>
@@ -407,7 +385,7 @@ own.</p>
 <li><span><code class="tsd-tag">Optional</code><span class="tsd-kind-parameter">options</span>: <a href="../interfaces/EncodeOptions.html" class="tsd-signature-type tsd-kind-interface">EncodeOptions</a></span></li></ul></div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Buffer</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:211</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:174</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="todataurl"><span>to<wbr/>Data<wbr/>URL</span><a href="#todataurl" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -416,7 +394,7 @@ own.</p>
 <div class="tsd-description">
 <div class="tsd-comment tsd-typography"><p>The <code>HTMLCanvasElement</code> spelling of <a href="#tourlsync" class="tsd-kind-method">Canvas.toURLSync</a>.</p>
 <p>Synchronous and taking a quality rather than an options object, because the
-DOM method it is named after is both. v1 has it for the same reason.</p>
+DOM method it is named after is both.</p>
 </div>
 <div class="tsd-parameters">
 <h4 class="tsd-parameters-title">Parameters</h4>
@@ -425,7 +403,7 @@ DOM method it is named after is both. v1 has it for the same reason.</p>
 <li><span><code class="tsd-tag">Optional</code><span class="tsd-kind-parameter">quality</span>: <span class="tsd-signature-type">number</span></span></li></ul></div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">string</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:251</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:208</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="tofile"><span>to<wbr/>File</span><a href="#tofile" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -433,14 +411,9 @@ DOM method it is named after is both. v1 has it for the same reason.</p>
 <div class="tsd-signature tsd-anchor-link" id="tofile-1"><span class="tsd-kind-call-signature">toFile</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">path</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-kind-parameter">options</span><span class="tsd-signature-symbol">?:</span> <a href="../interfaces/EncodeOptions.html" class="tsd-signature-type tsd-kind-interface">EncodeOptions</a><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">void</span><span class="tsd-signature-symbol">&gt;</span><a href="#tofile-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
 <div class="tsd-description">
 <div class="tsd-comment tsd-typography"><p>Encodes the canvas on a worker and writes it to <code>path</code>.</p>
-<p><strong>The bytes never come back through JavaScript.</strong> They used to: this
-encoded to a <code>Buffer</code>, resolved it here, and handed it to a write — so a
-three-hundred-frame animation had to exist whole in memory before any of
-it reached the disk. The file is now written where it is encoded, and a
-spanning format streams into it page by page.</p>
-<p>That is also why the filesystem injected into the constructor is not on
-this path any more. It cannot be: the point is that no buffer crosses back
-for anyone to write.</p>
+<p><strong>The bytes never come back through JavaScript.</strong> The file is written where
+it is encoded, and a spanning format streams into it page by page, so a long
+animation is bounded by disk rather than by memory.</p>
 </div>
 <div class="tsd-parameters">
 <h4 class="tsd-parameters-title">Parameters</h4>
@@ -449,7 +422,7 @@ for anyone to write.</p>
 <li><span><code class="tsd-tag">Optional</code><span class="tsd-kind-parameter">options</span>: <a href="../interfaces/EncodeOptions.html" class="tsd-signature-type tsd-kind-interface">EncodeOptions</a></span></li></ul></div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">void</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:225</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:182</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="tofilesync"><span>to<wbr/>File<wbr/>Sync</span><a href="#tofilesync" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -468,7 +441,7 @@ place — see <a href="../interfaces/NativeCanvas.html#write" class="tsd-kind-me
 <li><span><code class="tsd-tag">Optional</code><span class="tsd-kind-parameter">options</span>: <a href="../interfaces/EncodeOptions.html" class="tsd-signature-type tsd-kind-interface">EncodeOptions</a></span></li></ul></div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">void</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:233</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:190</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="tourl"><span>to<wbr/>URL</span><a href="#tourl" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -488,7 +461,7 @@ time it is bytes, against the hundred milliseconds that made it.</p>
 <li><span><code class="tsd-tag">Optional</code><span class="tsd-kind-parameter">options</span>: <a href="../interfaces/EncodeOptions.html" class="tsd-signature-type tsd-kind-interface">EncodeOptions</a></span></li></ul></div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:242</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:199</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="tourlsync"><span>to<wbr/>URL<wbr/>Sync</span><a href="#tourlsync" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -504,7 +477,7 @@ time it is bytes, against the hundred milliseconds that made it.</p>
 <li><span><code class="tsd-tag">Optional</code><span class="tsd-kind-parameter">options</span>: <a href="../interfaces/EncodeOptions.html" class="tsd-signature-type tsd-kind-interface">EncodeOptions</a></span></li></ul></div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">string</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:244</li></ul></aside></div></li></ul></section></section></details></div>
+<li>Defined in canvas.d.ts:201</li></ul></aside></div></li></ul></section></section></details></div>
 <div class="col-sidebar">
 <div class="page-menu">
 <div class="tsd-navigation settings">
@@ -524,11 +497,9 @@ time it is bytes, against the hundred milliseconds that made it.</p>
 <details open class="tsd-accordion tsd-page-navigation-section"><summary class="tsd-accordion-summary" data-key="section-Accessors"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>Accessors</summary>
 <div><a href="#apng"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>apng</span></a><a href="#avif"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>avif</span></a><a href="#bmp"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>bmp</span></a><a href="#diagnostics"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>diagnostics</span></a><a href="#engine"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>engine</span></a><a href="#gif"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>gif</span></a><a href="#gpu"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>gpu</span></a><a href="#ico"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>ico</span></a><a href="#jpg"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>jpg</span></a><a href="#pagecount"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>page<wbr/>Count</span></a><a href="#pdf"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>pdf</span></a><a href="#png"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>png</span></a><a href="#raw"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>raw</span></a><a href="#released"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>released</span></a><a href="#scale"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>scale</span></a><a href="#svg"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>svg</span></a><a href="#tiff"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>tiff</span></a><a href="#warnings"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>warnings</span></a><a href="#webp"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>webp</span></a></div></details>
 <details open class="tsd-accordion tsd-page-navigation-section"><summary class="tsd-accordion-summary" data-key="section-Methods"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>Methods</summary>
-<div><a href="#release"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>release</span></a><a href="#tobuffer"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>to<wbr/>Buffer</span></a><a href="#tobuffersync"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>to<wbr/>Buffer<wbr/>Sync</span></a>
-<ul>
-<li><a href="#why-and-not"><span>Why  and not </span></a></li></ul><a href="#todataurl"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>to<wbr/>Data<wbr/>URL</span></a><a href="#tofile"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>to<wbr/>File</span></a><a href="#tofilesync"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>to<wbr/>File<wbr/>Sync</span></a><a href="#tourl"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>to<wbr/>URL</span></a><a href="#tourlsync"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>to<wbr/>URL<wbr/>Sync</span></a></div></details></div></details></div>
+<div><a href="#release"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>release</span></a><a href="#tobuffer"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>to<wbr/>Buffer</span></a><a href="#tobuffersync"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>to<wbr/>Buffer<wbr/>Sync</span></a><a href="#todataurl"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>to<wbr/>Data<wbr/>URL</span></a><a href="#tofile"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>to<wbr/>File</span></a><a href="#tofilesync"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>to<wbr/>File<wbr/>Sync</span></a><a href="#tourl"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>to<wbr/>URL</span></a><a href="#tourlsync"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>to<wbr/>URL<wbr/>Sync</span></a></div></details></div></details></div>
 <div class="site-menu">
-<nav id="tsd-sidebar-links" class="tsd-navigation"><a href="https://github.com/l7aromeo/meo-canvas/tree/main" class="tsd-nav-link">Source</a><a href="https://www.npmjs.com/package/meo-canvas" class="tsd-nav-link">npm</a></nav>
+<nav id="tsd-sidebar-links" class="tsd-navigation"><a href="https://github.com/l7aromeo/meo-canvas/tree/main" class="tsd-nav-link">Source</a><a href="https://www.npmjs.com/package/meo-canvas" class="tsd-nav-link">npm</a><a href="https://docs.rs/meo-canvas" class="tsd-nav-link">Rust API</a></nav>
 <nav class="tsd-navigation"><a href="../modules.html">meo-canvas</a>
 <ul class="tsd-small-nested-navigation" id="tsd-nav-container">
 <li>Loading...</li></ul></nav></div></div></div><footer>

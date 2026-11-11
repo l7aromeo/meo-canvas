@@ -1,6 +1,6 @@
 <!DOCTYPE html><html class="default" lang="en" data-base="../"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>NativeCanvas | meo-canvas</title><meta name="description" content="Documentation for meo-canvas"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="../assets/style.css"/><link rel="stylesheet" href="../assets/highlight.css"/><script defer src="../assets/main.js"></script><script async src="../assets/icons.js" id="tsd-icons-script"></script><script async src="../assets/search.js" id="tsd-search-script"></script><script async src="../assets/navigation.js" id="tsd-nav-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
 <div class="tsd-toolbar-contents container"><a href="../index.html" class="title">meo-canvas</a>
-<div id="tsd-toolbar-links"><a href="https://github.com/l7aromeo/meo-canvas/tree/main">Source</a><a href="https://www.npmjs.com/package/meo-canvas">npm</a></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
+<div id="tsd-toolbar-links"><a href="https://github.com/l7aromeo/meo-canvas/tree/main">Source</a><a href="https://www.npmjs.com/package/meo-canvas">npm</a><a href="https://docs.rs/meo-canvas">Rust API</a></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
 <ul role="listbox" id="tsd-search-results"></ul>
 <div id="tsd-search-status" aria-live="polite" aria-atomic="true">
 <div>Preparing search index...</div></div></dialog><a href="#" class="tsd-widget menu" id="tsd-toolbar-menu-trigger" data-toggle="menu" aria-label="Menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-menu"></use></svg></a></div></header>
@@ -25,7 +25,7 @@ this pair exists to stop being true.</p>
 </div></section>
 <div class="tsd-signature"><span class="tsd-signature-keyword">interface</span> <span class="tsd-kind-interface">NativeCanvas</span> <span class="tsd-signature-symbol">{</span><br/>    <a class="tsd-kind-property" href="#diagnostics">diagnostics</a><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-keyword">readonly</span> <a href="Diagnostic.html" class="tsd-signature-type tsd-kind-interface">Diagnostic</a><span class="tsd-signature-symbol">[]</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#engine">engine</a><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#gpu">gpu</a><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">boolean</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#pagecount">pageCount</a><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#scale">scale</a><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#warnings">warnings</a><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-keyword">readonly</span> <a href="ImageWarning.html" class="tsd-signature-type tsd-kind-interface">ImageWarning</a><span class="tsd-signature-symbol">[]</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-call-signature" href="#encode-1">encode</a><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">format</span><span class="tsd-signature-symbol">:</span> <a href="../types/Format.html" class="tsd-signature-type tsd-kind-type-alias">Format</a><span class="tsd-signature-symbol">,</span> <span class="tsd-kind-parameter">options</span><span class="tsd-signature-symbol">:</span> <a href="EncodeOptions.html" class="tsd-signature-type tsd-kind-interface">EncodeOptions</a><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Buffer</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-call-signature" href="#encodeasync-1">encodeAsync</a><span class="tsd-signature-symbol">(</span><br/>        <span class="tsd-kind-parameter">format</span><span class="tsd-signature-symbol">:</span> <a href="../types/Format.html" class="tsd-signature-type tsd-kind-type-alias">Format</a><span class="tsd-signature-symbol">,</span><br/>        <span class="tsd-kind-parameter">options</span><span class="tsd-signature-symbol">:</span> <a href="EncodeOptions.html" class="tsd-signature-type tsd-kind-interface">EncodeOptions</a><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">Buffer</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">ArrayBufferLike</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-call-signature" href="#release-1">release</a><span class="tsd-signature-symbol">()</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">void</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-call-signature" href="#write-1">write</a><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">path</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-kind-parameter">format</span><span class="tsd-signature-symbol">:</span> <a href="../types/Format.html" class="tsd-signature-type tsd-kind-type-alias">Format</a><span class="tsd-signature-symbol">,</span> <span class="tsd-kind-parameter">options</span><span class="tsd-signature-symbol">:</span> <a href="EncodeOptions.html" class="tsd-signature-type tsd-kind-interface">EncodeOptions</a><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">void</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-call-signature" href="#writeasync-1">writeAsync</a><span class="tsd-signature-symbol">(</span><br/>        <span class="tsd-kind-parameter">path</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span><br/>        <span class="tsd-kind-parameter">format</span><span class="tsd-signature-symbol">:</span> <a href="../types/Format.html" class="tsd-signature-type tsd-kind-type-alias">Format</a><span class="tsd-signature-symbol">,</span><br/>        <span class="tsd-kind-parameter">options</span><span class="tsd-signature-symbol">:</span> <a href="EncodeOptions.html" class="tsd-signature-type tsd-kind-interface">EncodeOptions</a><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">void</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">;</span><br/><span class="tsd-signature-symbol">}</span></div><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:83</li></ul></aside>
+<li>Defined in canvas.d.ts:73</li></ul></aside>
 <section class="tsd-panel-group tsd-index-group">
 <section class="tsd-panel tsd-index-panel">
 <details class="tsd-index-content tsd-accordion" open><summary class="tsd-accordion-summary tsd-index-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
@@ -57,42 +57,42 @@ this pair exists to stop being true.</p>
 <div class="tsd-comment tsd-typography"><p>What the input said that could not be used.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:142</li></ul></aside></section>
+<li>Defined in canvas.d.ts:132</li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="engine"><code class="tsd-tag">Readonly</code><span>engine</span><a href="#engine" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">engine</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span></div>
 <div class="tsd-comment tsd-typography"><p>Which rasteriser drew the pages: <code>'gpu'</code> or <code>'cpu'</code>.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:134</li></ul></aside></section>
+<li>Defined in canvas.d.ts:124</li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="gpu"><code class="tsd-tag">Readonly</code><span>gpu</span><a href="#gpu" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">gpu</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">boolean</span></div>
 <div class="tsd-comment tsd-typography"><p>Whether the GPU was asked for.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:132</li></ul></aside></section>
+<li>Defined in canvas.d.ts:122</li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="pagecount"><code class="tsd-tag">Readonly</code><span>page<wbr/>Count</span><a href="#pagecount" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">pageCount</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">number</span></div>
 <div class="tsd-comment tsd-typography"><p>How many pages were painted.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:136</li></ul></aside></section>
+<li>Defined in canvas.d.ts:126</li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="scale"><code class="tsd-tag">Readonly</code><span>scale</span><a href="#scale" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">scale</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">number</span></div>
 <div class="tsd-comment tsd-typography"><p>The device-pixel multiplier the pages were drawn at.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:138</li></ul></aside></section>
+<li>Defined in canvas.d.ts:128</li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="warnings"><code class="tsd-tag">Readonly</code><span>warnings</span><a href="#warnings" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">warnings</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-keyword">readonly</span> <a href="ImageWarning.html" class="tsd-signature-type tsd-kind-interface">ImageWarning</a><span class="tsd-signature-symbol">[]</span></div>
 <div class="tsd-comment tsd-typography"><p>Every image source that could not be resolved, in node order.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:140</li></ul></aside></section></section></details>
+<li>Defined in canvas.d.ts:130</li></ul></aside></section></section></details>
 <details class="tsd-panel-group tsd-member-group tsd-accordion" open><summary class="tsd-accordion-summary" data-key="section-Methods"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
 <h2 class="tsd-anchor-link" id="methods-1">Methods<a href="#methods-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h2></summary>
 <section>
@@ -104,7 +104,7 @@ this pair exists to stop being true.</p>
 <div class="tsd-description">
 <div class="tsd-comment tsd-typography"><p>Encodes the painted pages and returns the bytes.</p>
 <p>A Node <code>Buffer</code>, which is what the addon hands back: it builds the result
-with Neon's <code>JsBuffer::from_slice</code> (<code>crates/meo-canvas-node/src/lib.rs:485</code>).
+with Neon's <code>JsBuffer::from_slice</code> in <code>crates/meo-canvas-node/src/lib.rs</code>.
 A caller supplying their own native surface for a test may return any
 <code>Buffer</code>; a plain <code>Uint8Array</code> would be a different value from the one this
 package ships.</p>
@@ -116,7 +116,7 @@ package ships.</p>
 <li><span><span class="tsd-kind-parameter">options</span>: <a href="EncodeOptions.html" class="tsd-signature-type tsd-kind-interface">EncodeOptions</a></span></li></ul></div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Buffer</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:93</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:83</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="encodeasync"><span>encode<wbr/>Async</span><a href="#encodeasync" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -139,7 +139,7 @@ settles the promise.</p>
 <li><span><span class="tsd-kind-parameter">options</span>: <a href="EncodeOptions.html" class="tsd-signature-type tsd-kind-interface">EncodeOptions</a></span></li></ul></div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">Buffer</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">ArrayBufferLike</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:106</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:96</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="release"><span>release</span><a href="#release" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -150,7 +150,7 @@ settles the promise.</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">void</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:130</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:120</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="write"><span>write</span><a href="#write" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -176,7 +176,7 @@ places to answer it.</p>
 <li><span><span class="tsd-kind-parameter">options</span>: <a href="EncodeOptions.html" class="tsd-signature-type tsd-kind-interface">EncodeOptions</a></span></li></ul></div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">void</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:121</li></ul></aside></div></li></ul></section>
+<li>Defined in canvas.d.ts:111</li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="writeasync"><span>write<wbr/>Async</span><a href="#writeasync" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -195,7 +195,7 @@ way <a href="#encodeasync" class="tsd-kind-method">NativeCanvas.encodeAsync</a> 
 <li><span><span class="tsd-kind-parameter">options</span>: <a href="EncodeOptions.html" class="tsd-signature-type tsd-kind-interface">EncodeOptions</a></span></li></ul></div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">void</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in canvas.d.ts:128</li></ul></aside></div></li></ul></section></section></details></div>
+<li>Defined in canvas.d.ts:118</li></ul></aside></div></li></ul></section></section></details></div>
 <div class="col-sidebar">
 <div class="page-menu">
 <div class="tsd-navigation settings">
@@ -215,7 +215,7 @@ way <a href="#encodeasync" class="tsd-kind-method">NativeCanvas.encodeAsync</a> 
 <details open class="tsd-accordion tsd-page-navigation-section"><summary class="tsd-accordion-summary" data-key="section-Methods"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>Methods</summary>
 <div><a href="#encode"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>encode</span></a><a href="#encodeasync"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>encode<wbr/>Async</span></a><a href="#release"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>release</span></a><a href="#write"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>write</span></a><a href="#writeasync"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>write<wbr/>Async</span></a></div></details></div></details></div>
 <div class="site-menu">
-<nav id="tsd-sidebar-links" class="tsd-navigation"><a href="https://github.com/l7aromeo/meo-canvas/tree/main" class="tsd-nav-link">Source</a><a href="https://www.npmjs.com/package/meo-canvas" class="tsd-nav-link">npm</a></nav>
+<nav id="tsd-sidebar-links" class="tsd-navigation"><a href="https://github.com/l7aromeo/meo-canvas/tree/main" class="tsd-nav-link">Source</a><a href="https://www.npmjs.com/package/meo-canvas" class="tsd-nav-link">npm</a><a href="https://docs.rs/meo-canvas" class="tsd-nav-link">Rust API</a></nav>
 <nav class="tsd-navigation"><a href="../modules.html">meo-canvas</a>
 <ul class="tsd-small-nested-navigation" id="tsd-nav-container">
 <li>Loading...</li></ul></nav></div></div></div><footer>
