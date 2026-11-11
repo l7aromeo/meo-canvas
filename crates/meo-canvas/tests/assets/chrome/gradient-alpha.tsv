@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`. How a gradient mixes stops that are not opaque.
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
 # Written by packages/meo-canvas/tools/conformance/gradientalpha.mjs.
 #
 # Each box is a `background-image` over a white page, read from a screenshot.

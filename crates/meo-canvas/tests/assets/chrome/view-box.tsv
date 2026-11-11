@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`. The transform an <svg viewBox> maps its drawing with.
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
 # viewBox="0 0 100 100", xMidYMid meet, absolutely placed, box-sizing: border-box.
 # Written by packages/meo-canvas/tools/conformance/viewbox.mjs.
 # a and d are the scales, e and f the translation, from getScreenCTM in CSS px.

@@ -1,7 +1,7 @@
 # Whether a stretched flex item derives its main size from its aspect ratio.
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
-# Measured on Firefox 155.0, the firefox Playwright pins here.
-# Measured on WebKit 26.6, the webkit Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
+# Measured on Firefox 159.0, the firefox Playwright pins here.
+# Measured on WebKit 27.2, the webkit Playwright pins here.
 # Container 440x264, border-box, 8px padding, so a 424x248 content box.
 # Written by packages/meo-canvas/tools/conformance/ratiostretchmain.mjs.
 #
@@ -16,10 +16,10 @@ escape height 100%	chromium	424.00	248.00	a definite main size of its own, so th
 escape height 100%	firefox	424.00	248.00	a definite main size of its own, so there is nothing to derive
 escape height 100%	webkit	424.00	248.00	a definite main size of its own, so there is nothing to derive
 escape max-height 100%	chromium	424.00	248.00	the obvious clamp, and the row to read before recommending it
-escape max-height 100%	firefox	424.00	248.00	the obvious clamp, and the row to read before recommending it
+escape max-height 100%	firefox	248.00	248.00	the obvious clamp, and the row to read before recommending it
 escape max-height 100%	webkit	248.00	248.00	the obvious clamp, and the row to read before recommending it
 escape max-height 248px	chromium	424.00	248.00	the same clamp written as a length rather than a percentage
-escape max-height 248px	firefox	424.00	248.00	the same clamp written as a length rather than a percentage
+escape max-height 248px	firefox	248.00	248.00	the same clamp written as a length rather than a percentage
 escape max-height 248px	webkit	248.00	248.00	the same clamp written as a length rather than a percentage
 escape overflow hidden	chromium	424.00	248.00	a scroll container has no automatic minimum, so the floor goes with it
 escape overflow hidden	firefox	424.00	248.00	a scroll container has no automatic minimum, so the floor goes with it

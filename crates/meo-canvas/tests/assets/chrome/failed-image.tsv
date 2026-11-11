@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`: the box of an <img> with no alt whose source fails, by container and size.
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
 # A 300-wide container; grid (one 300px column) and absolute ones are 200 tall.
 # `failed` answers HTTP 522; `loaded` is a 64x32 SVG, the control. width and height are CSS px, `-` for auto.
 # Written by packages/meo-canvas/tools/conformance/failedimage.mjs.

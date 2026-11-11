@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`. Which of two overlapping siblings paints on top.
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
 #
 # A 90x60 relative parent at 44,44, holding two
 # 50x34 children that overlap. `top` is A, B, or P for the parent's own

@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`. Where `text-align` puts a line, and
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
 # which values move with `direction`.
 # An <img>-free cell of 300x60 painted #ffffff, one line of Fixture at 32px.
 # Written by packages/meo-canvas/tools/conformance/textaligndirection.mjs.

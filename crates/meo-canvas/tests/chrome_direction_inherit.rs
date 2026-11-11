@@ -1,4 +1,4 @@
-//! `direction` reaches a box that does not state one, as it does in Chrome 153
+//! `direction` reaches a box that does not state one, as it does in Chrome 158
 //! (`l7aromeo/meo-canvas#165`): a grid's tracks, a flex row's items, a block's
 //! child and a line's `text-align: start` all follow the nearest ancestor that
 //! states a direction, and an explicit value still overrides it.

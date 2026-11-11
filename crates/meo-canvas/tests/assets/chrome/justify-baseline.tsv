@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`: where grid items sharing a column sit under baseline and last baseline.
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
 # A 200-wide grid with the columns `tracks` names in pixels and `items` as its justify-items, `-` for unset.
 # Each child is `box:W` (a block W wide) or `img:W` (a Wx10 SVG), 10 tall, with `ml`, `mr`, `bl` and `br` its
 # left and right margins and borders in pixels, `col` and `row` its grid lines, `abs` for absolutely positioned,

@@ -1,5 +1,5 @@
 # What insets do to a replaced element, measured on a real `<img>`.
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
 # Containing block 200x30, art 60x40 as an SVG data URL.
 # Written by packages/meo-canvas/tools/conformance/replacedinsets.mjs.
 #

@@ -31,18 +31,15 @@ impl Measure for NoLeaves {
 const TABLE: &str = include_str!("assets/chrome/ratio-stretch-main.tsv");
 
 /// The engine this renderer is compared against: Chromium rather than a vote,
-/// so where engines differ the row is named in [`WEBKIT_ALONE`] instead of
+/// so where engines differ the row is named in [`CHROMIUM_ALONE`] instead of
 /// averaged away.
 const REFERENCE: &str = "chromium";
 
-/// The engine that reads one family of rows differently from the other two.
-const OUTLIER: &str = "webkit";
-
-/// The rows [`OUTLIER`] alone reads differently: with `max-height`, `WebKit`
-/// feeds the clamped main size back through the ratio, `248x248` against
-/// `424x248`. §4.5 clamps only the minimum, so these compare against
-/// [`REFERENCE`] like the rest.
-const WEBKIT_ALONE: &[&str] =
+/// The rows [`REFERENCE`] alone reads differently: under `max-height`, Firefox
+/// 159 and `WebKit` 27.2 feed the clamped main size back through the ratio,
+/// `248x248`, where Chrome keeps the stretched cross size, `424x248`. Chrome is
+/// the baseline, so these compare against it like the rest.
+const CHROMIUM_ALONE: &[&str] =
     &["escape max-height 100%", "escape max-height 248px"];
 
 /// One row of the table, for one engine.
@@ -322,7 +319,8 @@ fn reported_rows() -> Vec<(&'static str, Case)> {
 
 /// What a caller writes to keep the earlier result: `min-height: 0` replaces
 /// the automatic minimum; `height: 100%` and `overflow: hidden` also work.
-/// `max-height` works here but not in Safari -- see [`WEBKIT_ALONE`].
+/// `max-height` works here and in Chrome, not in Firefox or Safari -- see
+/// [`CHROMIUM_ALONE`].
 fn escape_rows() -> Vec<(&'static str, Case)> {
     vec![
         (
@@ -492,7 +490,7 @@ fn container_and_bound_rows() -> Vec<(&'static str, Case)> {
 
 /// The engines are checked against each other first: a row nothing names where
 /// any engine disagrees is refused, as is a named row where the other two stop
-/// agreeing, and a named row [`OUTLIER`] now agrees with is stale.
+/// agreeing, and a named row [`REFERENCE`] now agrees with is stale.
 #[test]
 fn the_engines_agree_except_where_the_table_says_so() {
     let all = engines();
@@ -503,9 +501,9 @@ fn the_engines_agree_except_where_the_table_says_so() {
         all.len()
     );
     assert!(
-        all.contains(&OUTLIER) && REFERENCE != OUTLIER,
-        "{OUTLIER} has to be a column of the table and cannot also be \
-         {REFERENCE}, or naming a row in WEBKIT_ALONE would assert nothing"
+        all.contains(&REFERENCE),
+        "{REFERENCE} has to be a column of the table, or naming a row in \
+         CHROMIUM_ALONE would assert nothing"
     );
     let cells = |key: &str| -> String {
         all.iter()
@@ -520,11 +518,11 @@ fn the_engines_agree_except_where_the_table_says_so() {
     let mut not_a_split = Vec::new();
     let mut stale = Vec::new();
     for (key, _) in rows() {
-        let named = WEBKIT_ALONE.contains(&key);
+        let named = CHROMIUM_ALONE.contains(&key);
         let expected_to_agree: Vec<&str> = all
             .iter()
             .copied()
-            .filter(|engine| !named || *engine != OUTLIER)
+            .filter(|engine| !named || *engine != REFERENCE)
             .collect();
         let first = measured(key, expected_to_agree[0]);
         let agree = expected_to_agree
@@ -536,34 +534,34 @@ fn the_engines_agree_except_where_the_table_says_so() {
             } else {
                 unexpected.push(format!("{key}: {}", cells(key)));
             }
-        } else if named && approximately(measured(key, OUTLIER), first) {
+        } else if named && approximately(measured(key, REFERENCE), first) {
             stale.push(key);
         }
     }
     assert!(
         unexpected.is_empty(),
-        "{} row(s) the engines disagree on and WEBKIT_ALONE does not name:\n{}\n\
+        "{} row(s) the engines disagree on and CHROMIUM_ALONE does not name:\n{}\n\
          A disagreement is a finding rather than a defect here. Do not \
-         compensate it on a majority: say which engines gave what, and name \
-         the sentence of the specification that settles it, if one does",
+         compensate it on a majority: say which engines gave what, and follow \
+         {REFERENCE}, which is the baseline whatever the others give",
         unexpected.len(),
         unexpected.join("\n")
     );
     assert!(
         not_a_split.is_empty(),
-        "{} row(s) WEBKIT_ALONE names where the engines other than {OUTLIER} \
-         no longer agree either:\n{}\n\
-         The list claims one engine reads these differently. That has stopped \
-         being true, so the comparison against {REFERENCE} is no longer \
-         standing on two engines and a specification sentence",
+        "{} row(s) CHROMIUM_ALONE names where the engines other than \
+         {REFERENCE} no longer agree either:\n{}\n\
+         The list claims {REFERENCE} alone reads these differently. That has \
+         stopped being true, so say which engines gave what before renaming \
+         or reshaping the list",
         not_a_split.len(),
         not_a_split.join("\n")
     );
     assert!(
         stale.is_empty(),
         "{stale:?} now agree across every engine -- delete them from \
-         WEBKIT_ALONE, and check whether the release notes still need to warn \
-         that Safari differs"
+         CHROMIUM_ALONE, and check whether the release notes still need to \
+         warn that Firefox and Safari differ"
     );
 }
 
@@ -572,7 +570,7 @@ fn approximately(left: (f32, f32), right: (f32, f32)) -> bool {
     (left.0 - right.0).abs() <= SLACK && (left.1 - right.1).abs() <= SLACK
 }
 
-/// Every row, with no exemptions, including the two [`WEBKIT_ALONE`] names:
+/// Every row, with no exemptions, including the two [`CHROMIUM_ALONE`] names:
 /// they are the only rows reaching `stretched_ratio_minimum`'s clamp by a
 /// definite maximum, so skipping them would leave it deletable.
 #[test]

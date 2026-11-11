@@ -1,5 +1,5 @@
 //! Where `justify-items` and `justify-self` put one item on the inline axis, as
-//! Chrome 153 does (`l7aromeo/meo-canvas#171`): every value, in grid, block and
+//! Chrome 158 does (`l7aromeo/meo-canvas#171`): every value, in grid, block and
 //! flex containers, box and image, `ltr` and `rtl`, overflowing, absolutely
 //! positioned, with its own direction and under a `legacy` ancestor.
 

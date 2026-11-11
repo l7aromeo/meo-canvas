@@ -1,5 +1,5 @@
 # Whether a flex item with a definite base size collapses into its line.
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
 # Outer row 600 wide with a 300x200 sibling; the column has no cross size
 # of its own; the item holds 1024 of content.
 # Written by packages/meo-canvas/tools/conformance/flexbasiscollapse.mjs.

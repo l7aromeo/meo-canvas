@@ -1,5 +1,5 @@
 //! Where grid items sharing a column sit under `justify-self: baseline` and
-//! `last baseline`, as Chrome 153 places them (`l7aromeo/meo-canvas#171`): on
+//! `last baseline`, as Chrome 158 places them (`l7aromeo/meo-canvas#171`): on
 //! the left edges of their border boxes, as a group at the column's start or
 //! its end.
 

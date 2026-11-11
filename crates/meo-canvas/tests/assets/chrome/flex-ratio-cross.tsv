@@ -1,5 +1,5 @@
 # What a ratio does to a grown flex item’s cross size.
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
 # Container 440x264, border-box, 8px padding, so a 424x248 content box.
 # Written by packages/meo-canvas/tools/conformance/flexratiocross.mjs.
 #

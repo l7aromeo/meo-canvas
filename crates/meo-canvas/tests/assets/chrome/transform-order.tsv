@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`. Where a transformed box inks.
-# Measured on Chrome Headless Shell 153.0.8010.12, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
 # 100x100 white page, a 20x20 #2850dc block at its 20px padding.
 # Each row agrees as the individual properties and as one `transform` list.
 # Written by packages/meo-canvas/tools/conformance/transformorder.mjs.
