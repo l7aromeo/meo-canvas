@@ -13,7 +13,7 @@
 //! construction; a second implementation of CSS Color 4 would be a
 //! disagreement nothing reports. `color-strings.tsv` holds it to Chrome.
 
-use meo_canvas_scene::style::paint::Color;
+use meo_canvas_scene::style::paint::{Color, ColorValue};
 use meo_skia_canvas::color::Srgba;
 
 /// Parses a CSS colour string.
@@ -37,6 +37,41 @@ use meo_skia_canvas::color::Srgba;
 pub fn parse_color(css: &str) -> Option<Color> {
     let [r, g, b, a] = to_rgba8(parse_channels(css)?);
     Some(Color::rgba(r, g, b, a))
+}
+
+/// Parses a CSS colour string as a style states it: `currentColor` alone, in
+/// any case, is [`ColorValue::Current`], and anything else is what
+/// [`parse_color`] reads.
+///
+/// Returns `None` where [`parse_color`] does, including for `currentColor`
+/// inside `color-mix()` or a relative colour: the reader takes no node colour
+/// there (`l7aromeo/meo-skia-canvas#688`).
+///
+/// # Examples
+///
+/// ```
+/// use meo_canvas_core::color::parse_color_value;
+/// use meo_canvas_scene::style::paint::{Color, ColorValue};
+///
+/// assert_eq!(
+///     parse_color_value(" CurrentColor "),
+///     Some(ColorValue::Current)
+/// );
+/// assert_eq!(
+///     parse_color_value("#f00"),
+///     Some(ColorValue::Rgba(Color::rgba(255, 0, 0, 255)))
+/// );
+/// assert_eq!(
+///     parse_color_value("color-mix(in srgb, currentColor, red)"),
+///     None
+/// );
+/// ```
+#[must_use]
+pub fn parse_color_value(css: &str) -> Option<ColorValue> {
+    if css.trim().eq_ignore_ascii_case(CURRENT_COLOR) {
+        return Some(ColorValue::Current);
+    }
+    parse_color(css).map(ColorValue::Rgba)
 }
 
 /// The same parse, unclamped, in the units the surfaces use.

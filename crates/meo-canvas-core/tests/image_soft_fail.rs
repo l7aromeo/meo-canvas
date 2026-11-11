@@ -28,7 +28,8 @@ fn row(source: ImageSource, policy: OnImageError) -> Scene {
     let mut scene = Scene::new(Size::new(120.0, 60.0));
     scene.on_image_error = policy;
     if let Some(root) = scene.get_mut(NodeId::ROOT) {
-        root.paint.background_color = Color::rgb(GROUND.0, GROUND.1, GROUND.2);
+        root.paint.background_color =
+            Color::rgb(GROUND.0, GROUND.1, GROUND.2).into();
         root.layout.flex_direction =
             meo_canvas_scene::style::layout::FlexDirection::Row;
     }
@@ -52,7 +53,7 @@ fn row(source: ImageSource, policy: OnImageError) -> Scene {
     if let Some(node) = scene.get_mut(after) {
         node.layout.size = (Dimension::Points(40.0), Dimension::Points(40.0));
         node.paint.background_color =
-            Color::rgb(SIBLING.0, SIBLING.1, SIBLING.2);
+            Color::rgb(SIBLING.0, SIBLING.1, SIBLING.2).into();
     }
     scene
 }
@@ -61,7 +62,7 @@ fn row(source: ImageSource, policy: OnImageError) -> Scene {
 fn working_bytes() -> Vec<u8> {
     let mut scene = Scene::new(Size::new(2.0, 2.0));
     if let Some(root) = scene.get_mut(NodeId::ROOT) {
-        root.paint.background_color = Color::rgb(255, 255, 255);
+        root.paint.background_color = Color::rgb(255, 255, 255).into();
     }
     Renderer::new()
         .render_to_buffer(&scene, ImageFormat::Png, &EncodeOptions::default())
@@ -235,7 +236,8 @@ fn alone(size: Option<f32>, radius: f32) -> Vec<u8> {
     let mut scene = Scene::new(Size::new(60.0, 60.0));
     scene.on_image_error = OnImageError::Placeholder;
     if let Some(root) = scene.get_mut(NodeId::ROOT) {
-        root.paint.background_color = Color::rgb(GROUND.0, GROUND.1, GROUND.2);
+        root.paint.background_color =
+            Color::rgb(GROUND.0, GROUND.1, GROUND.2).into();
         root.layout.padding = meo_canvas_scene::Sides {
             top: Length::Points(10.0),
             right: Length::Points(10.0),

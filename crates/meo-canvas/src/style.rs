@@ -7,16 +7,21 @@
 //! a scene.
 //!
 //! ```
-//! use meo_canvas::{Style, all, hex_rgb, px};
+//! use meo_canvas::{ColorValue, Style, all, hex_rgb, px};
 //!
 //! const CARD: Style = Style::new()
 //!     .padding(all(px(24.0)))
 //!     .gap(px(16.0))
 //!     .border_radius(12.0);
 //!
-//! let dark = CARD.background_color(hex_rgb(0x10_10_14));
-//! let light = CARD.background_color(hex_rgb(0xf4_f4_f6));
+//! let dark = CARD.background_color(ColorValue::Rgba(hex_rgb(0x10_10_14)));
+//! let light = CARD.background_color(ColorValue::Rgba(hex_rgb(0xf4_f4_f6)));
 //! ```
+//!
+//! A colour setter on `Style` takes a [`ColorValue`], which a `const` can
+//! build: [`ColorValue::Rgba`] around a colour, or [`ColorValue::Current`]
+//! for CSS's `currentColor`, the node's text colour. On a node the same setter
+//! takes a `Color` as well, through `Into`, which a `const fn` cannot call.
 //!
 //! Setters take `self` and are `const` wherever the property allows, which is
 //! what makes that `const CARD` work: a `const` is substituted at each use, so
@@ -50,7 +55,7 @@ use meo_canvas_scene::{
             LayoutStyle, Overflow, PositionType, TrackSize,
         },
         paint::{
-            BackgroundImage, BlendMode, BorderStyle, Color, Gradient,
+            BackgroundImage, BlendMode, BorderStyle, ColorValue, Gradient,
             ObjectFit, PaintStyle,
         },
         text::{
@@ -156,15 +161,15 @@ pub struct Style {
 
     // -- Paint ----------------------------------------------------------
     /// The box's fill. CSS's `background-color`.
-    pub background_color: Option<Color>,
+    pub background_color: Option<ColorValue>,
     /// A gradient painted over the fill.
     pub gradient: Option<Gradient>,
     /// An image painted over the gradient.
     pub background_image: Option<BackgroundImage>,
     /// Border colour, per edge.
-    pub border_color: Option<Sides<Option<Color>>>,
+    pub border_color: Option<Sides<Option<ColorValue>>>,
     /// Border colour for every edge that names none of its own.
-    pub border_color_all: Option<Color>,
+    pub border_color_all: Option<ColorValue>,
     /// Whether the border is solid, dashed or dotted.
     pub border_style: Option<BorderStyle>,
     /// Corner radii.
@@ -209,7 +214,7 @@ pub struct Style {
     /// and neither is an error. Set on a raster source it **is** an error,
     /// raised when the image is drawn: a bitmap has no `currentColor`, and
     /// ignoring the request would be the silent wrong picture.
-    pub color: Option<Color>,
+    pub color: Option<ColorValue>,
     /// Horizontal alignment within the box. Inherits.
     pub text_align: Option<TextAlign>,
     /// A line through, over or under. Inherits.
@@ -389,6 +394,29 @@ impl Style {
         }
     };
 
+    // A colour: a `const fn` taking the `ColorValue` itself on `Style`, since a
+    // trait call is not `const`, and anything that converts into one on a node.
+    (@style colour $(#[$doc:meta])* $name:ident: $field:ident, $type:ty) => {
+        properties!(@style plain $(#[$doc])* $name: $field, $type);
+    };
+
+    (@node colour $name:ident, $type:ty) => {
+        #[doc = concat!(
+            "Sets [`", stringify!($name), "`](Style::", stringify!($name), ") on this node."
+        )]
+        #[doc = ""]
+        #[doc = "A [`Color`](crate::scene::Color) or a [`ColorValue`], such as [`ColorValue::Current`]."]
+        #[must_use]
+        fn $name(mut self, value: impl Into<$type>) -> Self {
+            let style = ::core::mem::replace(
+                <Self as Styled>::style_mut(&mut self),
+                Style::new(),
+            );
+            *<Self as Styled>::style_mut(&mut self) = style.$name(value.into());
+            self
+        }
+    };
+
     (@style owned $(#[$doc:meta])* $name:ident: $field:ident, $type:ty) => {
         $(#[$doc])*
         #[must_use]
@@ -544,11 +572,16 @@ properties! {
         /// design be ported without translation.
         ///
         /// ```
-        /// use meo_canvas::{Style, hex_rgb};
+        /// use meo_canvas::{ColorValue, Row, Style, Styled, hex_rgb};
         ///
-        /// const PANEL: Style = Style::new().background_color(hex_rgb(0x10_10_14));
+        /// const PANEL: Style =
+        ///     Style::new().background_color(ColorValue::Rgba(hex_rgb(0x10_10_14)));
+        /// // CSS's `currentColor`: the box is filled in its own text colour.
+        /// const CARD: Style = Style::new().background_color(ColorValue::Current);
+        /// // A node takes a `Color` directly.
+        /// let row = Row::new().background_color(hex_rgb(0x10_10_14));
         /// ```
-    plain background_color: background_color, Color;
+    colour background_color: background_color, ColorValue;
 
         /// A gradient painted over the fill.
         ///
@@ -577,10 +610,10 @@ properties! {
     owned background_image: background_image, BackgroundImage;
 
         /// One border colour on every edge.
-    plain border_color: border_color_all, Color;
+    colour border_color: border_color_all, ColorValue;
 
         /// Border colour per edge, for a box whose edges differ.
-    sides border_color_sides: border_color, Option<Color>;
+    sides border_color_sides: border_color, Option<ColorValue>;
 
         /// Whether the border is solid, dashed or dotted.
     plain border_style: border_style, BorderStyle;
@@ -627,7 +660,7 @@ properties! {
         ///
         /// CSS's `color`: it inherits, so setting it on a container reaches
         /// every descendant. See [`background_color`](Self::background_color) for the fill.
-    plain color: color, Color;
+    colour color: color, ColorValue;
 
         /// The family name text is drawn in.
         ///
@@ -1505,8 +1538,8 @@ mod tests {
         // mention is a fresh value a `self`-taking setter may consume.
         const CARD: Style = Style::new().padding(all(px(24.0))).gap(px(16.0));
 
-        let dark = CARD.background_color(hex_rgb(0x10_10_14));
-        let light = CARD.background_color(hex_rgb(0x1c_1c_22));
+        let dark = CARD.background_color(hex_rgb(0x10_10_14).into());
+        let light = CARD.background_color(hex_rgb(0x1c_1c_22).into());
 
         assert_eq!(dark.padding, light.padding);
         assert_ne!(dark.background_color, light.background_color);
@@ -1572,14 +1605,14 @@ mod tests {
     #[test]
     fn paint_properties_reach_the_paint_half() {
         let (_, paint, ..) = Style::new()
-            .background_color(hex_rgb(0x10_10_14))
+            .background_color(hex_rgb(0x10_10_14).into())
             .border_radius(12.0)
             .opacity(0.5)
             .z_index(3)
             .dither(true)
             .into_parts();
 
-        assert_eq!(paint.background_color, hex_rgb(0x10_10_14));
+        assert_eq!(paint.background_color, hex_rgb(0x10_10_14).into());
         assert_eq!(paint.border_radius.top_left.to_bits(), 12.0_f32.to_bits());
         assert_eq!(
             paint.border_radius.bottom_right.to_bits(),
@@ -1595,12 +1628,12 @@ mod tests {
         // CSS's names, and CSS's trap. Keeping it is what lets a design be
         // ported without translation.
         let (_, paint, text, _) = Style::new()
-            .color(hex_rgb(0xff_ff_ff))
-            .background_color(hex_rgb(0x00_00_00))
+            .color(hex_rgb(0xff_ff_ff).into())
+            .background_color(hex_rgb(0x00_00_00).into())
             .into_parts();
 
-        assert_eq!(text.color, Some(hex_rgb(0xff_ff_ff)));
-        assert_eq!(paint.background_color, hex_rgb(0x00_00_00));
+        assert_eq!(text.color, Some(hex_rgb(0xff_ff_ff).into()));
+        assert_eq!(paint.background_color, hex_rgb(0x00_00_00).into());
     }
 
     #[test]

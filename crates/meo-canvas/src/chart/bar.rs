@@ -16,7 +16,11 @@ use std::rc::Rc;
 
 use meo_canvas_scene::{
     Length,
-    style::{Dimension, effect::Transform, paint::Color},
+    style::{
+        Dimension,
+        effect::Transform,
+        paint::{Color, ColorValue},
+    },
 };
 
 use crate::{
@@ -329,7 +333,7 @@ fn one_bar(
                 .width(fraction(bar.width))
                 .height(fraction(bar.height))
                 .background_color(
-                    meo_canvas_core::parse_color(&colour).ok_or(
+                    meo_canvas_core::color::parse_color_value(&colour).ok_or(
                         Error::Chart("a bar colour could not be read"),
                     )?,
                 ),
@@ -539,8 +543,8 @@ fn grid(options: &Options) -> Result<Vec<Element>, Error> {
     // Absent takes the default; unreadable is refused rather than drawn in a
     // colour the caller did not ask for.
     let colour = match options.grid.color.as_deref() {
-        None => GRID_COLOR,
-        Some(written) => meo_canvas_core::parse_color(written)
+        None => ColorValue::Rgba(GRID_COLOR),
+        Some(written) => meo_canvas_core::color::parse_color_value(written)
             .ok_or(Error::Chart("the grid colour could not be read"))?,
     };
     Ok(grid_lines(GRID_DIVISIONS)
@@ -571,7 +575,7 @@ pub(crate) fn text(
 ) -> Element {
     let mut style = Style::new()
         .font_size(size.unwrap_or(TEXT_SIZE))
-        .color(colour.unwrap_or(TEXT_COLOR));
+        .color(ColorValue::Rgba(colour.unwrap_or(TEXT_COLOR)));
     if let Some(family) = options.font_family.as_deref() {
         style = style.font_family(family);
     }

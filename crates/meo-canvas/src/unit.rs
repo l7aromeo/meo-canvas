@@ -17,7 +17,11 @@
 
 use meo_canvas_scene::{
     Corners, Sides,
-    style::{Dimension, Length, layout::TrackSize, paint::Color},
+    style::{
+        Dimension, Length,
+        layout::TrackSize,
+        paint::{Color, ColorValue},
+    },
 };
 
 /// A length in logical pixels.
@@ -246,9 +250,10 @@ pub const fn corners(
 /// style that has to be a `const` writes its colours as numbers:
 ///
 /// ```
-/// use meo_canvas::{Style, hex_rgb};
+/// use meo_canvas::{ColorValue, Style, hex_rgb};
 ///
-/// const PANEL: Style = Style::new().background_color(hex_rgb(0x10_10_14));
+/// const PANEL: Style =
+///     Style::new().background_color(ColorValue::Rgba(hex_rgb(0x10_10_14)));
 /// ```
 #[must_use]
 pub const fn hex_rgb(packed: u32) -> Color {
@@ -414,6 +419,20 @@ const fn widen(length: Length) -> Dimension {
 impl IntoSides<Self> for f32 {
     fn into_sides(self) -> Sides<Self> {
         Sides::all(self)
+    }
+}
+
+/// Per-edge colours written as [`Color`]s reach a border colour, which takes
+/// [`ColorValue`]s so that an edge can be `currentColor`.
+impl IntoSides<Option<ColorValue>> for Sides<Option<Color>> {
+    fn into_sides(self) -> Sides<Option<ColorValue>> {
+        let value = |edge: Option<Color>| edge.map(ColorValue::Rgba);
+        Sides {
+            top: value(self.top),
+            right: value(self.right),
+            bottom: value(self.bottom),
+            left: value(self.left),
+        }
     }
 }
 

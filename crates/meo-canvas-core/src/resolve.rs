@@ -93,7 +93,7 @@ use meo_canvas_scene::{
     style::{
         PaintOrder,
         effect::Mask,
-        paint::Color,
+        paint::{Color, ColorValue},
         text::{
             FontStyle, FontVariant, FontWeight, LineHeight, Spacing, TextAlign,
             TextDecoration, TextStroke, TextStyle, VerticalAlign,
@@ -340,7 +340,9 @@ impl ResolvedText {
             size,
             weight: overlay.font_weight.unwrap_or(self.weight),
             style: overlay.font_style.unwrap_or(self.style),
-            color: overlay.color.unwrap_or(self.color),
+            color: overlay
+                .color
+                .map_or(self.color, |color| color.resolve(self.color)),
             align: overlay.text_align.unwrap_or(self.align),
             decoration: overlay.text_decoration.unwrap_or(self.decoration),
             vertical_align: overlay
@@ -615,6 +617,9 @@ pub struct Resolved<'scene> {
     backgrounds: HashMap<NodeId, DecodedImage>,
     masks: HashMap<NodeId, DecodedImage>,
     text: HashMap<NodeId, ResolvedText>,
+    /// Each node's text colour after inheritance, by node index: what its
+    /// `currentColor` paints as.
+    current: Vec<Color>,
 }
 
 impl<'scene> Resolved<'scene> {
@@ -637,6 +642,7 @@ impl<'scene> Resolved<'scene> {
             backgrounds: HashMap::new(),
             masks: HashMap::new(),
             text: HashMap::new(),
+            current: vec![Color::BLACK; scene.nodes.len()],
         };
 
         // One decode per distinct source rather than per node. Sixty nodes
@@ -792,6 +798,23 @@ impl<'scene> Resolved<'scene> {
         self.masks.get(&node)
     }
 
+    /// The colour `node`'s `currentColor` paints as: its text colour after
+    /// inheritance, black where nothing sets one, as in Chrome
+    /// (`current-color.tsv`).
+    #[must_use]
+    pub fn current_color(&self, node: NodeId) -> Color {
+        self.current
+            .get(node.get() as usize)
+            .copied()
+            .unwrap_or(Color::BLACK)
+    }
+
+    /// `value` on `node`.
+    #[must_use]
+    pub fn color(&self, node: NodeId, value: ColorValue) -> Color {
+        value.resolve(self.current_color(node))
+    }
+
     /// The fully-inherited text style for a text node, if it is one.
     #[must_use]
     pub fn text(&self, node: NodeId) -> Option<&ResolvedText> {
@@ -814,6 +837,9 @@ impl<'scene> Resolved<'scene> {
                 continue;
             };
             let here = inherited.inherit(&node.text);
+            if let Some(slot) = self.current.get_mut(id.get() as usize) {
+                *slot = here.color;
+            }
 
             if let NodeKind::Text { segments, .. } = &node.kind {
                 for segment in segments {
@@ -2233,7 +2259,7 @@ pub(crate) mod tests {
         scene.nodes[0].text = TextStyle {
             font_family: Some(TEST_FAMILY.to_owned()),
             font_size: Some(24.0),
-            color: Some(Color::rgb(1, 2, 3)),
+            color: Some(Color::rgb(1, 2, 3).into()),
             ..TextStyle::default()
         };
         let middle = scene

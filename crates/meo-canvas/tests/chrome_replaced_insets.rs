@@ -33,7 +33,8 @@ const PAPER: (u8, u8, u8) = (255, 255, 255);
 /// embedded, so the intrinsic size under test is one the suite can restate.
 fn art() -> Vec<u8> {
     let mut scene = Scene::new(Size::new(ART.0, ART.1));
-    scene.nodes[0].paint.background_color = Color::rgb(INK.0, INK.1, INK.2);
+    scene.nodes[0].paint.background_color =
+        Color::rgb(INK.0, INK.1, INK.2).into();
     let mut renderer = Renderer::new();
     renderer.set_gpu(false);
     renderer
@@ -124,7 +125,7 @@ fn painted(scene: &Scene) -> (i32, i32, u32, u32) {
 fn scene_with(inner: Node) -> Scene {
     let mut scene = Scene::new(Size::new(PAGE, PAGE));
     scene.nodes[0].paint.background_color =
-        Color::rgb(PAPER.0, PAPER.1, PAPER.2);
+        Color::rgb(PAPER.0, PAPER.1, PAPER.2).into();
     scene.nodes[0].layout.padding = meo_canvas_scene::Sides {
         top: Length::Points(ORIGIN),
         right: Length::Points(ORIGIN),
@@ -218,7 +219,7 @@ fn a_lone_end_inset_still_positions() {
 #[test]
 fn a_non_replaced_box_still_stretches_to_its_insets() {
     let mut inner = Node::new(NodeKind::Box);
-    inner.paint.background_color = Color::rgb(INK.0, INK.1, INK.2);
+    inner.paint.background_color = Color::rgb(INK.0, INK.1, INK.2).into();
     inner.layout.position_type = PositionType::Absolute;
     inner.layout.inset = meo_canvas_scene::Sides {
         top: Some(Length::ZERO),
@@ -291,7 +292,7 @@ fn an_image_with_children_is_a_container() {
     let mut scene = scene_with(inner);
 
     let mut child = Node::new(NodeKind::Box);
-    child.paint.background_color = Color::rgb(INK.0, INK.1, INK.2);
+    child.paint.background_color = Color::rgb(INK.0, INK.1, INK.2).into();
     child.layout.size = (Dimension::Points(10.0), Dimension::Percent(1.0));
     push(&mut scene, NodeId::new(2), child);
 
@@ -308,7 +309,7 @@ fn an_image_with_children_is_a_container() {
 fn grid_cell(align: Option<Align>) -> Scene {
     let mut scene = Scene::new(Size::new(PAGE, PAGE));
     scene.nodes[0].paint.background_color =
-        Color::rgb(PAPER.0, PAPER.1, PAPER.2);
+        Color::rgb(PAPER.0, PAPER.1, PAPER.2).into();
     scene.nodes[0].layout.display = Display::Block;
     scene.nodes[0].layout.padding.top = Length::Points(ORIGIN);
     scene.nodes[0].layout.padding.left = Length::Points(ORIGIN);

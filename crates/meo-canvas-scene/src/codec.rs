@@ -443,8 +443,9 @@ mod tests {
             },
             paint::{
                 BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
-                BorderStyle, Color, Gradient, GradientGeometry, GradientKind,
-                GradientStop, LinearDirection, ObjectFit, PaintStyle,
+                BorderStyle, Color, ColorValue, Gradient, GradientGeometry,
+                GradientKind, GradientStop, LinearDirection, ObjectFit,
+                PaintStyle,
             },
             text::{
                 FontStyle, FontVariant, FontWeight, LineHeight, ParagraphStyle,
@@ -501,11 +502,11 @@ mod tests {
             stops: vec![
                 GradientStop {
                     offset: 0.0,
-                    color: Color::rgb(255, 0, 0),
+                    color: Color::rgb(255, 0, 0).into(),
                 },
                 GradientStop {
                     offset: 1.0,
-                    color: Color::rgba(0, 0, 255, 128),
+                    color: Color::rgba(0, 0, 255, 128).into(),
                 },
             ],
         }
@@ -560,7 +561,7 @@ mod tests {
 
     fn populated_paint(gradient: Gradient) -> PaintStyle {
         PaintStyle {
-            background_color: Color::rgba(1, 2, 3, 4),
+            background_color: Color::rgba(1, 2, 3, 4).into(),
             gradient: Some(gradient),
             background_image: Some(BackgroundImage {
                 source: ImageSource::Bytes(vec![0xDE, 0xAD, 0xBE, 0xEF]),
@@ -572,12 +573,12 @@ mod tests {
                 position: (Length::Percent(1.0), Length::Points(-3.0)),
             }),
             border_color: Sides {
-                top: Some(Color::BLACK),
+                top: Some(Color::BLACK.into()),
                 right: None,
-                bottom: Some(Color::rgb(9, 9, 9)),
+                bottom: Some(Color::rgb(9, 9, 9).into()),
                 left: None,
             },
-            border_color_all: Color::rgb(7, 7, 7),
+            border_color_all: Color::rgb(7, 7, 7).into(),
             border_style: BorderStyle::Dotted,
             border_radius: Corners {
                 top_left: 1.0,
@@ -598,7 +599,7 @@ mod tests {
             font_size: Some(18.5),
             font_weight: Some(FontWeight::BOLD),
             font_style: Some(FontStyle::Italic),
-            color: Some(Color::rgb(20, 30, 40)),
+            color: Some(Color::rgb(20, 30, 40).into()),
             text_align: Some(TextAlign::Justify),
             text_decoration: Some(TextDecoration::LineThrough),
             vertical_align: Some(VerticalAlign::Middle),
@@ -614,7 +615,7 @@ mod tests {
             ]),
             text_stroke: Some(TextStroke {
                 width: 0.5,
-                color: Color::rgba(0, 0, 0, 200),
+                color: Color::rgba(0, 0, 0, 200).into(),
             }),
         }
     }
@@ -637,14 +638,14 @@ mod tests {
                     offset_y: 2.0,
                     blur: 3.0,
                     spread: 4.0,
-                    color: Color::rgba(5, 6, 7, 8),
+                    color: Color::rgba(5, 6, 7, 8).into(),
                 },
             ],
             text_shadows: vec![TextShadow {
                 offset_x: -1.0,
                 offset_y: -2.0,
                 blur: 0.5,
-                color: Color::BLACK,
+                color: Color::BLACK.into(),
             }],
             mask: Some(Mask::Path {
                 data: "M0 0 L10 10 Z".to_owned(),
@@ -717,7 +718,7 @@ mod tests {
                 // `true` for the same reason the box is present: a codec that
                 // dropped the flag would round-trip a `false` unchanged.
                 stretch: true,
-                fill: Some(PathPaint::Solid(Color::rgb(1, 1, 1))),
+                fill: Some(PathPaint::Solid(Color::rgb(1, 1, 1).into())),
                 stroke: Some(PathPaint::Gradient(gradient.clone())),
                 line_width: 2.5,
                 fill_rule: FillRule::NonZero,
@@ -1136,6 +1137,20 @@ mod tests {
         round_trip(&FontWeight::BOLD);
         round_trip(&GridPlacement::spanning(1, 2));
         round_trip(&Color::rgba(1, 2, 3, 4));
+        round_trip(&ColorValue::Rgba(Color::rgba(1, 2, 3, 4)));
+        round_trip(&ColorValue::Current);
+    }
+
+    #[test]
+    fn a_colour_value_refuses_a_tag_past_its_own() {
+        let mut bytes = Vec::new();
+        ColorValue::Current.write(&mut Writer::new(&mut bytes));
+        assert_eq!(bytes, [1]);
+        bytes[0] = 2;
+        assert!(matches!(
+            ColorValue::read(&mut Reader::new(&bytes)),
+            Err(CodecError::UnknownTag { offset: 0, tag: 2 })
+        ));
     }
 
     #[test]
@@ -1226,10 +1241,10 @@ mod tests {
             },
             stops: vec![GradientStop {
                 offset: 0.5,
-                color: Color::BLACK,
+                color: Color::BLACK.into(),
             }],
         }));
-        round_trip(&PathPaint::Solid(Color::BLACK));
+        round_trip(&PathPaint::Solid(Color::BLACK.into()));
     }
 
     #[test]

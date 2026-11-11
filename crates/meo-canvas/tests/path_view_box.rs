@@ -39,7 +39,9 @@ fn render(view: Option<(f32, f32, f32, f32)>, size: (f32, f32)) -> Vec<u8> {
                     Path::d("M2 10 H18 M10 2 V18")
                         .view_box(view)
                         .fill(None)
-                        .stroke(Some(PathPaint::Solid(hex_rgb(0x00_00_00))))
+                        .stroke(Some(PathPaint::Solid(
+                            hex_rgb(0x00_00_00).into(),
+                        )))
                         .line_width(2.0)
                         .width(px(size.0))
                         .height(px(size.1)),

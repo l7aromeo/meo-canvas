@@ -48,11 +48,11 @@ fn page(info: PageInfo) -> Vec<Element> {
                 stops: vec![
                     GradientStop {
                         offset: 0.0,
-                        color: Color::rgb(0xf6, 0xf6, 0xfa),
+                        color: Color::rgb(0xf6, 0xf6, 0xfa).into(),
                     },
                     GradientStop {
                         offset: 1.0,
-                        color: Color::rgb(0xe2, 0xe2, 0xec),
+                        color: Color::rgb(0xe2, 0xe2, 0xec).into(),
                     },
                 ],
             })

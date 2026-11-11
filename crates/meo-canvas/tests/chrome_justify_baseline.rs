@@ -41,7 +41,7 @@ const PALETTE: [u32; 3] = [0xcc_00_00, 0x00_88_00, 0x00_00_cc];
 fn art(width: f32, rgb: u32) -> Vec<u8> {
     let mut scene = Scene::new(Size::new(width, HEIGHT));
     let [_, r, g, b] = rgb.to_be_bytes();
-    scene.nodes[0].paint.background_color = Color::rgb(r, g, b);
+    scene.nodes[0].paint.background_color = Color::rgb(r, g, b).into();
     let mut renderer = Renderer::new();
     renderer.set_gpu(false);
     renderer

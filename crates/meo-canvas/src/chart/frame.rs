@@ -4,7 +4,10 @@
 //! the plot takes the rest through `flex-grow` -- so nothing is measured to
 //! size the plot.
 
-use meo_canvas_scene::style::{Dimension, paint::Color};
+use meo_canvas_scene::style::{
+    Dimension,
+    paint::{Color, ColorValue},
+};
 
 use crate::{
     Align, Box as BoxElement, Column, Element, Error, FlexWrap, Row, Style,
@@ -109,10 +112,12 @@ pub(crate) fn legend(
                                 .width(px(SWATCH))
                                 .height(px(SWATCH))
                                 .background_color(
-                                    meo_canvas_core::parse_color(colour)
-                                        .ok_or(Error::Chart(
-                                            "a legend colour could not be read",
-                                        ))?,
+                                    meo_canvas_core::color::parse_color_value(
+                                        colour,
+                                    )
+                                    .ok_or(Error::Chart(
+                                        "a legend colour could not be read",
+                                    ))?,
                                 ),
                         ),
                         Text::new(label).with_style(text_style(options)),
@@ -171,7 +176,7 @@ pub(crate) fn framed(
 fn text_style(options: &Options) -> Style {
     let mut style = Style::new()
         .font_size(options.label_font_size.unwrap_or(TEXT_SIZE))
-        .color(options.label_color.unwrap_or(TEXT_COLOR));
+        .color(ColorValue::Rgba(options.label_color.unwrap_or(TEXT_COLOR)));
     if let Some(family) = options.font_family.as_deref() {
         style = style.font_family(family);
     }

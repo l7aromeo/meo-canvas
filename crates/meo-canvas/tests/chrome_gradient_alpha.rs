@@ -78,7 +78,7 @@ fn gradient(case: &str) -> Gradient {
         .enumerate()
         .map(|(index, color)| GradientStop {
             offset: index as f32 / last as f32,
-            color: *color,
+            color: (*color).into(),
         })
         .collect();
     Gradient { geometry, stops }

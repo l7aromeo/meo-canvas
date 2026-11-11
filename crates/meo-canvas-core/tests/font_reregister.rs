@@ -33,7 +33,7 @@ fn scene() -> Scene {
     scene.scale = SCALE;
     scene.gpu = Some(true);
     scene.nodes[0].layout.padding = Sides::all(Length::Points(16.0));
-    scene.nodes[0].paint.background_color = Color::rgb(0xEC, 0xEE, 0xF3);
+    scene.nodes[0].paint.background_color = Color::rgb(0xEC, 0xEE, 0xF3).into();
     let root = scene
         .root()
         .unwrap_or_else(|| unreachable!("a new scene has a root"));
@@ -43,7 +43,7 @@ fn scene() -> Scene {
     node.text.font_weight = Some(FontWeight::new(900));
     node.text.font_style = Some(FontStyle::Italic);
     node.text.letter_spacing = Some(Spacing::Points(-2.0));
-    node.text.color = Some(Color::rgb(0x3A, 0x4F, 0xD8));
+    node.text.color = Some(Color::rgb(0x3A, 0x4F, 0xD8).into());
     scene
         .push(root, node)
         .unwrap_or_else(|error| unreachable!("{error}"));

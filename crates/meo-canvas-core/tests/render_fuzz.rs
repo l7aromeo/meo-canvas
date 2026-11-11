@@ -74,18 +74,18 @@ fn gradient(rng: &mut Rng) -> Gradient {
         (0..rng.below(3))
             .map(|_| GradientStop {
                 offset: rng.hostile(),
-                color: Color::rgba(255, 0, 0, 255),
+                color: Color::rgba(255, 0, 0, 255).into(),
             })
             .collect()
     } else {
         vec![
             GradientStop {
                 offset: 0.0,
-                color: Color::rgba(255, 0, 0, 255),
+                color: Color::rgba(255, 0, 0, 255).into(),
             },
             GradientStop {
                 offset: 1.0,
-                color: Color::rgba(0, 0, 255, 128),
+                color: Color::rgba(0, 0, 255, 128).into(),
             },
         ]
     };
@@ -143,7 +143,7 @@ fn scene(rng: &mut Rng) -> Scene {
             (Length::Points(rng.hostile()), Length::Points(rng.hostile()));
         node.paint.opacity = rng.hostile();
         node.paint.background_color =
-            Color::rgba(rng.byte(), rng.byte(), rng.byte(), rng.byte());
+            Color::rgba(rng.byte(), rng.byte(), rng.byte(), rng.byte()).into();
         if rng.below(3) == 0 {
             node.paint.gradient = Some(gradient(rng));
         }

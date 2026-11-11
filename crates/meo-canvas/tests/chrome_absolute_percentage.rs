@@ -34,7 +34,7 @@ fn boxed(layout: LayoutStyle) -> Node {
 /// The box each row measures, painted so the scan can find it.
 fn measured(layout: LayoutStyle) -> Node {
     let mut node = boxed(layout);
-    node.paint.background_color = Color::rgb(INK.0, INK.1, INK.2);
+    node.paint.background_color = Color::rgb(INK.0, INK.1, INK.2).into();
     node
 }
 
@@ -96,7 +96,7 @@ fn painted_height(scene: &Scene) -> u32 {
 fn page() -> Scene {
     let mut scene = Scene::new(Size::new(PAGE, PAGE));
     scene.nodes[0].paint.background_color =
-        Color::rgb(PAPER.0, PAPER.1, PAPER.2);
+        Color::rgb(PAPER.0, PAPER.1, PAPER.2).into();
     scene.nodes[0].layout.align_items = Some(Align::FlexStart);
     scene
 }

@@ -12,7 +12,7 @@
 use crate::{
     style::{
         Length,
-        paint::{Color, Gradient},
+        paint::{ColorValue, Gradient},
     },
     wire::wire_enum,
 };
@@ -78,8 +78,9 @@ pub struct BoxShadow {
     pub blur: f32,
     /// How far the shadow's shape grows beyond the box before blurring.
     pub spread: f32,
-    /// Shadow colour.
-    pub color: Color,
+    /// Shadow colour: `currentColor` unless set, as CSS gives a shadow
+    /// that names none.
+    pub color: ColorValue,
 }
 
 impl Default for BoxShadow {
@@ -90,7 +91,7 @@ impl Default for BoxShadow {
             offset_y: 0.0,
             blur: 0.0,
             spread: 0.0,
-            color: Color::BLACK,
+            color: ColorValue::Current,
         }
     }
 }
@@ -108,8 +109,9 @@ pub struct TextShadow {
     pub offset_y: f32,
     /// Blur radius in logical pixels.
     pub blur: f32,
-    /// Shadow colour.
-    pub color: Color,
+    /// Shadow colour: `currentColor` unless set, as CSS gives a shadow
+    /// that names none.
+    pub color: ColorValue,
 }
 
 impl Default for TextShadow {
@@ -118,7 +120,7 @@ impl Default for TextShadow {
             offset_x: 0.0,
             offset_y: 0.0,
             blur: 0.0,
-            color: Color::BLACK,
+            color: ColorValue::Current,
         }
     }
 }
@@ -203,7 +205,7 @@ mod tests {
     use super::{
         BoxShadow, Effects, FillRule, MaskShape, TextShadow, Transform,
     };
-    use crate::style::{Length, paint::Color};
+    use crate::style::{Length, paint::ColorValue};
 
     #[test]
     fn transform_defaults_to_the_identity_about_the_centre() {
@@ -216,12 +218,12 @@ mod tests {
     }
 
     #[test]
-    fn shadows_default_to_black_and_unoffset() {
+    fn shadows_default_to_the_text_colour_and_unoffset() {
         let box_shadow = BoxShadow::default();
         assert!(!box_shadow.inset);
-        assert_eq!(box_shadow.color, Color::BLACK);
+        assert_eq!(box_shadow.color, ColorValue::Current);
         assert!((box_shadow.spread - 0.0).abs() < f32::EPSILON);
-        assert_eq!(TextShadow::default().color, Color::BLACK);
+        assert_eq!(TextShadow::default().color, ColorValue::Current);
     }
 
     #[test]

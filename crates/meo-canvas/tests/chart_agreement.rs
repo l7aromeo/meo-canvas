@@ -315,7 +315,7 @@ fn both_surfaces_encode_the_same_chart_through_the_same_hooks() {
                         Style::new()
                             .width(px(4.0 + item.index as f32))
                             .height(px(4.0))
-                            .background_color(hex_rgb(0xff_00_00)),
+                            .background_color(hex_rgb(0xff_00_00).into()),
                     ),
             )
         })),
@@ -330,7 +330,7 @@ fn both_surfaces_encode_the_same_chart_through_the_same_hooks() {
                         Style::new()
                             .width(px(3.0))
                             .height(px(3.0))
-                            .background_color(hex_rgb(0x00_ff_00)),
+                            .background_color(hex_rgb(0x00_ff_00).into()),
                     ),
             )
         })),
@@ -342,10 +342,10 @@ fn both_surfaces_encode_the_same_chart_through_the_same_hooks() {
                         Style::new()
                             .width(px(6.0))
                             .height(px(6.0))
-                            .background_color(
+                            .background_color(meo_canvas::ColorValue::Rgba(
                                 meo_canvas_core::parse_color(item.color)
                                     .unwrap_or(hex_rgb(0x00_00_00)),
-                            ),
+                            )),
                     ),
             )
         })),

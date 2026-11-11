@@ -168,7 +168,7 @@ fn box_shadow() -> Scene {
                 offset_y: 6.0,
                 blur: 0.0,
                 spread: 0.0,
-                color: ink,
+                color: ink.into(),
             }),
             card(BoxShadow {
                 inset: false,
@@ -176,7 +176,7 @@ fn box_shadow() -> Scene {
                 offset_y: 4.0,
                 blur: 10.0,
                 spread: 0.0,
-                color: ink,
+                color: ink.into(),
             }),
             card(BoxShadow {
                 inset: false,
@@ -184,7 +184,7 @@ fn box_shadow() -> Scene {
                 offset_y: 0.0,
                 blur: 6.0,
                 spread: 6.0,
-                color: ink,
+                color: ink.into(),
             }),
             // Offset as well as blurred, so the ink is heavier along the top
             // and left edges than the bottom and right ones: an inset shadow
@@ -196,7 +196,7 @@ fn box_shadow() -> Scene {
                 offset_y: 5.0,
                 blur: 8.0,
                 spread: 0.0,
-                color: ink,
+                color: ink.into(),
             }),
         ])
         .into_scene()
@@ -321,15 +321,15 @@ fn gradients() -> Scene {
         vec![
             GradientStop {
                 offset: 0.0,
-                color: hex_rgb(0xf0_3c_3c),
+                color: hex_rgb(0xf0_3c_3c).into(),
             },
             GradientStop {
                 offset: 0.5,
-                color: hex_rgb(0xfa_d2_3c),
+                color: hex_rgb(0xfa_d2_3c).into(),
             },
             GradientStop {
                 offset: 1.0,
-                color: hex_rgb(0x28_5a_d2),
+                color: hex_rgb(0x28_5a_d2).into(),
             },
         ]
     };
@@ -497,11 +497,11 @@ fn mask_kinds() -> Scene {
         stops: vec![
             GradientStop {
                 offset: 0.0,
-                color: Color::rgb(0xff, 0xff, 0xff),
+                color: Color::rgb(0xff, 0xff, 0xff).into(),
             },
             GradientStop {
                 offset: 1.0,
-                color: Color::TRANSPARENT,
+                color: Color::TRANSPARENT.into(),
             },
         ],
     };
@@ -771,15 +771,15 @@ fn gradient_as_paint() -> Scene {
         vec![
             GradientStop {
                 offset: 0.0,
-                color: hex_rgb(0xf0_3c_3c),
+                color: hex_rgb(0xf0_3c_3c).into(),
             },
             GradientStop {
                 offset: 0.5,
-                color: hex_rgb(0xfa_d2_3c),
+                color: hex_rgb(0xfa_d2_3c).into(),
             },
             GradientStop {
                 offset: 1.0,
-                color: hex_rgb(0x28_5a_d2),
+                color: hex_rgb(0x28_5a_d2).into(),
             },
         ]
     };
@@ -800,11 +800,11 @@ fn gradient_as_paint() -> Scene {
         stops: vec![
             GradientStop {
                 offset: 0.0,
-                color: Color::rgba(0, 0, 0, 0xff),
+                color: Color::rgba(0, 0, 0, 0xff).into(),
             },
             GradientStop {
                 offset: 1.0,
-                color: Color::rgba(0, 0, 0, 0x00),
+                color: Color::rgba(0, 0, 0, 0x00).into(),
             },
         ],
     };
@@ -889,13 +889,13 @@ fn flat_roles(
                 .name("CONTROL flat background"),
             cell().children(
                 path()
-                    .fill(Some(PathPaint::Solid(flat)))
+                    .fill(Some(PathPaint::Solid(flat.into())))
                     .name("CONTROL flat path fill"),
             ),
             cell().children(
                 path()
                     .fill(None)
-                    .stroke(Some(PathPaint::Solid(flat)))
+                    .stroke(Some(PathPaint::Solid(flat.into())))
                     .line_width(8.0)
                     .name("CONTROL flat path stroke"),
             ),
@@ -916,11 +916,11 @@ fn gradient_linear() -> Scene {
         vec![
             GradientStop {
                 offset: 0.0,
-                color: hex_rgb(0xf0_3c_3c),
+                color: hex_rgb(0xf0_3c_3c).into(),
             },
             GradientStop {
                 offset: 1.0,
-                color: hex_rgb(0x28_5a_d2),
+                color: hex_rgb(0x28_5a_d2).into(),
             },
         ]
     };
@@ -991,11 +991,11 @@ fn gradient_linear() -> Scene {
                     stops: vec![
                         GradientStop {
                             offset: 0.0,
-                            color: hex_rgb(0xf0_3c_3c),
+                            color: hex_rgb(0xf0_3c_3c).into(),
                         },
                         GradientStop {
                             offset: 1.0,
-                            color: hex_rgb(0xf0_3c_3c),
+                            color: hex_rgb(0xf0_3c_3c).into(),
                         },
                     ],
                 })
@@ -1020,11 +1020,11 @@ fn blend_modes() -> Scene {
         stops: vec![
             GradientStop {
                 offset: 0.0,
-                color: hex_rgb(0x18_18_38),
+                color: hex_rgb(0x18_18_38).into(),
             },
             GradientStop {
                 offset: 1.0,
-                color: hex_rgb(0xf0_e0_a0),
+                color: hex_rgb(0xf0_e0_a0).into(),
             },
         ],
     };

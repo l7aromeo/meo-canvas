@@ -38,7 +38,7 @@ const INSET: f32 = 10.0;
 /// A picture that decodes, at the control's size.
 fn loaded_png() -> Vec<u8> {
     let mut scene = Scene::new(Size::new(LOADED.0, LOADED.1));
-    scene.nodes[0].paint.background_color = Color::rgb(0, 0, 0);
+    scene.nodes[0].paint.background_color = Color::rgb(0, 0, 0).into();
     let mut renderer = Renderer::new();
     renderer.set_gpu(false);
     renderer

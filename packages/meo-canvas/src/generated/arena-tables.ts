@@ -74,11 +74,11 @@ export const LAYOUT_MASK_SLOTS = 1
 
 /** `meo_canvas_scene::style::paint::PaintStyle`, 11 properties in 1 mask slot. */
 export const PAINT: readonly ArenaProperty[] = [
-  { index: 0, name: "background_color", caller: "backgroundColor", type: "meo_canvas_scene::style::paint::Color" },
+  { index: 0, name: "background_color", caller: "backgroundColor", type: "meo_canvas_scene::style::paint::ColorValue" },
   { index: 1, name: "gradient", caller: "gradient", type: "Option<meo_canvas_scene::style::paint::Gradient>" },
   { index: 2, name: "background_image", caller: "backgroundImage", type: "Option<meo_canvas_scene::style::paint::BackgroundImage>" },
-  { index: 3, name: "border_color", caller: "borderColor", type: "meo_canvas_scene::Sides<Option<meo_canvas_scene::style::paint::Color>>" },
-  { index: 4, name: "border_color_all", caller: "borderColor", type: "meo_canvas_scene::style::paint::Color" },
+  { index: 3, name: "border_color", caller: "borderColor", type: "meo_canvas_scene::Sides<Option<meo_canvas_scene::style::paint::ColorValue>>" },
+  { index: 4, name: "border_color_all", caller: "borderColor", type: "meo_canvas_scene::style::paint::ColorValue" },
   { index: 5, name: "border_style", caller: "borderStyle", type: "meo_canvas_scene::style::paint::BorderStyle" },
   { index: 6, name: "border_radius", caller: "borderRadius", type: "meo_canvas_scene::Corners<f32>" },
   { index: 7, name: "opacity", caller: "opacity", type: "f32" },
@@ -96,7 +96,7 @@ export const TEXT: readonly ArenaProperty[] = [
   { index: 1, name: "font_size", caller: "fontSize", type: "Option<f32>" },
   { index: 2, name: "font_weight", caller: "fontWeight", type: "Option<meo_canvas_scene::style::text::FontWeight>" },
   { index: 3, name: "font_style", caller: "fontStyle", type: "Option<meo_canvas_scene::style::text::FontStyle>" },
-  { index: 4, name: "color", caller: "color", type: "Option<meo_canvas_scene::style::paint::Color>" },
+  { index: 4, name: "color", caller: "color", type: "Option<meo_canvas_scene::style::paint::ColorValue>" },
   { index: 5, name: "text_align", caller: "textAlign", type: "Option<meo_canvas_scene::style::text::TextAlign>" },
   { index: 6, name: "text_decoration", caller: "textDecoration", type: "Option<meo_canvas_scene::style::text::TextDecoration>" },
   { index: 7, name: "vertical_align", caller: "verticalAlign", type: "Option<meo_canvas_scene::style::text::VerticalAlign>" },

@@ -69,7 +69,21 @@ function tagged(input: Cursor, tags: readonly string[], what: string): Tagged {
  * syntax this cannot read fails here.
  */
 function color(input: Cursor): Record<string, number> {
+  return hexColour(side(input))
+}
+
+/**
+ * A `ColorValue`, shaped as the fixture writes it: `currentColor` in any case is
+ * its own tag, and any other string a colour.
+ */
+function colorValue(input: Cursor): Record<string, unknown> {
   const text = side(input)
+  if (typeof text === 'string' && text.trim().toLowerCase() === 'currentcolor') return { tag: 'current' }
+  return { tag: 'rgba', value: hexColour(text) }
+}
+
+/** The colour a side string names, in the hex forms and `transparent`. */
+function hexColour(text: unknown): Record<string, number> {
   if (typeof text !== 'string') throw new TypeError('a colour is a side string')
   if (text === 'transparent') return { r: 0, g: 0, b: 0, a: 0 }
 
@@ -102,13 +116,14 @@ const LEAVES: Readonly<Record<string, (input: Cursor) => unknown>> = {
   String: input => side(input),
   FontWeight: slot,
   Color: color,
+  ColorValue: colorValue,
   Length: input => tagged(input, ['points', 'percent'], 'Length'),
   Dimension: input => tagged(input, ['auto', 'points', 'percent'], 'Dimension'),
   TrackSize: input => tagged(input, ['auto', 'points', 'percent', 'fraction'], 'TrackSize'),
   Spacing: input => tagged(input, ['normal', 'points', 'em'], 'Spacing'),
   LineHeight: input => tagged(input, ['number', 'length', 'percent'], 'LineHeight'),
   GridPlacement: input => ({ start: read(input, 'Option<i16>'), span: read(input, 'Option<u16>') }),
-  GradientStop: input => ({ offset: f32(input), color: color(input) }),
+  GradientStop: input => ({ offset: f32(input), color: colorValue(input) }),
   BackgroundSize: input => {
     const tag = ['per-axis', 'cover', 'contain'][slot(input)]
     if (tag === 'per-axis') return { tag, value: [read(input, 'Dimension'), read(input, 'Dimension')] }
@@ -156,15 +171,15 @@ const LEAVES: Readonly<Record<string, (input: Cursor) => unknown>> = {
     offset_y: f32(input),
     blur: f32(input),
     spread: f32(input),
-    color: color(input),
+    color: colorValue(input),
   }),
   TextShadow: input => ({
     offset_x: f32(input),
     offset_y: f32(input),
     blur: f32(input),
-    color: color(input),
+    color: colorValue(input),
   }),
-  TextStroke: input => ({ width: f32(input), color: color(input) }),
+  TextStroke: input => ({ width: f32(input), color: colorValue(input) }),
   Mask: input => {
     const tag = ['image', 'shape', 'path', 'gradient'][slot(input)]
     if (tag === 'shape') return { tag, value: read(input, 'MaskShape') }
@@ -177,7 +192,7 @@ const LEAVES: Readonly<Record<string, (input: Cursor) => unknown>> = {
   JustifyItems: input => justification(input, 'JustifyItems'),
   PathPaint: input => {
     const tag = ['solid', 'gradient'][slot(input)]
-    if (tag === 'solid') return { tag, value: color(input) }
+    if (tag === 'solid') return { tag, value: colorValue(input) }
     if (tag === 'gradient') return { tag, value: read(input, 'Gradient') }
     throw new RangeError('PathPaint has no such tag')
   },
@@ -1007,7 +1022,7 @@ describe('a path node', () => {
       // absolute coordinates in the node's own space.
       view_box: null,
       stretch: false,
-      fill: { tag: 'solid', value: { r: 0, g: 0, b: 0, a: 255 } },
+      fill: { tag: 'solid', value: { tag: 'rgba', value: { r: 0, g: 0, b: 0, a: 255 } } },
       stroke: null,
       line_width: 1,
       fill_rule: 'NonZero',
@@ -1037,8 +1052,8 @@ describe('a path node', () => {
       data: 'M0 0 L4 4',
       view_box: null,
       stretch: false,
-      fill: { tag: 'solid', value: { r: 1, g: 2, b: 3, a: 4 } },
-      stroke: { tag: 'solid', value: { r: 5, g: 6, b: 7, a: 8 } },
+      fill: { tag: 'solid', value: { tag: 'rgba', value: { r: 1, g: 2, b: 3, a: 4 } } },
+      stroke: { tag: 'solid', value: { tag: 'rgba', value: { r: 5, g: 6, b: 7, a: 8 } } },
       line_width: 2.5,
       fill_rule: 'EvenOdd',
       line_cap: 'Round',
@@ -1056,7 +1071,7 @@ describe('a path node', () => {
     expect(payload.stroke).toBeNull()
 
     const transparent = page(Path({ d: 'M0 0', fill: 'transparent' })).payload as Record<string, unknown>
-    expect(transparent.fill).toEqual({ tag: 'solid', value: { r: 0, g: 0, b: 0, a: 0 } })
+    expect(transparent.fill).toEqual({ tag: 'solid', value: { tag: 'rgba', value: { r: 0, g: 0, b: 0, a: 0 } } })
   })
 })
 
@@ -1071,11 +1086,12 @@ describe('the effects', () => {
   })
 
   it('fill a shadow in with the scene’s defaults, not with zeroes', () => {
-    // A shadow that names only an offset is black, unblurred, unspread and not
-    // inset — the same values the scene's `Default` gives, stated here because
-    // the wire shape is fixed and every field is written whatever was said.
+    // A shadow that names only an offset is the text colour, unblurred,
+    // unspread and not inset — the same values the scene's `Default` gives,
+    // stated here because the wire shape is fixed and every field is written
+    // whatever was said.
     expect(page(bare({ boxShadow: { offsetY: 2 } })).groups.effects).toEqual({
-      box_shadows: [{ inset: false, offset_x: 0, offset_y: 2, blur: 0, spread: 0, color: { r: 0, g: 0, b: 0, a: 255 } }],
+      box_shadows: [{ inset: false, offset_x: 0, offset_y: 2, blur: 0, spread: 0, color: { tag: 'current' } }],
     })
   })
 
@@ -1304,7 +1320,13 @@ describe('the shorthands', () => {
     ]
 
     for (const [written, channels] of forms) {
-      expect(page(bare({ backgroundColor: written })).groups.paint, written).toEqual({ background_color: channels })
+      expect(page(bare({ backgroundColor: written })).groups.paint, written).toEqual({ background_color: { tag: 'rgba', value: channels } })
+    }
+  })
+
+  it('carry currentColor as itself, in any case, for the renderer to resolve per node', () => {
+    for (const written of ['currentColor', 'CURRENTCOLOR', ' currentcolor ']) {
+      expect(page(bare({ backgroundColor: written })).groups.paint, written).toEqual({ background_color: { tag: 'current' } })
     }
   })
 
@@ -1313,10 +1335,10 @@ describe('the shorthands', () => {
     // per-edge overrides. The split is the wire format's convenience, so it
     // does not reach the caller.
     expect(page(bare({ borderColor: '#f0c' })).groups.paint).toEqual({
-      border_color_all: { r: 0xff, g: 0, b: 0xcc, a: 0xff },
+      border_color_all: { tag: 'rgba', value: { r: 0xff, g: 0, b: 0xcc, a: 0xff } },
     })
     expect(page(bare({ borderColor: { top: '#f0c' } })).groups.paint).toEqual({
-      border_color: [{ r: 0xff, g: 0, b: 0xcc, a: 0xff }, null, null, null],
+      border_color: [{ tag: 'rgba', value: { r: 0xff, g: 0, b: 0xcc, a: 0xff } }, null, null, null],
     })
   })
 

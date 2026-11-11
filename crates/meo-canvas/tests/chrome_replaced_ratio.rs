@@ -66,7 +66,8 @@ fn chrome(case: &str) -> (u32, u32) {
 /// embedded, so the intrinsic size is one the suite can restate.
 fn art() -> Vec<u8> {
     let mut scene = Scene::new(Size::new(ART.0, ART.1));
-    scene.nodes[0].paint.background_color = Color::rgb(INK.0, INK.1, INK.2);
+    scene.nodes[0].paint.background_color =
+        Color::rgb(INK.0, INK.1, INK.2).into();
     let mut renderer = Renderer::new();
     renderer.set_gpu(false);
     renderer
@@ -154,7 +155,7 @@ fn painted(case: &Case) -> (u32, u32) {
     element.layout.padding.top = Length::Points(padding);
     element.layout.padding.bottom = Length::Points(padding);
     element.layout.box_sizing = box_sizing;
-    element.paint.background_color = Color::rgb(INK.0, INK.1, INK.2);
+    element.paint.background_color = Color::rgb(INK.0, INK.1, INK.2).into();
     if case.absolute {
         element.layout.position_type = PositionType::Absolute;
         element.layout.inset.top = Some(Length::Points(0.0));

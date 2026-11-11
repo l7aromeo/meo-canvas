@@ -17,7 +17,7 @@ use meo_canvas_scene::{
         },
         paint::{
             BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
-            BorderStyle, Color, Gradient, GradientGeometry, GradientKind,
+            BorderStyle, ColorValue, Gradient, GradientGeometry, GradientKind,
             GradientStop, LinearDirection, ObjectFit,
         },
         text::{
@@ -248,7 +248,7 @@ impl ArenaValue for TextStroke {
     fn read(input: &mut Reader<'_>) -> Result<Self, ArenaError> {
         Ok(Self {
             width: f32::read(input)?,
-            color: Color::read(input)?,
+            color: ColorValue::read(input)?,
         })
     }
 }
@@ -257,7 +257,7 @@ impl ArenaValue for GradientStop {
     fn read(input: &mut Reader<'_>) -> Result<Self, ArenaError> {
         Ok(Self {
             offset: f32::read(input)?,
-            color: Color::read(input)?,
+            color: ColorValue::read(input)?,
         })
     }
 }
@@ -411,7 +411,7 @@ impl ArenaValue for BoxShadow {
             offset_y: f32::read(input)?,
             blur: f32::read(input)?,
             spread: f32::read(input)?,
-            color: Color::read(input)?,
+            color: ColorValue::read(input)?,
         })
     }
 }
@@ -422,7 +422,7 @@ impl ArenaValue for TextShadow {
             offset_x: f32::read(input)?,
             offset_y: f32::read(input)?,
             blur: f32::read(input)?,
-            color: Color::read(input)?,
+            color: ColorValue::read(input)?,
         })
     }
 }
@@ -451,7 +451,7 @@ impl ArenaValue for PathPaint {
     fn read(input: &mut Reader<'_>) -> Result<Self, ArenaError> {
         let slot = input.offset();
         match input.tag()? {
-            0 => Ok(Self::Solid(Color::read(input)?)),
+            0 => Ok(Self::Solid(ColorValue::read(input)?)),
             1 => Ok(Self::Gradient(Gradient::read(input)?)),
             found => Err(ArenaError::UnknownTag {
                 slot,

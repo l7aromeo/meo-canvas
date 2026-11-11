@@ -118,7 +118,7 @@ fn series(
             .stretch(true)
             .fill(None)
             .stroke(Some(PathPaint::Solid(
-                meo_canvas_core::parse_color(&colour)
+                meo_canvas_core::color::parse_color_value(&colour)
                     .ok_or(Error::Chart("a series colour could not be read"))?,
             )))
             .line_width(SERIES_STROKE)
@@ -163,7 +163,7 @@ fn marker(
                     ..Transform::default()
                 })
                 .background_color(
-                    meo_canvas_core::parse_color(colour).ok_or(
+                    meo_canvas_core::color::parse_color_value(colour).ok_or(
                         Error::Chart("a point colour could not be read"),
                     )?,
                 ),

@@ -80,15 +80,15 @@ fn ramp() -> Gradient {
         stops: vec![
             GradientStop {
                 offset: 0.0,
-                color: Color::rgb(0x28, 0x50, 0xdc),
+                color: Color::rgb(0x28, 0x50, 0xdc).into(),
             },
             GradientStop {
                 offset: 0.5,
-                color: Color::rgb(0xff, 0xff, 0xff),
+                color: Color::rgb(0xff, 0xff, 0xff).into(),
             },
             GradientStop {
                 offset: 1.0,
-                color: Color::rgb(0xf2, 0xb0, 0x2c),
+                color: Color::rgb(0xf2, 0xb0, 0x2c).into(),
             },
         ],
     }
@@ -103,11 +103,11 @@ fn shallow() -> Element {
         stops: vec![
             GradientStop {
                 offset: 0.0,
-                color: Color::rgb(0x30, 0x30, 0x36),
+                color: Color::rgb(0x30, 0x30, 0x36).into(),
             },
             GradientStop {
                 offset: 1.0,
-                color: Color::rgb(0x3a, 0x3a, 0x42),
+                color: Color::rgb(0x3a, 0x3a, 0x42).into(),
             },
         ],
     })
@@ -183,11 +183,11 @@ fn fade() -> Gradient {
         stops: vec![
             GradientStop {
                 offset: 0.0,
-                color: Color::rgba(0, 0, 0, 0xff),
+                color: Color::rgba(0, 0, 0, 0xff).into(),
             },
             GradientStop {
                 offset: 1.0,
-                color: Color::rgba(0, 0, 0, 0x00),
+                color: Color::rgba(0, 0, 0, 0x00).into(),
             },
         ],
     }
@@ -629,7 +629,7 @@ fn glyph_paint_cases() -> Vec<Case> {
                     offset_x: 2.0,
                     offset_y: 2.0,
                     blur: 2.0,
-                    color: Color::rgba(0x14, 0x14, 0x28, 0x8c),
+                    color: Color::rgba(0x14, 0x14, 0x28, 0x8c).into(),
                 }])
             },
             without: line,
@@ -644,7 +644,7 @@ fn glyph_paint_cases() -> Vec<Case> {
             with: || {
                 line().text_stroke(TextStroke {
                     width: 1.0,
-                    color: hex_rgb(0xdc_28_28),
+                    color: hex_rgb(0xdc_28_28).into(),
                 })
             },
             without: line,
@@ -658,14 +658,14 @@ fn glyph_paint_cases() -> Vec<Case> {
                 line()
                     .text_stroke(TextStroke {
                         width: 1.0,
-                        color: hex_rgb(0xdc_28_28),
+                        color: hex_rgb(0xdc_28_28).into(),
                     })
                     .paint_order(PaintOrder::Stroke)
             },
             without: || {
                 line().text_stroke(TextStroke {
                     width: 1.0,
-                    color: hex_rgb(0xdc_28_28),
+                    color: hex_rgb(0xdc_28_28).into(),
                 })
             },
             effect: Effect::Draws,

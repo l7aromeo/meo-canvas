@@ -76,7 +76,7 @@ fn render(
 ) -> (Extent, Pixel, u32) {
     let mut scene = Scene::new(Size::new(PAGE, PAGE));
     scene.nodes[0].paint.background_color =
-        Color::rgb(PAPER.0, PAPER.1, PAPER.2);
+        Color::rgb(PAPER.0, PAPER.1, PAPER.2).into();
 
     let node = scene
         .push(
@@ -114,12 +114,12 @@ fn render(
         // default becomes.
         node.paint.border_style = BorderStyle::Solid;
         node.paint.border_radius = Corners::all(radius);
-        node.paint.border_color_all = Color::rgb(0, 0, 255);
+        node.paint.border_color_all = Color::rgb(0, 0, 255).into();
         // The harness paints the padding band with the element's background, so
         // this does too, or the two sides measure different pictures of one
         // element.
         if padding > 0.0 {
-            node.paint.background_color = Color::rgb(0, 0, 255);
+            node.paint.background_color = Color::rgb(0, 0, 255).into();
         }
     }
 

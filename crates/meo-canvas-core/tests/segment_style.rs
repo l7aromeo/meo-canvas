@@ -72,7 +72,7 @@ fn segment(overlay: TextStyle) -> Vec<TextSegment> {
 /// The node's own style with `white` text, which every row starts from.
 fn white() -> TextStyle {
     TextStyle {
-        color: Some(Color::rgb(255, 255, 255)),
+        color: Some(Color::rgb(255, 255, 255).into()),
         ..TextStyle::default()
     }
 }
@@ -83,7 +83,7 @@ fn a_segment_colour_reaches_the_drawing() {
 
     let on_segment = render(
         segment(TextStyle {
-            color: Some(Color::rgb(255, 0, 0)),
+            color: Some(Color::rgb(255, 0, 0).into()),
             ..TextStyle::default()
         }),
         &white(),
@@ -95,7 +95,7 @@ fn a_segment_colour_reaches_the_drawing() {
     let on_node = render(
         segment(TextStyle::default()),
         &TextStyle {
-            color: Some(Color::rgb(255, 0, 0)),
+            color: Some(Color::rgb(255, 0, 0).into()),
             ..white()
         },
     );
@@ -148,7 +148,7 @@ fn one_styled_segment_leaves_its_neighbours_alone() {
     // satisfy both, because both compare against an unstyled render. Two
     // segments where only the second is styled cannot be satisfied that way.
     let red = TextStyle {
-        color: Some(Color::rgb(255, 0, 0)),
+        color: Some(Color::rgb(255, 0, 0).into()),
         ..TextStyle::default()
     };
 

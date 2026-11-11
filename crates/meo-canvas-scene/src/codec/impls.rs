@@ -20,8 +20,9 @@ use crate::{
             GridPlacement, JustifyItems, JustifySelf, LayoutStyle, TrackSize,
         },
         paint::{
-            BackgroundImage, BackgroundSize, Color, Gradient, GradientGeometry,
-            GradientKind, GradientStop, LinearDirection, PaintStyle,
+            BackgroundImage, BackgroundSize, Color, ColorValue, Gradient,
+            GradientGeometry, GradientKind, GradientStop, LinearDirection,
+            PaintStyle,
         },
         text::{
             FontWeight, LineHeight, ParagraphStyle, Spacing, TextSegment,
@@ -372,6 +373,27 @@ impl Wire for Color {
     }
 }
 
+impl Wire for ColorValue {
+    fn write(&self, out: &mut Writer<'_>) {
+        match self {
+            Self::Rgba(color) => {
+                out.u8(TAG_FIRST);
+                color.write(out);
+            }
+            Self::Current => out.u8(1),
+        }
+    }
+
+    fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
+        let offset = input.offset();
+        match input.u8()? {
+            TAG_FIRST => Ok(Self::Rgba(Color::read(input)?)),
+            1 => Ok(Self::Current),
+            tag => Err(CodecError::UnknownTag { offset, tag }),
+        }
+    }
+}
+
 impl Wire for FontWeight {
     fn write(&self, out: &mut Writer<'_>) {
         out.u16(self.get());
@@ -512,7 +534,7 @@ impl Wire for GradientStop {
     fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
         Ok(Self {
             offset: input.f32()?,
-            color: Color::read(input)?,
+            color: ColorValue::read(input)?,
         })
     }
 }
@@ -660,7 +682,7 @@ impl Wire for PathPaint {
     fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
         let offset = input.offset();
         match input.u8()? {
-            TAG_FIRST => Ok(Self::Solid(Color::read(input)?)),
+            TAG_FIRST => Ok(Self::Solid(ColorValue::read(input)?)),
             1 => Ok(Self::Gradient(Gradient::read(input)?)),
             tag => Err(CodecError::UnknownTag { offset, tag }),
         }
@@ -763,11 +785,11 @@ impl Wire for PaintStyle {
 
     fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
         Ok(Self {
-            background_color: Color::read(input)?,
+            background_color: ColorValue::read(input)?,
             gradient: Option::read(input)?,
             background_image: Option::read(input)?,
             border_color: Sides::read(input)?,
-            border_color_all: Color::read(input)?,
+            border_color_all: ColorValue::read(input)?,
             border_style: Wire::read(input)?,
             border_radius: Corners::read(input)?,
             opacity: input.f32()?,
@@ -787,7 +809,7 @@ impl Wire for TextStroke {
     fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
         Ok(Self {
             width: input.f32()?,
-            color: Color::read(input)?,
+            color: ColorValue::read(input)?,
         })
     }
 }
@@ -886,7 +908,7 @@ impl Wire for BoxShadow {
             offset_y: input.f32()?,
             blur: input.f32()?,
             spread: input.f32()?,
-            color: Color::read(input)?,
+            color: ColorValue::read(input)?,
         })
     }
 }
@@ -904,7 +926,7 @@ impl Wire for TextShadow {
             offset_x: input.f32()?,
             offset_y: input.f32()?,
             blur: input.f32()?,
-            color: Color::read(input)?,
+            color: ColorValue::read(input)?,
         })
     }
 }

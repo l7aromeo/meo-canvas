@@ -36,7 +36,7 @@ fn rows(prefix: &str) -> impl Iterator<Item = Vec<&'static str>> {
 fn dotted(width: f32) -> (usize, Vec<u8>) {
     let mut scene = Scene::new(Size::new(EDGE, HEIGHT));
     if let Some(root) = scene.get_mut(NodeId::ROOT) {
-        root.paint.background_color = Color::rgb(255, 255, 255);
+        root.paint.background_color = Color::rgb(255, 255, 255).into();
     }
     let id = scene
         .push(NodeId::ROOT, Node::new(NodeKind::Box))
@@ -44,8 +44,8 @@ fn dotted(width: f32) -> (usize, Vec<u8>) {
     if let Some(node) = scene.get_mut(id) {
         node.layout.size = (Dimension::Points(EDGE), Dimension::Points(HEIGHT));
         node.layout.border = Sides::all(width);
-        node.paint.background_color = Color::rgb(255, 255, 255);
-        node.paint.border_color_all = Color::rgb(0, 0, 0);
+        node.paint.background_color = Color::rgb(255, 255, 255).into();
+        node.paint.border_color_all = Color::rgb(0, 0, 0).into();
         node.paint.border_style = BorderStyle::Dotted;
     }
     let mut renderer = Renderer::new();

@@ -35,7 +35,7 @@ fn cell(path: Element) -> Element {
 fn star(rule: FillRule) -> Element {
     Path::d(STAR)
         .size(px(64.0), px(64.0))
-        .fill(Some(PathPaint::Solid(hex_rgb(0x28_50_dc))))
+        .fill(Some(PathPaint::Solid(hex_rgb(0x28_50_dc).into())))
         .fill_rule(rule)
 }
 
@@ -44,7 +44,7 @@ fn capped(cap: LineCap) -> Element {
     Path::d(SEGMENT)
         .size(px(64.0), px(64.0))
         .fill(None)
-        .stroke(Some(PathPaint::Solid(hex_rgb(0x22_88_44))))
+        .stroke(Some(PathPaint::Solid(hex_rgb(0x22_88_44).into())))
         .line_width(14.0)
         .line_cap(cap)
 }
@@ -54,7 +54,7 @@ fn joined(join: LineJoin) -> Element {
     Path::d(CHEVRON)
         .size(px(64.0), px(64.0))
         .fill(None)
-        .stroke(Some(PathPaint::Solid(hex_rgb(0xcc_44_22))))
+        .stroke(Some(PathPaint::Solid(hex_rgb(0xcc_44_22).into())))
         .line_width(12.0)
         .line_join(join)
 }
@@ -64,7 +64,7 @@ fn dashed(pattern: &[f32], offset: f32) -> Element {
     Path::d(SEGMENT)
         .size(px(64.0), px(64.0))
         .fill(None)
-        .stroke(Some(PathPaint::Solid(hex_rgb(0x11_11_18))))
+        .stroke(Some(PathPaint::Solid(hex_rgb(0x11_11_18).into())))
         .line_width(6.0)
         .line_dash(pattern.iter().copied())
         .line_dash_offset(offset)
@@ -89,7 +89,9 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
                     Path::d(STAR)
                         .size(px(64.0), px(64.0))
                         .fill(None)
-                        .stroke(Some(PathPaint::Solid(hex_rgb(0x28_50_dc))))
+                        .stroke(Some(PathPaint::Solid(
+                            hex_rgb(0x28_50_dc).into(),
+                        )))
                         .line_width(2.0),
                 ),
                 // A path with neither fill nor stroke set draws its default,
@@ -105,11 +107,11 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
                         stops: vec![
                             GradientStop {
                                 offset: 0.0,
-                                color: hex_rgb(0x28_50_dc),
+                                color: hex_rgb(0x28_50_dc).into(),
                             },
                             GradientStop {
                                 offset: 1.0,
-                                color: hex_rgb(0xf2_b0_2c),
+                                color: hex_rgb(0xf2_b0_2c).into(),
                             },
                         ],
                     }),

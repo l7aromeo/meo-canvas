@@ -64,11 +64,11 @@ fn emit_percentage_scene() -> Result<(), std::io::Error> {
                     stops: vec![
                         meo_canvas::scene::GradientStop {
                             offset: 0.0,
-                            color: hex_rgb(0x10_10_14),
+                            color: hex_rgb(0x10_10_14).into(),
                         },
                         meo_canvas::scene::GradientStop {
                             offset: 1.0,
-                            color: hex_rgb(0xff_ff_ff),
+                            color: hex_rgb(0xff_ff_ff).into(),
                         },
                     ],
                 }),

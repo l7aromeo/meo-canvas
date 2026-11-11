@@ -7,7 +7,12 @@ use meo_canvas_core::{ImageFormat, Renderer, encode::EncodeOptions};
 use meo_canvas_scene::{
     Corners, Scene, Sides, Size,
     node::{Node, NodeId, NodeKind},
-    style::{Dimension, effect::BoxShadow, layout::Overflow, paint::Color},
+    style::{
+        Dimension,
+        effect::BoxShadow,
+        layout::Overflow,
+        paint::{Color, ColorValue},
+    },
 };
 
 /// One scene: a page, a box inset from every edge, and the shadows it casts.
@@ -35,7 +40,7 @@ struct Cell {
 fn render(cell: &Cell) -> Vec<u8> {
     let mut scene = Scene::new(Size::new(cell.size.0, cell.size.1));
     if let Some(root) = scene.get_mut(NodeId::ROOT) {
-        root.paint.background_color = cell.page;
+        root.paint.background_color = cell.page.into();
     }
 
     let id = scene
@@ -54,7 +59,7 @@ fn render(cell: &Cell) -> Vec<u8> {
             bottom: Dimension::Points(cell.inset),
             left: Dimension::Points(cell.inset),
         };
-        node.paint.background_color = cell.fill;
+        node.paint.background_color = cell.fill.into();
         node.paint.border_radius = Corners {
             top_left: cell.radius,
             top_right: cell.radius,
@@ -112,7 +117,7 @@ const fn clip_shadow(inset: bool) -> BoxShadow {
         offset_y: 1.0,
         blur: 2.0,
         spread: 0.0,
-        color: Color::rgba(0, 0, 0, 0x80),
+        color: ColorValue::Rgba(Color::rgba(0, 0, 0, 0x80)),
     }
 }
 
@@ -124,7 +129,7 @@ const fn hard(inset: bool, color: Color) -> BoxShadow {
         offset_y: 0.0,
         blur: 0.0,
         spread: 0.0,
-        color,
+        color: ColorValue::Rgba(color),
     }
 }
 
@@ -499,7 +504,7 @@ const fn ink(offset: (f32, f32), blur: f32, spread: f32) -> BoxShadow {
         offset_y: offset.1,
         blur,
         spread,
-        color: Color::rgb(0, 0, 0),
+        color: ColorValue::Rgba(Color::rgb(0, 0, 0)),
     }
 }
 
@@ -529,7 +534,7 @@ fn extent_cases() -> Vec<(&'static str, f32, Vec<BoxShadow>)> {
                 offset_y: 20.0,
                 blur: 0.0,
                 spread: 0.0,
-                color: Color::rgba(0, 0, 0, 128),
+                color: Color::rgba(0, 0, 0, 128).into(),
             }],
         ),
     ]

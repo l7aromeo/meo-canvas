@@ -85,6 +85,11 @@ export type Corners =
  * `'rgba(255,255,255,0.15)'`, `'hsl(210 90% 40%)'`, `'hwb(...)'`, `'lab(...)'`
  * and `'oklch(...)'`.
  *
+ * `'currentColor'` is the node's text colour after inheritance, black where
+ * nothing sets one, as in Chrome; as `color` itself it is the parent's colour.
+ * Inside `color-mix()` or a relative colour it is refused: the colour reader
+ * takes no node colour there (`l7aromeo/meo-skia-canvas#688`).
+ *
  * The named forms are here for the completions they give an editor, and
  * `(string & {})` is what keeps every other syntax accepted alongside them —
  * without it the union would refuse strings the renderer takes. **No
@@ -502,7 +507,7 @@ export interface BoxShadow {
   readonly blur?: number
   /** How much the shadow grows before it is blurred. */
   readonly spread?: number
-  /** Its colour. */
+  /** Its colour, the text colour (`'currentColor'`) when left out, as in CSS. */
   readonly color?: Color
 }
 
@@ -514,7 +519,7 @@ export interface TextShadow {
   readonly offsetY?: number
   /** How far the edge is softened. */
   readonly blur?: number
-  /** Its colour. */
+  /** Its colour, the text colour (`'currentColor'`) when left out, as in CSS. */
   readonly color?: Color
 }
 
@@ -522,7 +527,7 @@ export interface TextShadow {
 export interface TextStroke {
   /** Thickness in pixels. Half falls inside the letter and half outside. */
   readonly width?: number
-  /** Its colour. */
+  /** Its colour, the text colour (`'currentColor'`) when left out, as in CSS. */
   readonly color?: Color
 }
 

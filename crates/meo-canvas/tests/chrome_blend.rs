@@ -93,11 +93,11 @@ fn backdrop() -> Gradient {
         stops: vec![
             GradientStop {
                 offset: 0.0,
-                color: hex_rgb(0x18_18_38),
+                color: hex_rgb(0x18_18_38).into(),
             },
             GradientStop {
                 offset: 1.0,
-                color: hex_rgb(0xf0_e0_a0),
+                color: hex_rgb(0xf0_e0_a0).into(),
             },
         ],
     }

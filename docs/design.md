@@ -598,11 +598,24 @@ the same string come from one parser. It answers straight, unclamped sRGB in
 `byte / 255`, `#808080` as exactly 128, and a colour at alpha 0 keeps its hue.
 A colour converted from another space can land a few units in the last place
 outside the gamut, `oklab(1 0 0)` at a red of 255.0000000000001, and nothing
-snaps it back. `currentColor` is refused, alone or nested: the reader answers
-it with black, and a string read here has no node whose text colour it names.
-`color-strings.tsv` holds the reader to Chrome on 87 strings, and pins the one
-it refuses where Chrome paints, `color(display-p3-linear ...)`
+snaps it back. `color-strings.tsv` holds the reader to Chrome on 87 strings,
+and pins the one it refuses where Chrome paints, `color(display-p3-linear ...)`
 (`l7aromeo/meo-skia-canvas#687`).
+
+**`currentColor` is a scene value, resolved per node at paint.** A style's
+colours are `ColorValue`s, a colour or `Current`, because one style may sit on
+nodes with different text colours. `resolve` records every node's text colour
+after inheritance, black where nothing sets one, and paint resolves each colour
+against it: background, borders, gradient stops, shadows, the text stroke and a
+path's paint. `color: currentColor` is the parent's colour. CSS's initial
+`currentColor` is kept where a scene can state it: an unnamed border, shadow or
+stroke colour is `Current`; a path's fill stays black, SVG's initial `fill`.
+The reader answers `currentColor` with black, so `parse_channels` refuses it,
+and `parse_color_value` reads it alone as `Current`. Nested in `color-mix()` or
+a relative colour it stays refused, and in a `filter` string it is read by
+`meo-skia-canvas` as black; both wait on the reader taking a node's colour
+(`l7aromeo/meo-skia-canvas#688`). `current-color.tsv` pins every case against
+Chrome on both surfaces, those included.
 
 ## Performance baseline
 

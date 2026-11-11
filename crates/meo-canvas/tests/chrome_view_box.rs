@@ -88,7 +88,7 @@ fn drawn(row: &Row) -> Vec<u8> {
         .children(
             Path::d(BAR)
                 .view_box(Some((0.0, 0.0, 100.0, 100.0)))
-                .fill(Some(PathPaint::Solid(hex_rgb(0xff_00_00))))
+                .fill(Some(PathPaint::Solid(hex_rgb(0xff_00_00).into())))
                 .position_type(PositionType::Absolute)
                 .position(sides(
                     Some(px(row.top)),

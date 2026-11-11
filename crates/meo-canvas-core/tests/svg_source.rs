@@ -48,7 +48,7 @@ const HARDCODED: &str = concat!(
 fn tinted(xml: &str, color: Option<Color>) -> [u8; 3] {
     let mut scene = Scene::new(Size::new(20.0, 20.0));
     if let Some(page) = scene.get_mut(NodeId::ROOT) {
-        page.paint.background_color = Color::rgb(255, 255, 255);
+        page.paint.background_color = Color::rgb(255, 255, 255).into();
     }
     let id = scene
         .push(
@@ -66,7 +66,7 @@ fn tinted(xml: &str, color: Option<Color>) -> [u8; 3] {
         .unwrap_or_else(|error| unreachable!("{error}"));
     if let Some(node) = scene.get_mut(id) {
         node.layout.size = (Dimension::Points(20.0), Dimension::Points(20.0));
-        node.text.color = color;
+        node.text.color = color.map(Into::into);
     }
 
     let mut renderer = Renderer::new();
@@ -96,7 +96,7 @@ fn drawn(scale: f32) -> (usize, Vec<u8>) {
     let mut scene = Scene::new(Size::new(20.0, 20.0));
     scene.scale = scale;
     if let Some(page) = scene.get_mut(NodeId::ROOT) {
-        page.paint.background_color = Color::rgb(255, 255, 255);
+        page.paint.background_color = Color::rgb(255, 255, 255).into();
     }
     let id = scene
         .push(
@@ -251,7 +251,7 @@ fn a_colour_on_a_bitmap_is_refused() {
         .unwrap_or_else(|error| unreachable!("{error}"));
     if let Some(node) = scene.get_mut(id) {
         node.layout.size = (Dimension::Points(4.0), Dimension::Points(2.0));
-        node.text.color = Some(Color::rgb(255, 0, 0));
+        node.text.color = Some(Color::rgb(255, 0, 0).into());
     }
 
     let mut renderer = Renderer::new();
@@ -306,7 +306,7 @@ fn ink(
 ) -> (usize, usize, usize, usize) {
     let mut scene = Scene::new(Size::new(w, h));
     if let Some(page) = scene.get_mut(NodeId::ROOT) {
-        page.paint.background_color = Color::rgb(CELL.0, CELL.1, CELL.2);
+        page.paint.background_color = Color::rgb(CELL.0, CELL.1, CELL.2).into();
     }
     let id = scene
         .push(

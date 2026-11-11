@@ -23,7 +23,7 @@ const BEHIND: (u8, u8, u8) = (0, 128, 255);
 fn icon() -> Vec<u8> {
     let mut scene = Scene::new(Size::new(16.0, 16.0));
     if let Some(root) = scene.get_mut(NodeId::ROOT) {
-        root.paint.background_color = Color::rgb(ICON.0, ICON.1, ICON.2);
+        root.paint.background_color = Color::rgb(ICON.0, ICON.1, ICON.2).into();
     }
     Renderer::new()
         .render_to_buffer(&scene, ImageFormat::Ico, &EncodeOptions::default())
@@ -59,7 +59,8 @@ fn an_ico_we_wrote_decodes_back_to_the_colour_we_put_in_it() {
 
     let mut scene = Scene::new(Size::new(16.0, 16.0));
     if let Some(root) = scene.get_mut(NodeId::ROOT) {
-        root.paint.background_color = Color::rgb(BEHIND.0, BEHIND.1, BEHIND.2);
+        root.paint.background_color =
+            Color::rgb(BEHIND.0, BEHIND.1, BEHIND.2).into();
     }
     let id = scene
         .push(
