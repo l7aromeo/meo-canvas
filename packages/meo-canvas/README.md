@@ -14,11 +14,12 @@ Server-side image generation for Node. Describe a layout the way you would descr
 npm install meo-canvas
 ```
 
-**A bare install gives you 10.x.** This line continues v9's package name rather
-than starting a new one, so `latest` moved from 9.x to 10.x when 10.0.0 shipped.
+**A bare install gives you this renderer, 10.0.0 or later.** This line continues
+v9's package name rather than starting a new one, so `latest` moved from 9.x to
+10.x when 10.0.0 shipped.
 If you want to stay on 9.x, ask for it by name: `npm install meo-canvas@9`.
 
-To run 9.x and 10.x side by side, alias one of them. npm resolves one directory
+To run 9.x and this renderer side by side, alias one of them. npm resolves one directory
 per package name, so two names is what it takes:
 
 ```text

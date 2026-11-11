@@ -213,9 +213,9 @@ jobs:
           test -n "$declared" || declared='{}'
           platforms=$(printf '%s' "$declared" | jq -r 'to_entries[] | "\(.key)@\(.value)"')
 
-          # Zero entries is a failed read, not an empty set: every 10.x ships
-          # seven platform packages. A version that ships none has to change
-          # this line.
+          # Zero entries is a failed read, not an empty set: every release
+          # since 10.0.0 ships seven platform packages. A version that ships
+          # none has to change this line.
           count=$(printf '%s' "$platforms" | grep -c . || true)
           if [ "$count" -eq 0 ]; then
             echo "::error::meo-canvas@${VERSION} declared no optionalDependencies; this check looked at nothing"

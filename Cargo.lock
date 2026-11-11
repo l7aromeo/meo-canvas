@@ -1385,7 +1385,7 @@ dependencies = [
 
 [[package]]
 name = "meo-canvas"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "meo-canvas-core",
  "meo-canvas-scene",
@@ -1394,7 +1394,7 @@ dependencies = [
 
 [[package]]
 name = "meo-canvas-cli"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "clap",
  "meo-canvas-core",
@@ -1404,7 +1404,7 @@ dependencies = [
 
 [[package]]
 name = "meo-canvas-core"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "base64",
  "criterion",
@@ -1420,7 +1420,7 @@ dependencies = [
 
 [[package]]
 name = "meo-canvas-node"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "meo-canvas-core",
  "meo-canvas-scene",
@@ -1431,7 +1431,7 @@ dependencies = [
 
 [[package]]
 name = "meo-canvas-scene"
-version = "0.1.4"
+version = "0.2.0"
 
 [[package]]
 name = "meo-skia-canvas"
