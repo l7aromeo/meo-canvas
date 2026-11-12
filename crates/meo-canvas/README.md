@@ -95,6 +95,13 @@ different price, and the flag is what lets the one who pays decide. Without it
 an `ImageSource::Url` is an error naming the feature; a caller who would rather
 fetch for themselves passes `ImageSource::Bytes` and needs none of this.
 
+Under `net`, `Root::image_cache` keeps fetched images across renders, in memory
+or in a directory a Node process using the npm package can share, and
+revalidates them as a browser's HTTP cache does. Without it every render fetches
+as before. The rules and the stores' guarantees are in the
+[`image_cache`](https://docs.rs/meo-canvas/latest/meo_canvas/image_cache/)
+reference.
+
 ## System libraries
 
 Unlike the npm package, which ships a binary with fontconfig linked

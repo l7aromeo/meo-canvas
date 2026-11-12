@@ -39,6 +39,11 @@ meo-canvas-scene = { workspace = true }
 # `pub use` away from this crate's surface, which is the way a public API
 # acquires a dependency it never meant to promise.
 
+# docs.rs builds the default features alone, which would leave out everything
+# behind `net`: the image cache, and the reference its README links to.
+[package.metadata.docs.rs]
+features = ["net"]
+
 [lints]
 workspace = true
 

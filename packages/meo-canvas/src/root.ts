@@ -8,8 +8,9 @@
 import { resolveAddon } from './addon.js'
 import { encodeScene, type FetchAttempt, type ImageRequest, type SideValue, type SurfaceOptions } from './arena.js'
 import { Canvas, type NativeCanvas } from './canvas.js'
+import type { Fetched, ImageCache, Network, Outcome } from './image-cache.js'
 import { Box, containerPropsOf, type Children, type SceneNode } from './node.js'
-import type { ColorSpace, ColorType, OnImageError } from './index.js'
+import type { ColorSpace, ColorType, Diagnostic, OnImageError } from './index.js'
 import type { Style } from './style.js'
 
 /**
@@ -104,6 +105,60 @@ async function bounded(url: string, response: Response): Promise<Uint8Array> {
 /** The refusal, worded as the crate words its own. */
 function tooLarge(url: string): TypeError {
   return new TypeError(`cannot fetch ${JSON.stringify(url)}: the image is larger than the ${MAX_IMAGE_BYTES / (1024 * 1024)} MiB this renderer fetches`)
+}
+
+/**
+ * One request for `url`, with `extra` headers sent after the caller's: what
+ * the image cache revalidates with. A response with any status comes back as
+ * one, its body read only for a success; a failure that produced none is
+ * classified as the crate classifies it.
+ */
+async function request(url: string, init: RequestInit | undefined, extra: readonly (readonly [string, string])[]): Promise<Fetched> {
+  // The composed signal: the scene's, this source's, and then the ceiling
+  // below. A source that brings its own abort can tighten the wait and cannot
+  // escape the caller's — see `mergeHttpOptions` for why `signal` is the one
+  // member that composes rather than overriding.
+  const caller = init?.signal
+  const { ceiling, signal } = fetchDeadline(caller)
+  const cannot = (detail: string, cause?: unknown): TypeError =>
+    new TypeError(`cannot fetch ${JSON.stringify(url)}: ${detail}`, cause === undefined ? undefined : { cause })
+
+  let response: Response
+  try {
+    if (extra.length === 0) {
+      response = await fetch(url, { ...init, signal })
+    } else {
+      const headers = new Headers(init?.headers)
+      for (const [name, value] of extra) headers.set(name, value)
+      response = await fetch(url, { ...init, headers, signal })
+    }
+  } catch (cause) {
+    // Ours or theirs is worth distinguishing: one is a limit this renderer
+    // chose and the other is the caller's own abort, and a reader who cannot
+    // tell them apart looks in the wrong place.
+    if (ceiling.aborted && !(caller?.aborted ?? false)) {
+      const detail = `it took longer than the ${FETCH_TIMEOUT_MS / 1000} seconds this renderer waits`
+      // `'transport'` rather than a timeout of its own: it is where the
+      // crate's own sixty-second policy already lands, so both surfaces
+      // agree, and `transport`'s advice — retry — is right for one.
+      return { kind: 'failed', attempt: { url, failure: 'transport', detail }, error: cannot(detail, cause) }
+    }
+    // A caller who aborted is not a missing image: they asked the render to
+    // stop, so this throws whatever the policy says.
+    if (caller?.aborted ?? false) return { kind: 'aborted', error: cannot(String(cause), cause) }
+    return { kind: 'failed', attempt: { url, failure: fetchFailure(cause), detail: String(cause) }, error: cannot(String(cause), cause) }
+  }
+  const detail = `${response.status} ${response.statusText}`
+  const failure = { url, failure: 'status', status: response.status, detail } as const
+  if (!response.ok) return { kind: 'response', status: response.status, headers: response.headers, bytes: new Uint8Array(), failure, error: cannot(detail) }
+  try {
+    return { kind: 'response', status: response.status, headers: response.headers, bytes: await bounded(url, response), failure, error: cannot(detail) }
+  } catch (cause) {
+    // `bounded` refuses a body past the limit, which is this renderer's
+    // number rather than the server's — a different event from a slow host
+    // and one a caller answers differently.
+    return { kind: 'failed', attempt: { url, failure: 'too-large', detail: String(cause) }, error: cause as TypeError }
+  }
 }
 
 /**
@@ -291,6 +346,20 @@ export type RootProps = Style & {
    * set here reaches the origin and nothing else.
    */
   readonly httpOptions?: RequestInit
+  /**
+   * Where fetched images are kept across renders, so a server drawing many
+   * pictures from the same images fetches each one once rather than per
+   * render.
+   *
+   * Create one with {@link createImageCache} where the process starts and pass
+   * it to every render; overlapping renders share it, and requests for one
+   * image share one fetch. Absent, every render fetches every URL, as it always
+   * has. What is kept, for how long and when it revalidates is on
+   * {@link ImageCache}; a store that fails never fails the render, and is
+   * reported on {@link Canvas.diagnostics}. A `data:` URL is not cached: it
+   * carries its own bytes.
+   */
+  readonly imageCache?: ImageCache
   /**
    * Rasterise on the GPU when there is one. `false` forces the CPU.
    *
@@ -530,6 +599,7 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
   // needs no HTTP stack and a Node caller gets the platform's proxy, TLS and DNS.
   // The second encode is the price of not keeping a second walker of every place
   // a source can appear; a scene naming no URL never runs it.
+  const notes: Diagnostic[] = []
   if (arena.requests.length > 0) {
     // Deduped by the request, not the address: two sources at one URL with
     // different headers are two fetches.
@@ -545,56 +615,21 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
       if (!tolerated) throw error
       attempts.push(attempt)
     }
+    // What the image cache reported, per request and then in request order,
+    // since the requests finish in whatever order the network answers.
+    const noted: (readonly Diagnostic[])[] = []
     await Promise.all(
-      [...wanted.values()].map(async ({ url, key, init }) => {
-        // The composed signal: the scene's, this source's, and then the
-        // ceiling below. A source that brings its own abort can tighten the
-        // wait and cannot escape the caller's — see `mergeHttpOptions` for why
-        // `signal` is the one member that composes rather than overriding.
-        const caller = init?.signal
-        const { ceiling, signal } = fetchDeadline(caller)
-
-        let response: Response
-        try {
-          response = await fetch(url, { ...init, signal })
-        } catch (cause) {
-          // Ours or theirs is worth distinguishing: one is a limit this
-          // renderer chose and the other is the caller's own abort, and a
-          // reader who cannot tell them apart looks in the wrong place.
-          if (ceiling.aborted && !(caller?.aborted ?? false)) {
-            const detail = `it took longer than the ${FETCH_TIMEOUT_MS / 1000} seconds this renderer waits`
-            // `'transport'` rather than a timeout of its own: it is where the
-            // crate's own sixty-second policy already lands, so both surfaces
-            // agree, and `transport`'s advice — retry — is right for one.
-            failed({ url, failure: 'transport', detail }, new TypeError(`cannot fetch ${JSON.stringify(url)}: ${detail}`, { cause }))
-            return
-          }
-          // A caller who aborted is not a missing image: they asked the render to
-          // stop, so this throws whatever the policy says.
-          if (caller?.aborted ?? false) {
-            throw new TypeError(`cannot fetch ${JSON.stringify(url)}: ${String(cause)}`, { cause })
-          }
-          failed(
-            { url, failure: fetchFailure(cause), detail: String(cause) },
-            new TypeError(`cannot fetch ${JSON.stringify(url)}: ${String(cause)}`, { cause }),
-          )
-          return
-        }
-        if (!response.ok) {
-          const detail = `${response.status} ${response.statusText}`
-          failed({ url, failure: 'status', status: response.status, detail }, new TypeError(`cannot fetch ${JSON.stringify(url)}: ${detail}`))
-          return
-        }
-        try {
-          fetched.set(key, await bounded(url, response))
-        } catch (cause) {
-          // `bounded` refuses a body past the limit, which is this renderer's
-          // number rather than the server's — a different event from a slow
-          // host and one a caller answers differently.
-          failed({ url, failure: 'too-large', detail: String(cause) }, cause as TypeError)
-        }
+      [...wanted.values()].map(async ({ url, key, init }, index) => {
+        const network: Network = extra => request(url, init, extra)
+        const cache = props.imageCache
+        const outcome = cache !== undefined && !url.startsWith('data:') ? await cache.fetch(url, key, network) : uncached(await network([]))
+        if (outcome.kind === 'aborted') throw outcome.error
+        noted[index] = outcome.notes
+        if (outcome.kind === 'bytes') fetched.set(key, outcome.bytes)
+        else failed(outcome.attempt, outcome.error)
       }),
     )
+    notes.push(...noted.flat())
     arena = encodeScene(tree, props.width, height, contentHeight, scale, surface, fetched, attempts, props.httpOptions)
   }
 
@@ -602,5 +637,13 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
     fonts: props.fonts ?? [],
   })
 
-  return new Canvas(native)
+  return new Canvas(native, notes)
+}
+
+/** What a request answers when no cache stands in front of it. */
+function uncached(fetched: Fetched): Outcome {
+  if (fetched.kind === 'aborted') return fetched
+  if (fetched.kind === 'failed') return { kind: 'failed', attempt: fetched.attempt, error: fetched.error, notes: [], answer: 'misses' }
+  if (fetched.status < 200 || fetched.status >= 300) return { kind: 'failed', attempt: fetched.failure, error: fetched.error, notes: [], answer: 'misses' }
+  return { kind: 'bytes', bytes: fetched.bytes, notes: [], answer: 'misses' }
 }

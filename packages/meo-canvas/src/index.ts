@@ -362,6 +362,18 @@ export type {
 } from './node.js'
 
 export { Root } from './root.js'
+export {
+  createImageCache,
+  DEFAULT_MAX_ENTRY_BYTES,
+  DEFAULT_STALE_IF_ERROR,
+  ENTRY_OVERHEAD_BYTES,
+  ImageCache,
+  ImageStoreError,
+  memoryImageStore,
+} from './image-cache.js'
+export type { ImageCacheEntry, ImageCacheOptions, ImageCacheStats, ImageStore, ImageStoreStats, MemoryImageStoreOptions } from './image-cache.js'
+export { diskImageStore, TEMP_FILE_MAX_AGE } from './image-cache-disk.js'
+export type { DiskImageStoreOptions } from './image-cache-disk.js'
 export type { FontRegistration, NativeRenderer, PageBuilder, PageInfo, PaintOptions, RootDependencies, RootProps } from './root.js'
 // `NativeRenderer` is the seam a caller may implement themselves, and its
 // `paint` takes `SideValue`s -- so the type has to be nameable from outside or

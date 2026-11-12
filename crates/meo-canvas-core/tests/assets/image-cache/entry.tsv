@@ -1,0 +1,6 @@
+# One entry, and the disk store's file for it beside this table, named by
+# `file`. Both surfaces write that file byte for byte and read it back as
+# this entry. Times are milliseconds since the epoch; `\n` in `key` stands
+# for a line feed; `-` is a header the response did not have; `body` is hex.
+key	etag	last_modified	cache_control	expires	pragma	date	age	stored_at	expires_at	stale_if_error_until	revalidate_always	body	file
+https://img.example/a.png\nauthorization: Bearer t	"v1"	Thu, 22 Oct 2026 00:00:00 GMT	max-age=60, stale-if-error=600	-	no-cache	Sun, 01 Nov 2026 00:00:00 GMT	5	1793491200000	1793491260000	1793577660000	no	89504e470d0a1a0a0000000d49484452	e3f1fa34447873909a4dccc4ff70e4cb68b5649cdb1ea89c7287db1cd1976aab.entry

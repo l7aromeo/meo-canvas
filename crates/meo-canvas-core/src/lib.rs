@@ -71,6 +71,8 @@ pub mod animate;
 pub mod color;
 pub mod diagnostic;
 pub mod encode;
+#[cfg(feature = "net")]
+pub mod image_cache;
 pub mod layout;
 pub mod lines;
 pub mod markup;
@@ -633,8 +635,56 @@ impl Renderer {
         // pages renders the blank sheet `Surface::new` created and reports
         // success, which is a picture the caller never described.
         scene.validate().map_err(Error::Scene)?;
+        self.draw(scene, Resolved::new(scene, &self.fonts)?)
+    }
 
-        let resolved = Resolved::new(scene, &self.fonts)?;
+    /// [`Renderer::render`], fetching URL sources through `cache`, which keeps
+    /// what one render fetched for the next.
+    ///
+    /// Requires the `net` feature. What the cache keeps, for how long, and
+    /// what a failing store does are on
+    /// [`ImageCache`](image_cache::ImageCache); a store error never fails the
+    /// render, and is reported on [`RenderedCanvas::diagnostics`].
+    ///
+    /// ```
+    /// use std::{num::NonZeroU64, sync::Arc};
+    ///
+    /// use meo_canvas_core::{
+    ///     Renderer,
+    ///     image_cache::{ImageCache, MemoryStore},
+    /// };
+    /// use meo_canvas_scene::{Scene, Size};
+    ///
+    /// // Created once and shared by every render in the process.
+    /// let max = NonZeroU64::new(64 * 1024 * 1024).expect("not zero");
+    /// let cache = Arc::new(ImageCache::new(MemoryStore::new(max)));
+    ///
+    /// let renderer = Renderer::new();
+    /// let scene = Scene::new(Size::new(40.0, 20.0));
+    /// let canvas = renderer.render_with_cache(&scene, &cache)?;
+    /// assert!(canvas.diagnostics().is_empty());
+    /// # Ok::<(), meo_canvas_core::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// As [`Renderer::render`].
+    #[cfg(feature = "net")]
+    pub fn render_with_cache(
+        &self,
+        scene: &Scene,
+        cache: &image_cache::ImageCache,
+    ) -> Result<RenderedCanvas, Error> {
+        scene.validate().map_err(Error::Scene)?;
+        self.draw(scene, Resolved::with_cache(scene, &self.fonts, cache)?)
+    }
+
+    /// Lays out and paints every page of a resolved scene.
+    fn draw(
+        &self,
+        scene: &Scene,
+        resolved: Resolved<'_>,
+    ) -> Result<RenderedCanvas, Error> {
         let mut measurer = SceneMeasurer::prepare(&resolved, &self.fonts)?;
 
         // Solve, then allocate: a page whose height comes from its content has

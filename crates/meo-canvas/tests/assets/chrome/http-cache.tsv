@@ -1,0 +1,146 @@
+# Chrome, through `just conformance`: what its HTTP cache does with an image's response headers.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
+# Each row loads one <img> `loads` times, each in a new page of one context, so the HTTP cache answers rather than
+# a document's memory cache. `responses` are the origin's answers to successive requests, ` || ` between them and
+# ` | ` between a status and its headers; `@-90` is the HTTP-date 90 s before the request arrived, `@0` its arrival,
+# `@+7200~EST` that instant as a wall clock in EST, `~none` with no zone written; `nodate` after a status means
+# no `Date` was sent. Chrome runs with TZ=Asia/Tokyo.
+# `requests` is what the origin counted; `sources` is how each load was answered, from CDP: `disk` is the HTTP cache
+# with no request, `network-200` and `network-304` went to the origin, `memory` would mean the measurement is void.
+# `sent` is what each request carried: `plain`, or its conditional headers, If-Modified-Since as an offset from the
+# request to the nearest 100 s.
+# Written by packages/meo-canvas/tools/conformance/httpcache.mjs.
+#
+# case	responses	loads	requests	sources	sent
+fresh max-age, the control	200 | cache-control: max-age=600	2	1	network-200 disk	plain
+no-store, the control	200 | cache-control: no-store	2	2	network-200 network-200	plain plain
+Expires: 0 with Last-Modified	200 | date: @0 | expires: 0 | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+Expires: 0 without Last-Modified	200 | date: @0 | expires: 0 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+Expires: soon with Last-Modified	200 | date: @0 | expires: soon | last-modified: @-864000 | etag: "a" || 304	2	1	network-200 disk	plain
+Expires: -1 with Last-Modified	200 | date: @0 | expires: -1 | last-modified: @-864000 | etag: "a" || 304	2	1	network-200 disk	plain
+Expires: 1 with Last-Modified	200 | date: @0 | expires: 1 | last-modified: @-864000 | etag: "a" || 304	2	1	network-200 disk	plain
+Expires: 123456789 with Last-Modified	200 | date: @0 | expires: 123456789 | last-modified: @-864000 | etag: "a" || 304	2	1	network-200 disk	plain
+Expires: now with Last-Modified	200 | date: @0 | expires: now | last-modified: @-864000 | etag: "a" || 304	2	1	network-200 disk	plain
+Expires: "" with Last-Modified	200 | date: @0 | expires: "" | last-modified: @-864000 | etag: "a" || 304	2	1	network-200 disk	plain
+Expires: 0 GMT with Last-Modified	200 | date: @0 | expires: 0 GMT | last-modified: @-864000 | etag: "a" || 304	2	1	network-200 disk	plain
+Expires: soon without Last-Modified	200 | date: @0 | expires: soon | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+Expires: -1 without Last-Modified	200 | date: @0 | expires: -1 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+Expires: 1 without Last-Modified	200 | date: @0 | expires: 1 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+Expires: 123456789 without Last-Modified	200 | date: @0 | expires: 123456789 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+Expires: now without Last-Modified	200 | date: @0 | expires: now | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+Expires: "" without Last-Modified	200 | date: @0 | expires: "" | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+Expires: 0 GMT without Last-Modified	200 | date: @0 | expires: 0 GMT | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+IMF-fixdate, past	200 | date: @0 | expires: Sun, 06 Nov 1994 08:49:37 GMT | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+IMF-fixdate, future	200 | date: @0 | expires: Fri, 01 Jan 2100 00:00:00 GMT | etag: "a" || 304	2	1	network-200 disk	plain
+RFC 850, past	200 | date: @0 | expires: Sunday, 06-Nov-94 08:49:37 GMT | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+RFC 850, future	200 | date: @0 | expires: Wednesday, 01-Jan-48 00:00:00 GMT | etag: "a" || 304	2	1	network-200 disk	plain
+asctime, past	200 | date: @0 | expires: Sun Nov  6 08:49:37 1994 | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+asctime, future	200 | date: @0 | expires: Fri Jan  1 00:00:00 2100 | etag: "a" || 304	2	1	network-200 disk	plain
+no time, past	200 | date: @0 | expires: Thu, 01 Dec 1994 | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+no time, future	200 | date: @0 | expires: Fri, 01 Jan 2100 | etag: "a" || 304	2	1	network-200 disk	plain
+no zone, past	200 | date: @0 | expires: Sun, 06 Nov 1994 08:49:37 | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+no zone, future	200 | date: @0 | expires: Fri, 01 Jan 2100 00:00:00 | etag: "a" || 304	2	1	network-200 disk	plain
+ISO date, past	200 | date: @0 | expires: 1994-11-06 | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+ISO date, future	200 | date: @0 | expires: 2099-01-01 | etag: "a" || 304	2	1	network-200 disk	plain
+ISO with Z, past	200 | date: @0 | expires: 1994-11-06T08:49:37Z | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+ISO with Z, future	200 | date: @0 | expires: 2099-01-01T00:00:00Z | etag: "a" || 304	2	1	network-200 disk	plain
+ISO without zone, past	200 | date: @0 | expires: 1994-11-06T08:49:37 | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+ISO without zone, future	200 | date: @0 | expires: 2099-01-01T00:00:00 | etag: "a" || 304	2	1	network-200 disk	plain
+ISO with fraction, past	200 | date: @0 | expires: 1994-11-06T08:49:37.342156Z | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+ISO with fraction, future	200 | date: @0 | expires: 2099-01-01T00:00:00.5Z | etag: "a" || 304	2	1	network-200 disk	plain
+UTC, past	200 | date: @0 | expires: Sun, 06 Nov 1994 08:49:37 UTC | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+UTC, future	200 | date: @0 | expires: Fri, 01 Jan 2100 00:00:00 UTC | etag: "a" || 304	2	1	network-200 disk	plain
+UT, past	200 | date: @0 | expires: Sun, 06 Nov 1994 08:49:37 UT | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+UT, future	200 | date: @0 | expires: Fri, 01 Jan 2100 00:00:00 UT | etag: "a" || 304	2	1	network-200 disk	plain
++0000, past	200 | date: @0 | expires: Sun, 06 Nov 1994 08:49:37 +0000 | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
++0000, future	200 | date: @0 | expires: Fri, 01 Jan 2100 00:00:00 +0000 | etag: "a" || 304	2	1	network-200 disk	plain
+EST, past	200 | date: @0 | expires: Sun, 06 Nov 1994 08:49:37 EST | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+EST, future	200 | date: @0 | expires: Fri, 01 Jan 2100 00:00:00 EST | etag: "a" || 304	2	1	network-200 disk	plain
+no weekday, past	200 | date: @0 | expires: 06 Nov 1994 08:49:37 GMT | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+no weekday, future	200 | date: @0 | expires: 01 Jan 2100 00:00:00 GMT | etag: "a" || 304	2	1	network-200 disk	plain
+lower case, past	200 | date: @0 | expires: sun, 06 nov 1994 08:49:37 gmt | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+lower case, future	200 | date: @0 | expires: fri, 01 jan 2100 00:00:00 gmt | etag: "a" || 304	2	1	network-200 disk	plain
+single digits, past	200 | date: @0 | expires: Sun, 6 Nov 1994 8:49:7 GMT | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+single digits, future	200 | date: @0 | expires: Fri, 1 Jan 2100 0:0:0 GMT | etag: "a" || 304	2	1	network-200 disk	plain
+no space after comma, past	200 | date: @0 | expires: Sun,06 Nov 1994 08:49:37 GMT | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+no space after comma, future	200 | date: @0 | expires: Fri,01 Jan 2100 00:00:00 GMT | etag: "a" || 304	2	1	network-200 disk	plain
+trailing text, past	200 | date: @0 | expires: Sun, 06 Nov 1994 08:49:37 GMT junk | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+trailing text, future	200 | date: @0 | expires: Fri, 01 Jan 2100 00:00:00 GMT junk | etag: "a" || 304	2	1	network-200 disk	plain
+dashes and fraction, past	200 | date: @0 | expires: 22-AUG-1993 10:59:12.82 | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+dashes and fraction, future	200 | date: @0 | expires: 22-AUG-2093 10:59:12.82 | etag: "a" || 304	2	1	network-200 disk	plain
+US slashes with PM, past	200 | date: @0 | expires: 06/21/95 04:24:34 PM | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+US slashes with PM, future	200 | date: @0 | expires: 06/21/2095 04:24:34 PM | etag: "a" || 304	2	1	network-200 disk	plain
+day-first slashes, past	200 | date: @0 | expires: 20/06/95 21:07 | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+day-first slashes, future	200 | date: @0 | expires: 20/06/2095 21:07 | etag: "a" || 304	2	1	network-200 disk	plain
+year-first dashes, past	200 | date: @0 | expires: 95-06-08 19:32:48 EDT | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+year-first dashes, future	200 | date: @0 | expires: 2095-06-08 19:32:48 EDT | etag: "a" || 304	2	1	network-200 disk	plain
+long names, past	200 | date: @0 | expires: Friday, August 04, 1995 3:54 PM | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+long names, future	200 | date: @0 | expires: Thursday, August 04, 2095 3:54 PM | etag: "a" || 304	2	1	network-200 disk	plain
+zone glued to time, past	200 | date: @0 | expires: 6 May 1992 16:41-JST (Wednesday) | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+zone glued to time, future	200 | date: @0 | expires: 6 May 2092 16:41-JST (Tuesday) | etag: "a" || 304	2	1	network-200 disk	plain
+offset before year, past	200 | date: @0 | expires: Mon Jan 16 16:12 +0130 1989 | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+offset before year, future	200 | date: @0 | expires: Sun Jan 16 16:12 +0130 2089 | etag: "a" || 304	2	1	network-200 disk	plain
+12 am, past	200 | date: @0 | expires: 22-AUG-1993 12:59am | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+12 am, future	200 | date: @0 | expires: 22-AUG-2093 12:59am | etag: "a" || 304	2	1	network-200 disk	plain
+hour 24, past	200 | date: @0 | expires: Sun, 06 Nov 1994 24:00:00 GMT | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+hour 24, future	200 | date: @0 | expires: Fri, 01 Jan 2100 24:00:00 GMT | etag: "a" || 304	2	1	network-200 disk	plain
+31 February, past	200 | date: @0 | expires: Mon, 31 Feb 1994 00:00:00 GMT | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+31 February, future	200 | date: @0 | expires: Wed, 31 Feb 2100 00:00:00 GMT | etag: "a" || 304	2	1	network-200 disk	plain
+zone EST	200 | date: @0 | expires: @+7200~EST | etag: "a" || 304	2	1	network-200 disk	plain
+zone PST	200 | date: @0 | expires: @+7200~PST | etag: "a" || 304	2	1	network-200 disk	plain
+zone EDT	200 | date: @0 | expires: @+7200~EDT | etag: "a" || 304	2	1	network-200 disk	plain
+zone JST	200 | date: @0 | expires: @-7200~JST | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+zone MET	200 | date: @0 | expires: @-1800~MET | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+zone BST	200 | date: @0 | expires: @-1800~BST | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+zone +0130	200 | date: @0 | expires: @-3600~+0130 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+zone -0800	200 | date: @0 | expires: @+7200~-0800 | etag: "a" || 304	2	1	network-200 disk	plain
+zone GMT+0300	200 | date: @0 | expires: @-3600~GMT+0300 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+reading an hour after, the control	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: Wed, 15 Jun 2095 13:00:00 GMT | etag: "a" || 304	2	1	network-200 disk	plain
+reading an hour before, the control	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: Wed, 15 Jun 2095 11:00:00 GMT | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+reading the first month	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: Jun 16 2095 May | etag: "a" || 304	2	1	network-200 disk	plain
+reading Z after an offset	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: +0100 15 Jun 2095 12:30:00Z | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+reading a second colon ending the time	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: 15 Jun 2095 12:30: GMT | etag: "a" || 304	2	1	network-200 disk	plain
+reading a letter after a numeric date	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: 2095-06-16x | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+reading a three-digit first number	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: 999/06/16 Jun 2095 | etag: "a" || 304	2	1	network-200 disk	plain
+reading a first number of 0	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: 0-06-16 Jun 15 2095 13:00 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+reading a three-digit number	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: 15 Jun 123 2095 13:00 | etag: "a" || 304	2	1	network-200 disk	plain
+reading a number before a dot	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: Jun 16.5 2095 | etag: "a" || 304	2	1	network-200 disk	plain
+reading PM after Z	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: 15 Jun 2095 11:30:00Z PM | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+reading AM past noon	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: 15 Jun 2095 13:00 AM | etag: "a" || 304	2	1	network-200 disk	plain
+reading six digits as a small year	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: 06/14/002095 Jun 16 2095 | etag: "a" || 304	2	1	network-200 disk	plain
+reading an offset after an ignored zone	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: 15 Jun 2095 12:30:00 GMT EST +0100 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+reading an hour with no minutes	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: Jun 2095 16: | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+reading three-digit minutes	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: Jun 2095 16:4937 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+reading three-digit seconds	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: Jun 2095 16:30:999 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+reading T and a digit inside a word	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: 15 Jun 2095 06:00:00 PST08 | etag: "a" || 304	2	1	network-200 disk	plain
+reading a lower-case t	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: 2095-06-16t01:00 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+reading a lower-case z	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: 15 Jun 2095 EST 09:00:00z | etag: "a" || 304	2	1	network-200 disk	plain
+reading a zone glued to the time	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: 15 Jun 2095 08:00:00EST | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+reading a month after a numeric date	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: 2095-06-14 Jul | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+reading Z on a later time	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: 15 Jun 2095 11:00 EST 09:00Z | etag: "a" || 304	2	1	network-200 disk	plain
+reading PM on a later time	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: 15 Jun 2095 11:00 01:00 PM | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+reading a sign inside a word	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: 15 Jun 2095 12:30 abc+0100 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+reading a sign inside junk	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: 15 Jun 2095 12:30 #+0100 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+reading a letter outside ASCII	200 | date: Wed, 15 Jun 2095 12:00:00 GMT | expires: 15 Jun 2095 08:00:00 ÉST | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+heuristic, age 90 of 100	200 | date: @-90 | last-modified: @-1090 | etag: "a" || 304	2	1	network-200 disk	plain
+heuristic, age 110 of 100	200 | date: @-110 | last-modified: @-1110 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-1100
+heuristic from a lenient Last-Modified	200 | date: @0 | last-modified: Sun, 6 Nov 1994 8:49:37 | etag: "a" || 304	2	1	network-200 disk	plain
+Pragma: no-cache, no Cache-Control	200 | pragma: no-cache | expires: @+600 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+no-cache="set-cookie" with max-age	200 | cache-control: no-cache="set-cookie", max-age=600 | etag: "a" || 304	2	1	network-200 disk	plain
+heuristic under must-revalidate	200 | date: @0 | cache-control: must-revalidate | last-modified: @-864000 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @-864000
+heuristic with Last-Modified after Date	200 | date: @0 | last-modified: @+86400 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a" + if-modified-since @86400
+zone none near now	200 | date: @0 | expires: @+7200~none | etag: "a" || 304	2	1	network-200 disk	plain
+no-cache with max-age	200 | cache-control: no-cache, max-age=600 | etag: "a" || 304 || 304	3	3	network-200 network-200 network-200	plain if-none-match "a" if-none-match "a"
+Age beyond max-age	200 | cache-control: max-age=60 | age: 120 | etag: "a" || 304	2	2	network-200 network-200	plain if-none-match "a"
+Age within max-age, the control	200 | cache-control: max-age=60 | age: 30 | etag: "a" || 304	2	1	network-200 disk	plain
+304 with a max-age renews	200 | cache-control: max-age=0 | etag: "a" || 304 | cache-control: max-age=600 || 304	3	2	network-200 network-200 disk	plain if-none-match "a"
+304 with max-age=0 does not	200 | cache-control: max-age=0 | etag: "a" || 304 | cache-control: max-age=0 || 304	3	3	network-200 network-200 network-200	plain if-none-match "a" if-none-match "a"
+304 with no Cache-Control	200 | date: @0 | cache-control: max-age=0 | last-modified: @-864000 | etag: "a" || 304 | etag: "a" || 304	3	3	network-200 network-200 network-200	plain if-none-match "a" + if-modified-since @-864000 if-none-match "a" + if-modified-since @-864000
+304 with only Expires over a stored max-age	200 | cache-control: max-age=0 | etag: "a" || 304 | expires: @+600 || 304	3	3	network-200 network-200 network-200	plain if-none-match "a" if-none-match "a"
+304 with only Cache-Control over a stored Expires	200 | date: @0 | expires: @-10 | etag: "a" || 304 | cache-control: max-age=600 || 304	3	2	network-200 network-200 disk	plain if-none-match "a"
+304 with only Pragma over a stored Pragma	200 | pragma: no-cache | cache-control: max-age=600 | etag: "a" || 304 | pragma: x || 304	3	2	network-200 network-200 disk	plain if-none-match "a"
+304 with only Pragma: no-cache	200 | date: @0 | expires: @+600 | cache-control: no-cache | etag: "a" || 304 | pragma: no-cache | cache-control: max-age=600 || 304	3	3	network-200 network-200 network-200	plain if-none-match "a" if-none-match "a"
+304 with no Date over a stored old Date	200 | date: @-1000 | cache-control: max-age=600 | etag: "a" || 304 nodate | cache-control: max-age=600 || 304	3	3	network-200 network-200 network-200	plain if-none-match "a" if-none-match "a"
+304 with no Age over a stored Age	200 | cache-control: max-age=600 | age: 700 | etag: "a" || 304 | cache-control: max-age=600 || 304	3	3	network-200 network-200 network-200	plain if-none-match "a" if-none-match "a"
+304 with a new ETag	200 | cache-control: max-age=0 | etag: "a" || 304 | etag: "b" | cache-control: max-age=0 || 304	3	3	network-200 network-200 network-200	plain if-none-match "a" if-none-match "a"
+304 with a new Last-Modified	200 | cache-control: max-age=0 | last-modified: @-864000 || 304 | last-modified: @-3600 | cache-control: max-age=0 || 304	3	3	network-200 network-200 network-200	plain if-modified-since @-864000 if-modified-since @-3600

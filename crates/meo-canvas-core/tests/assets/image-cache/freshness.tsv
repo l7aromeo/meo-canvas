@@ -1,0 +1,53 @@
+# What the image cache decides from one 200 response, read by both test suites.
+# Times are milliseconds after 1793491200000 (Sun, 01 Nov 2026 00:00:00 GMT).
+# `fallback_ttl` and `stale_if_error` are the cache settings, `-` for absent
+# (no fallback; the 24 h default). `headers` is `name: value` items joined by
+# ` | `. `fresh` and `stale_allowed` are asked at `now`: whether the entry is
+# served with no request, and whether a failed revalidation may serve it.
+# The conditional columns are what a revalidation sends. A row that is not
+# storable has `-` in every later column.
+case	request	response	now	fallback_ttl	stale_if_error	headers	storable	expires_at	stale_if_error_until	revalidate_always	fresh	stale_allowed	if_none_match	if_modified_since
+max-age-fresh	0	100	59999	-	-	cache-control: max-age=60 | date: Sun, 01 Nov 2026 00:00:00 GMT	yes	60000	86460000	no	yes	yes	-	-
+max-age-at-expiry	0	100	60000	-	-	cache-control: max-age=60 | date: Sun, 01 Nov 2026 00:00:00 GMT	yes	60000	86460000	no	no	yes	-	-
+age-beyond-max-age	0	0	0	-	-	cache-control: max-age=60 | age: 120 | date: Sun, 01 Nov 2026 00:00:00 GMT	yes	-60000	86340000	no	no	yes	-	-
+age-within-max-age	0	0	29999	-	-	cache-control: max-age=60 | age: 30 | date: Sun, 01 Nov 2026 00:00:00 GMT	yes	30000	86430000	no	yes	yes	-	-
+apparent-age-from-date	5000	5000	59999	-	-	cache-control: max-age=60 | date: Sun, 01 Nov 2026 00:00:00 GMT	yes	60000	86460000	no	yes	yes	-	-
+response-delay	0	2000	59999	-	-	cache-control: max-age=60 | date: Sun, 01 Nov 2026 00:00:02 GMT	yes	60000	86460000	no	yes	yes	-	-
+date-in-the-future	0	0	299999	-	-	date: Sun, 01 Nov 2026 01:00:00 GMT | expires: Sun, 01 Nov 2026 01:05:00 GMT	yes	300000	86700000	no	yes	yes	-	-
+expires-minus-date	0	0	300000	-	-	date: Sun, 01 Nov 2026 00:00:00 GMT | expires: Sun, 01 Nov 2026 00:05:00 GMT	yes	300000	86700000	no	no	yes	-	-
+expires-in-the-past	0	0	0	-	-	date: Sun, 01 Nov 2026 00:00:00 GMT | expires: Sat, 31 Oct 2026 23:59:59 GMT	yes	0	86400000	no	no	yes	-	-
+expires-invalid-is-heuristic	0	0	0	-	-	date: Sun, 01 Nov 2026 00:00:00 GMT | expires: soon | last-modified: Thu, 22 Oct 2026 00:00:00 GMT	yes	86400000	172800000	no	yes	yes	-	Thu, 22 Oct 2026 00:00:00 GMT
+expires-number-is-heuristic	0	0	0	-	-	date: Sun, 01 Nov 2026 00:00:00 GMT | expires: 1 | last-modified: Thu, 22 Oct 2026 00:00:00 GMT	yes	86400000	172800000	no	yes	yes	-	Thu, 22 Oct 2026 00:00:00 GMT
+expires-zero-is-expired	0	0	0	-	-	date: Sun, 01 Nov 2026 00:00:00 GMT | expires: 0 | last-modified: Thu, 22 Oct 2026 00:00:00 GMT	yes	0	86400000	no	no	yes	-	Thu, 22 Oct 2026 00:00:00 GMT
+no-date-uses-response-time	0	1000	298999	-	-	expires: Sun, 01 Nov 2026 00:05:00 GMT	yes	299000	86699000	no	yes	yes	-	-
+max-age-over-expires	0	0	9999	-	-	cache-control: max-age=10 | date: Sun, 01 Nov 2026 00:00:00 GMT | expires: Sun, 01 Nov 2026 01:00:00 GMT	yes	10000	86410000	no	yes	yes	-	-
+max-age-invalid-falls-to-expires	0	0	299999	-	-	cache-control: max-age=abc | date: Sun, 01 Nov 2026 00:00:00 GMT | expires: Sun, 01 Nov 2026 00:05:00 GMT	yes	300000	86700000	no	yes	yes	-	-
+max-age-negative-falls-to-expires	0	0	299999	-	-	cache-control: max-age=-5 | date: Sun, 01 Nov 2026 00:00:00 GMT | expires: Sun, 01 Nov 2026 00:05:00 GMT	yes	300000	86700000	no	yes	yes	-	-
+max-age-zero	0	0	0	-	-	cache-control: max-age=0 | date: Sun, 01 Nov 2026 00:00:00 GMT	yes	0	86400000	no	no	yes	-	-
+max-age-capped	0	0	0	-	-	cache-control: max-age=99999999999 | date: Sun, 01 Nov 2026 00:00:00 GMT	yes	2147483648000	2147570048000	no	yes	yes	-	-
+age-invalid-is-zero	0	0	59999	-	-	cache-control: max-age=60 | age: abc | date: Sun, 01 Nov 2026 00:00:00 GMT	yes	60000	86460000	no	yes	yes	-	-
+directives-ignore-case	0	0	60000	-	-	cache-control: MAX-AGE=60, Must-Revalidate | date: Sun, 01 Nov 2026 00:00:00 GMT	yes	60000	60000	no	no	no	-	-
+heuristic-tenth-of-age	0	0	86399999	-	-	date: Sun, 01 Nov 2026 00:00:00 GMT | last-modified: Thu, 22 Oct 2026 00:00:00 GMT	yes	86400000	172800000	no	yes	yes	-	Thu, 22 Oct 2026 00:00:00 GMT
+heuristic-last-modified-after-date	0	0	0	-	-	date: Sun, 01 Nov 2026 00:00:00 GMT | last-modified: Sun, 01 Nov 2026 01:00:00 GMT	yes	0	86400000	no	no	yes	-	Sun, 01 Nov 2026 01:00:00 GMT
+fallback-ttl-replaces-heuristic	0	0	4999	5000	-	date: Sun, 01 Nov 2026 00:00:00 GMT | last-modified: Thu, 22 Oct 2026 00:00:00 GMT	yes	5000	86405000	no	yes	yes	-	Thu, 22 Oct 2026 00:00:00 GMT
+fallback-ttl-with-nothing	0	0	4999	5000	-	-	yes	5000	86405000	no	yes	yes	-	-
+fallback-ttl-not-over-max-age	0	0	59999	5000	-	cache-control: max-age=60 | date: Sun, 01 Nov 2026 00:00:00 GMT	yes	60000	86460000	no	yes	yes	-	-
+nothing-is-expired	0	0	0	-	-	-	yes	0	86400000	no	no	yes	-	-
+no-cache-revalidates	0	0	0	-	-	cache-control: no-cache, max-age=60 | date: Sun, 01 Nov 2026 00:00:00 GMT | etag: "a"	yes	0	0	yes	no	no	"a"	-
+no-cache-with-field-is-not-no-cache	0	0	59999	-	-	cache-control: no-cache="set-cookie", max-age=60 | date: Sun, 01 Nov 2026 00:00:00 GMT	yes	60000	86460000	no	yes	yes	-	-
+pragma-no-cache	0	0	0	-	-	pragma: no-cache | date: Sun, 01 Nov 2026 00:00:00 GMT | etag: "a"	yes	0	0	yes	no	no	"a"	-
+must-revalidate-no-stale	0	0	60000	-	-	cache-control: max-age=60, must-revalidate | date: Sun, 01 Nov 2026 00:00:00 GMT	yes	60000	60000	no	no	no	-	-
+must-revalidate-no-heuristic	0	0	0	-	-	cache-control: must-revalidate | date: Sun, 01 Nov 2026 00:00:00 GMT | last-modified: Thu, 22 Oct 2026 00:00:00 GMT	yes	0	0	no	no	no	-	Thu, 22 Oct 2026 00:00:00 GMT
+no-store	0	0	0	-	-	cache-control: no-store, max-age=60 | date: Sun, 01 Nov 2026 00:00:00 GMT	no	-	-	-	-	-	-	-
+private-is-stored	0	0	59999	-	-	cache-control: private, max-age=60 | date: Sun, 01 Nov 2026 00:00:00 GMT	yes	60000	86460000	no	yes	yes	-	-
+stale-if-error-from-response	0	0	179999	-	-	cache-control: max-age=60, stale-if-error=120 | date: Sun, 01 Nov 2026 00:00:00 GMT	yes	60000	180000	no	no	yes	-	-
+stale-if-error-bound	0	0	180000	-	-	cache-control: max-age=60, stale-if-error=120 | date: Sun, 01 Nov 2026 00:00:00 GMT	yes	60000	180000	no	no	no	-	-
+stale-if-error-with-must-revalidate	0	0	60000	-	-	cache-control: max-age=60, must-revalidate, stale-if-error=120 | date: Sun, 01 Nov 2026 00:00:00 GMT	yes	60000	60000	no	no	no	-	-
+stale-if-error-from-caller	0	0	60999	-	1000	cache-control: max-age=60 | date: Sun, 01 Nov 2026 00:00:00 GMT	yes	60000	61000	no	no	yes	-	-
+stale-if-error-response-over-caller	0	0	179999	-	1000	cache-control: max-age=60, stale-if-error=120 | date: Sun, 01 Nov 2026 00:00:00 GMT	yes	60000	180000	no	no	yes	-	-
+stale-if-error-caller-zero	0	0	60000	-	0	cache-control: max-age=60 | date: Sun, 01 Nov 2026 00:00:00 GMT	yes	60000	60000	no	no	no	-	-
+stale-if-error-caller-zero-over-response	0	0	60000	-	0	cache-control: max-age=60, stale-if-error=120 | date: Sun, 01 Nov 2026 00:00:00 GMT	yes	60000	180000	no	no	no	-	-
+clock-moved-back	1000	1000	500	-	-	cache-control: max-age=60	yes	61000	86461000	no	no	yes	-	-
+validators	0	0	0	-	-	cache-control: max-age=60 | date: Sun, 01 Nov 2026 00:00:00 GMT | etag: W/"x" | last-modified: Thu, 22 Oct 2026 00:00:00 GMT	yes	60000	86460000	no	yes	yes	W/"x"	Thu, 22 Oct 2026 00:00:00 GMT
+date-rfc-850	0	0	299999	-	-	date: Sunday, 01-Nov-26 00:00:00 GMT | expires: Sun, 01 Nov 2026 00:05:00 GMT	yes	300000	86700000	no	yes	yes	-	-
+date-asctime	0	0	299999	-	-	date: Sun Nov  1 00:00:00 2026 | expires: Sun, 01 Nov 2026 00:05:00 GMT	yes	300000	86700000	no	yes	yes	-	-

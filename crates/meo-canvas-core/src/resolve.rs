@@ -87,6 +87,10 @@ use base64::{
     Engine as _,
     engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig},
 };
+// Read only by the fetch functions, which a build without `net` does not
+// have.
+#[cfg(feature = "net")]
+use meo_canvas_scene::node::HttpOptions;
 use meo_canvas_scene::{
     OnImageError, Scene, Size,
     node::{ImageSource, Node, NodeId, NodeKind},
@@ -634,6 +638,33 @@ impl<'scene> Resolved<'scene> {
     /// [`Error::UndecodableImage`] for bytes no decoder recognises, and
     /// [`Error::UnknownFont`] for a family neither registered nor installed.
     pub fn new(scene: &'scene Scene, fonts: &Fonts) -> Result<Self, Error> {
+        Self::build(scene, fonts, None)
+    }
+
+    /// [`Resolved::new`], fetching URL sources through `cache`: a fresh entry
+    /// is used with no request, an expired one is revalidated, and what the
+    /// cache reports joins [`Resolved::diagnostics`] after everything else.
+    ///
+    /// Requires the `net` feature.
+    ///
+    /// # Errors
+    ///
+    /// As [`Resolved::new`]. A cache whose store fails is not an error: the
+    /// image is fetched and the failure is a diagnostic.
+    #[cfg(feature = "net")]
+    pub fn with_cache(
+        scene: &'scene Scene,
+        fonts: &Fonts,
+        cache: &crate::image_cache::ImageCache,
+    ) -> Result<Self, Error> {
+        Self::build(scene, fonts, Some(cache))
+    }
+
+    fn build(
+        scene: &'scene Scene,
+        fonts: &Fonts,
+        cache: Cache<'_>,
+    ) -> Result<Self, Error> {
         let mut resolved = Self {
             warnings: Vec::new(),
             diagnostics: Vec::new(),
@@ -650,7 +681,7 @@ impl<'scene> Resolved<'scene> {
         // drawing one picture decoded it sixty times, which nothing pointed
         // at because every table was keyed by node and every node got the
         // right bytes -- just not the same ones.
-        let (once, warnings, softened) = decode_sources(scene)?;
+        let (once, warnings, softened, cached) = decode_sources(scene, cache)?;
         resolved.warnings = warnings;
 
         for (id, node) in scene.nodes.iter().enumerate() {
@@ -690,6 +721,9 @@ impl<'scene> Resolved<'scene> {
         }
 
         resolved.check_filters();
+        // After the filters, so the order matches the npm surface, where the
+        // cache runs before the addon and its diagnostics are appended.
+        resolved.diagnostics.extend(cached);
         resolved.resolve_text(fonts)?;
         Ok(resolved)
     }
@@ -884,10 +918,20 @@ type Decoded<'scene> = (
     HashMap<&'scene ImageSource, DecodedImage>,
     Vec<ImageWarning>,
     HashSet<&'scene ImageSource>,
+    Vec<Diagnostic>,
 );
+
+/// The image cache a resolve fetches through, where the build has one.
+#[cfg(feature = "net")]
+type Cache<'a> = Option<&'a crate::image_cache::ImageCache>;
+
+/// A build without `net` fetches nothing, so it has no cache to name.
+#[cfg(not(feature = "net"))]
+type Cache<'a> = Option<&'a std::convert::Infallible>;
 
 fn decode_sources<'scene>(
     scene: &'scene Scene,
+    cache: Cache<'_>,
 ) -> Result<Decoded<'scene>, Error> {
     let mut wanted: Vec<(&ImageSource, NodeId)> = Vec::new();
     // How many nodes named each source. The map is built either way because
@@ -919,11 +963,17 @@ fn decode_sources<'scene>(
     // stay parallel; an SVG comes back as bytes and is parsed on this thread,
     // because a parsed document is neither `Send` nor `Sync` and cannot be
     // carried out of a worker at all.
-    let decoded: Vec<Result<DecodedImage, Error>> = in_parallel(&wanted, scene)
-        .into_iter()
-        .zip(wanted.iter())
-        .map(|(fetched, (_, node))| fetched.and_then(|it| parsed(it, *node)))
-        .collect();
+    // The cache's diagnostics in source order, whichever worker met them.
+    let mut cached = Vec::new();
+    let decoded: Vec<Result<DecodedImage, Error>> =
+        in_parallel(&wanted, scene, cache)
+            .into_iter()
+            .zip(wanted.iter())
+            .map(|((fetched, notes), (_, node))| {
+                cached.extend(notes);
+                fetched.and_then(|it| parsed(it, *node))
+            })
+            .collect();
     let mut once = HashMap::with_capacity(decoded.len());
     // **`Vec::new` does not allocate.** A render where every source resolves
     // never pushes, so this costs three words of stack and no heap at all --
@@ -953,7 +1003,7 @@ fn decode_sources<'scene>(
             }
         }
     }
-    Ok((once, warnings, softened))
+    Ok((once, warnings, softened, cached))
 }
 
 /// Turns a failed source into a warning or gives the error back, so which
@@ -1039,28 +1089,26 @@ fn soft(
 fn in_parallel(
     wanted: &[(&ImageSource, NodeId)],
     scene: &Scene,
-) -> Vec<Result<Fetched, Error>> {
+    cache: Cache<'_>,
+) -> Vec<(Result<Fetched, Error>, Vec<Diagnostic>)> {
+    let decode = |(source, id): &(&ImageSource, NodeId)| {
+        let mut notes = Vec::new();
+        (decode(*id, source, scene, cache, &mut notes), notes)
+    };
     let threads = std::thread::available_parallelism()
         .map_or(1, std::num::NonZeroUsize::get)
         .min(wanted.len().max(1));
     if threads <= 1 || wanted.len() <= 1 {
-        return wanted
-            .iter()
-            .map(|(source, id)| decode(*id, source, scene))
-            .collect();
+        return wanted.iter().map(decode).collect();
     }
 
-    let mut out: Vec<Result<Fetched, Error>> = Vec::new();
+    let mut out: Vec<(Result<Fetched, Error>, Vec<Diagnostic>)> = Vec::new();
     std::thread::scope(|scope| {
         let handles: Vec<_> = wanted
             .chunks(wanted.len().div_ceil(threads))
             .map(|chunk| {
-                scope.spawn(move || {
-                    chunk
-                        .iter()
-                        .map(|(source, id)| decode(*id, source, scene))
-                        .collect::<Vec<_>>()
-                })
+                scope
+                    .spawn(move || chunk.iter().map(decode).collect::<Vec<_>>())
             })
             .collect();
         for handle in handles {
@@ -1069,7 +1117,10 @@ fn in_parallel(
                 // A decoder that panicked is a bug in the decoder, and the
                 // scene still answers. Its own variant, so `soft` cannot
                 // downgrade the crash to a placeholder.
-                Err(_) => out.push(Err(Error::DecoderPanicked(NodeId::ROOT))),
+                Err(_) => out.push((
+                    Err(Error::DecoderPanicked(NodeId::ROOT)),
+                    Vec::new(),
+                )),
             }
         }
     });
@@ -1098,10 +1149,31 @@ fn taken(
 /// passing `ImageSource::Bytes`. `http` refuses a malformed header before
 /// sending.
 #[cfg(feature = "net")]
-fn fetch(
+fn fetch(url: &str, http: &HttpOptions) -> Result<Vec<u8>, Error> {
+    fetch_response(url, http, &[]).map(|answer| answer.body)
+}
+
+/// What a fetch brought back: the status, the headers the image cache's
+/// freshness rules read, and the body.
+#[cfg(feature = "net")]
+#[derive(Debug)]
+pub(crate) struct Answer {
+    pub(crate) status: u16,
+    /// Lower-cased names, in the order received; a value that is not text is
+    /// left out, since no rule reads one.
+    pub(crate) headers: Vec<(String, String)>,
+    pub(crate) body: Vec<u8>,
+}
+
+/// [`fetch`], sending `extra` after the caller's headers and returning the
+/// status and headers beside the body. A status below 400 is an answer, so a
+/// `304` to a revalidation arrives here with its empty body.
+#[cfg(feature = "net")]
+pub(crate) fn fetch_response(
     url: &str,
-    http: &meo_canvas_scene::node::HttpOptions,
-) -> Result<Vec<u8>, Error> {
+    http: &HttpOptions,
+    extra: &[(String, String)],
+) -> Result<Answer, Error> {
     use std::io::Read as _;
 
     let refuse = |error: ureq::Error| Error::SourceFetch {
@@ -1111,10 +1183,18 @@ fn fetch(
     };
 
     let mut request = agent().get(url);
-    for (name, value) in &http.headers {
+    for (name, value) in http.headers.iter().chain(extra) {
         request = request.header(name, value);
     }
     let mut response = request.call().map_err(refuse)?;
+    let status = response.status().as_u16();
+    let headers = response
+        .headers()
+        .iter()
+        .filter_map(|(name, value)| {
+            Some((name.as_str().to_owned(), value.to_str().ok()?.to_owned()))
+        })
+        .collect();
 
     // The limit is counted here: `ureq`'s own reports `BodyExceedsLimit`
     // without a timeout and a bare `Io` with one, measured on a 33 MiB
@@ -1142,7 +1222,11 @@ fn fetch(
             failure: FetchFailure::TooLarge,
         });
     }
-    Ok(bytes)
+    Ok(Answer {
+        status,
+        headers,
+        body: bytes,
+    })
 }
 
 /// How long a connection may take to establish: about sixteen worst-case
@@ -1163,7 +1247,7 @@ const GLOBAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 /// 10.4 MB for three seconds, past `ureq`'s ten mebibytes, and thirty-two holds
 /// about nine seconds.
 #[cfg(feature = "net")]
-const MAX_IMAGE_BYTES: u64 = 32 * 1024 * 1024;
+pub(crate) const MAX_IMAGE_BYTES: u64 = 32 * 1024 * 1024;
 
 /// `classify` against errors the fetch agent really raises, and the lookup
 /// rules behind `HostNotFound` against each platform's own wording.
@@ -1484,15 +1568,30 @@ fn looks_like_svg(bytes: &[u8]) -> bool {
             && text.contains("<svg")
 }
 
+#[cfg_attr(
+    not(feature = "net"),
+    expect(
+        clippy::needless_pass_by_ref_mut,
+        reason = "only the image cache writes `notes`, and it exists under `net`"
+    )
+)]
 fn decode(
     node: NodeId,
     source: &ImageSource,
     scene: &Scene,
+    cache: Cache<'_>,
+    notes: &mut Vec<Diagnostic>,
 ) -> Result<Fetched, Error> {
+    // Read only by the fetch arm below, which this build does not compile.
+    #[cfg(not(feature = "net"))]
+    let _ = (cache, &notes);
+
     // The `Path` arm owns what it read and the `Bytes` arm borrows, so only the
     // one that must allocate does: a `Vec` in both copies a 5 MB PNG per image
     // node.
     let read;
+    #[cfg(feature = "net")]
+    let shared: std::sync::Arc<[u8]>;
     let bytes: &[u8] = match source {
         ImageSource::Bytes(bytes) => bytes,
         // Before the filesystem, and before the fetch arms below: a `data:`
@@ -1533,8 +1632,16 @@ fn decode(
             // time -- so a source naming one header keeps the scene's
             // credentials rather than replacing them. The same rule the npm
             // surface applies, so the two answer a shared question alike.
-            read = fetch(url, &http.over(&scene.http))?;
-            &read
+            let http = http.over(&scene.http);
+            if let Some(cache) = cache {
+                let found = cache.fetch(url, &http)?;
+                notes.extend(found.diagnostics);
+                shared = found.bytes;
+                &shared
+            } else {
+                read = fetch(url, &http)?;
+                &read
+            }
         }
         #[cfg(not(feature = "net"))]
         ImageSource::Url { .. } => {

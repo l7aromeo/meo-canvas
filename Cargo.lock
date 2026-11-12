@@ -1519,6 +1519,7 @@ dependencies = [
  "meo-skia-canvas",
  "png",
  "rustls-webpki",
+ "sha2",
  "taffy",
  "thiserror 2.0.21",
  "ureq",

@@ -249,6 +249,10 @@ pub struct Root {
     duration: Option<f32>,
     /// The rate a duration and a page's time are derived at.
     fps: f32,
+    /// Where fetched images are kept across renders, if anywhere.
+    #[cfg(feature = "net")]
+    image_cache:
+        Option<std::sync::Arc<meo_canvas_core::image_cache::ImageCache>>,
 }
 
 impl Root {
@@ -303,6 +307,8 @@ impl Root {
             pages: None,
             duration: None,
             fps: Self::DEFAULT_FPS,
+            #[cfg(feature = "net")]
+            image_cache: None,
         }
     }
 
@@ -412,6 +418,51 @@ impl Root {
     #[must_use]
     pub fn http_options(mut self, http: HttpOptions) -> Self {
         self.http = http;
+        self
+    }
+
+    /// Fetches URL sources through `cache`, which keeps what one render
+    /// fetched for the next, as an HTTP cache would.
+    ///
+    /// Requires the `net` feature. Without this, every render fetches every
+    /// URL, as it always has. Create one cache where the process starts and
+    /// hand a clone of the `Arc` to every render: renders on several threads
+    /// share it, and requests for one image share one fetch.
+    ///
+    /// What is kept, for how long and when it revalidates is on
+    /// [`ImageCache`](crate::image_cache::ImageCache); what the two stores
+    /// guarantee is on [`MemoryStore`](crate::image_cache::MemoryStore) and
+    /// [`DiskStore`](crate::image_cache::DiskStore). A store that fails never
+    /// fails the render: the image is fetched, and the failure is on
+    /// [`Canvas::diagnostics`].
+    ///
+    /// ```
+    /// use std::{num::NonZeroU64, sync::Arc};
+    ///
+    /// use meo_canvas::{
+    ///     Renderer, Root,
+    ///     image_cache::{ImageCache, MemoryStore},
+    /// };
+    ///
+    /// // Once, at start-up.
+    /// let max = NonZeroU64::new(256 * 1024 * 1024).expect("not zero");
+    /// let cache = Arc::new(ImageCache::new(MemoryStore::new(max)));
+    /// let renderer = Renderer::new();
+    ///
+    /// // Per render.
+    /// let canvas = Root::new(320.0)
+    ///     .height(200.0)
+    ///     .image_cache(Arc::clone(&cache))
+    ///     .render(&renderer)?;
+    /// # Ok::<(), meo_canvas::BuildError>(())
+    /// ```
+    #[cfg(feature = "net")]
+    #[must_use]
+    pub fn image_cache(
+        mut self,
+        cache: std::sync::Arc<meo_canvas_core::image_cache::ImageCache>,
+    ) -> Self {
+        self.image_cache = Some(cache);
         self
     }
 
@@ -612,7 +663,15 @@ impl Root {
     /// renderer does not hold, an image it cannot read, a URL it does not
     /// fetch.
     pub fn render(self, renderer: &Renderer) -> Result<Canvas, BuildError> {
+        #[cfg(feature = "net")]
+        let cache = self.image_cache.clone();
         let (scene, mut diagnostics) = self.into_scene()?;
+        #[cfg(feature = "net")]
+        let painted = match cache {
+            Some(cache) => renderer.render_with_cache(&scene, &cache)?,
+            None => renderer.render(&scene)?,
+        };
+        #[cfg(not(feature = "net"))]
         let painted = renderer.render(&scene)?;
         diagnostics.extend_from_slice(painted.diagnostics());
         Ok(Canvas {

@@ -1,0 +1,147 @@
+# How a date in a response header reads, read by both test suites: as Chrome reads Expires, Date and
+# Last-Modified, with a missing zone as GMT. `ms` is milliseconds since the epoch, `-` for no date. Each value is
+# written from what the string means; http-cache.tsv holds the measured forms to Chrome's cache, past and future.
+case	input	ms
+IMF-fixdate	Sun, 06 Nov 1994 08:49:37 GMT	784111777000
+RFC 850	Sunday, 06-Nov-94 08:49:37 GMT	784111777000
+asctime	Sun Nov  6 08:49:37 1994	784111777000
+no time	Thu, 01 Dec 1994	786240000000
+no zone is GMT	Sun, 06 Nov 1994 08:49:37	784111777000
+no weekday	06 Nov 1994 08:49:37 GMT	784111777000
+lower case	sun, 06 nov 1994 08:49:37 gmt	784111777000
+single digits	Sun, 6 Nov 1994 8:49:7 GMT	784111747000
+no space after comma	Sun,06 Nov 1994 08:49:37 GMT	784111777000
+trailing text	Sun, 06 Nov 1994 08:49:37 GMT junk	784111777000
+a later zone is ignored	Tue, 15 Nov 1994 08:12:31 GMT (PST)	784887151000
+a word that spells a month	Junk 6 1994	770860800000
+ISO date	2099-01-01	4070908800000
+ISO with Z	1994-11-06T08:49:37Z	784111777000
+ISO without zone	1994-11-06T08:49:37	784111777000
+ISO with a space	1994-11-06 08:49:37	784111777000
+ISO with fraction	1994-11-06T08:49:37.342156Z	784111777342
+ISO with long fraction	1994-11-06T08:49:37.1234567Z	784111777123
+ISO with offset	1994-11-06T08:49:37+0100	784108177000
+UTC is no zone	Sun, 06 Nov 1994 08:49:37 UTC	784111777000
+UT	Sun, 06 Nov 1994 08:49:37 UT	784111777000
++0000	Sun, 06 Nov 1994 08:49:37 +0000	784111777000
+EST	Sun, 06 Nov 1994 08:49:37 EST	784129777000
+EDT	Sun, 06 Nov 1994 08:49:37 EDT	784126177000
+CST	Sun, 06 Nov 1994 08:49:37 CST	784133377000
+CDT	Sun, 06 Nov 1994 08:49:37 CDT	784129777000
+MST	Sun, 06 Nov 1994 08:49:37 MST	784136977000
+MDT	Sun, 06 Nov 1994 08:49:37 MDT	784133377000
+PST	Sun, 06 Nov 1994 08:49:37 PST	784140577000
+PDT	Sun, 06 Nov 1994 08:49:37 PDT	784136977000
+AST	Sun, 06 Nov 1994 08:49:37 AST	784126177000
+NST	Sun, 06 Nov 1994 08:49:37 NST	784124377000
+BST	Sun, 06 Nov 1994 08:49:37 BST	784108177000
+MET	Sun, 06 Nov 1994 08:49:37 MET	784108177000
+EET	Sun, 06 Nov 1994 08:49:37 EET	784104577000
+JST	Sun, 06 Nov 1994 08:49:37 JST	784079377000
+GMT+0300	Sun, 06 Nov 1994 08:49:37 GMT+0300	784100977000
+GMT-0800	Sun, 06 Nov 1994 08:49:37 GMT-0800	784140577000
++0130	Sun, 06 Nov 1994 08:49:37 +0130	784106377000
+-08	Sun, 06 Nov 1994 08:49:37 -08	784140577000
++5	Sun, 06 Nov 1994 08:49:37 +5	784093777000
+three-digit offset is ignored	Sun, 06 Nov 1994 08:49:37 +123	784111777000
+offset after a named zone is ignored	Sun, 06 Nov 1994 08:49:37 EST+0300	784129777000
+dashes and fraction	22-AUG-1993 10:59:12.82	746017152820
+US slashes with PM	06/21/95 04:24:34 PM	803751874000
+ambiguous slashes are month first	5/6/95	799718400000
+day-first slashes	20/06/95 21:07	803682420000
+year-first dashes	95-06-08 19:32:48 EDT	802654368000
+long names	Friday, August 04, 1995 3:54 PM	807551640000
+zone glued to time	6 May 1992 16:41-JST (Wednesday)	705138060000
+offset before year	Mon Jan 16 16:12 +0130 1989	600964920000
+12 am	22-AUG-1993 12:59am	745981140000
+12 pm	22-AUG-1993 12:59 PM	746024340000
+10 pm	22-AUG-1993 10:05pm	746057100000
+PM past noon is ignored	22-AUG-1993 13:00 PM	746024400000
+hour 24 rolls over	Sun, 06 Nov 1994 24:00:00 GMT	784166400000
+31 February rolls over	Mon, 31 Feb 1994 00:00:00 GMT	762652800000
+day 0 is the day before	Sun, 00 Nov 1994 00:00:00 GMT	783561600000
+month 0 is the month before	1994-00-15	755913600000
+two-digit 69 is 2069	Thu, 01 Jan 69 00:00:00 GMT	3124224000000
+two-digit 70 is 1970	Thu, 01 Jan 70 00:00:00 GMT	0
+year below 100	Thu, 01 Jan 0099 00:00:00 GMT	-59042995200000
+five-digit year	Sun, 06 Nov 12345 08:49:37 GMT	327430111777000
+year past 32767	Sun, 06 Nov 99999 08:49:37 GMT	-
+illegal slashes	13/13/95	-
+dotted date	1994.11.06	-
+no day	Nov 1994	-
+no year	06 Nov	-
+no month	06 1994	-
+empty		-
+zero	0	-
+one	1	-
+minus one	-1	-
+nine digits	123456789	-
+now	now	-
+soon	soon	-
+0 GMT	0 GMT	-
+UTC is no zone, so an offset applies	Sun, 06 Nov 1994 08:49:37 UTC+0100	784108177000
+UT is a zone, so a later one is ignored	Sun, 06 Nov 1994 08:49:37 UT EST	784111777000
+UTC is no zone, so a later one applies	Sun, 06 Nov 1994 08:49:37 UTC EST	784129777000
+the first zone wins	Sun, 06 Nov 1994 08:49:37 GMT EST	784111777000
+a zone in parentheses	Sun, 06 Nov 1994 08:49:37 (EST)	784129777000
+a zone word by its first three letters	Sun, 06 Nov 1994 08:49:37 Estimated	784129777000
+# No mutation of either reader turns the next row red short of folding accented letters to ASCII; Chrome reads
+# ÉST as no zone (http-cache.tsv: "reading a letter outside ASCII").
+a letter outside ASCII is no letter	Sun, 06 Nov 1994 08:49:37 ÉST	784111777000
+Z after the time overrides an earlier zone	Sun, 06 Nov 1994 EST 08:49:37Z	784111777000
+an offset glued to the time	Sun, 06 Nov 1994 08:49:37-0800	784140577000
+an offset then a zone word	Sun, 06 Nov 1994 08:49:37 +0100 EST	784108177000
+a zone word then an offset	Sun, 06 Nov 1994 08:49:37 EST +0100	784129777000
+the first offset wins	Sun, 06 Nov 1994 08:49:37 -0800 -0100	784140577000
+one-digit offset after GMT	Sun, 06 Nov 1994 08:49:37 GMT+3	784100977000
+an offset is not range-checked	Sun, 06 Nov 1994 08:49:37 +9999	783749437000
+a sign with no digits	Sun, 06 Nov 1994 08:49:37 +	784111777000
+a dash after a word before any year separates	Sun Nov 6 08:49:37 GMT-0800 1994	-36894841823000
+mixed separators	6/16-95	803260800000
+month-first with a day past the month	1/45/95	792720000000
+one-digit year in a numeric date	1/2/5	1104624000000
+year-first slashes	1994/11/06	784080000000
+month-first with a four-digit year	11/06/1994	784080000000
+a five-digit year in a numeric date	06/11/12345	327417292800000
+six digits are no numeric date	06/11/123456	-
+year-first with month 13	1994-13-01	-
+year-first with day 32	1994-12-32	-
+an illegal day-and-month pair is passed over whole	13/13/95 06 Nov 1994	784080000000
+a refused year-first date leaves its dashes as offsets	1994-13-01 06 Nov 1994	784126800000
+a numeric date after a month word leaves its dashes as offsets	06 Nov 1994 2094-01-01	784083600000
+a numeric date replaces a day and year read before it	06 1999 2094-01-01	3913142400000
+a number glued to letters is ignored	6th Nov 1994	-
+a full month name	January 6, 1994	757814400000
+two-digit day before a two-digit year	Nov 06 95	815616000000
+a two-digit number past 31 is a year	95 Nov 06	815616000000
+a one-digit day	nov 6 94	784080000000
+year 32767	06 Nov 32767	971886124800000
+year 32768	06 Nov 32768	-
+year 0	06 Nov 0000	-62140435200000
+a second time is ignored	Nov 6 1994 08:49:37 09:00:00	784111777000
+a time without seconds	Sun, 06 Nov 1994 08:49	784111740000
+a time without minutes is ignored	Sun, 06 Nov 1994 08:	784080000000
+a three-digit hour is no time	Sun, 06 Nov 1994 123:45	784080000000
+three-digit minutes make no time	Sun, 06 Nov 1994 08:4937 GMT	784080000000
+three-digit seconds make no time	Sun, 06 Nov 1994 08:49:377 GMT	784080000000
+lower-case pm	Sun, 06 Nov 1994 8:49:37 pm	784154977000
+PM before the zone	Sun, 06 Nov 1994 08:49:37 PM GMT	784154977000
+12 AM with seconds	Sun, 06 Nov 1994 12:00:00 AM	784080000000
+six fractional digits	Sun, 06 Nov 1994 08:49:37.999999Z	784111777999
+ISO time with a named zone	1994-11-06T08:49:37 EST	784129777000
+semicolons separate	Sun;06;Nov;1994	784080000000
+brackets separate	[06][Nov][1994]	784080000000
+only the first month counts	Nov 6 1994 Dec	784080000000
+Z after an offset leaves the offset	+0100 06 Nov 1994 08:49:37Z	784108177000
+a second colon ends the time	06 Nov 1994 08:49: GMT	784111740000
+a letter after a numeric date makes it none	1994-11-06x	-
+a three-digit first number is no numeric date	123/11/06	-
+a first number of 0 is a year	0-11-06	973468800000
+a three-digit number is ignored	06 Nov 123 1994	784080000000
+a number before a dot still counts	Nov 06.5 1994	784080000000
+no AM or PM after Z	06 Nov 1994 08:49:37Z PM	784111777000
+AM past noon is ignored	22-AUG-1993 13:00 AM	746024400000
+six digits are no numeric date even as a small year	06/11/001994	-
+T and a digit inside a word is a letter	15 Jun 2095 06:00:00 PST08	3958984800000
+1001 pieces are read	x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x 06 Nov 1994	784080000000
+1002 pieces are not	x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x x 06 Nov 1994	-
