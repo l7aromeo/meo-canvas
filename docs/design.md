@@ -572,7 +572,7 @@ changes it.
 | bun        | 1.4.4 | Package manager and the JavaScript examples' runtime.          |
 | typescript | 6.0.3 | Not 7, which neither typescript-eslint nor TypeDoc loads.      |
 | eslint     | 10    | typescript-eslint 8, `eslint-config-prettier` last.            |
-| prettier   | 3.9   | Whole tree; `.prettierignore` names the machine-written files. |
+| prettier   | 3.10  | Whole tree; `.prettierignore` names the machine-written files. |
 | vitest     | 5     | Tests and the JavaScript coverage floor.                       |
 | typedoc    | 0.28  | Its own package, so it pins the TypeScript it loads.           |
 | playwright | 1.65  | Drives Chrome for the conformance tables.                      |
