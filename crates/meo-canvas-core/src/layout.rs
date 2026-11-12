@@ -3625,7 +3625,7 @@ const fn to_justify(justify: Justify) -> taffy::JustifyContent {
 /// Chrome's layout grid, sixty-fourths of a pixel: snapped once, then summed
 /// exactly, so five `10.3` boxes reach `51.484375` where exact sums tie at
 /// `51.5`. Floored, as `LayoutUnit` truncates; see `rounding_drift.rs`.
-const LAYOUT_GRID: f32 = 64.0;
+pub(crate) const LAYOUT_GRID: f32 = 64.0;
 
 /// A measured content size, snapped outward onto [`LAYOUT_GRID`]: a floored
 /// measurement would claim the content fits a box it does not, and the next

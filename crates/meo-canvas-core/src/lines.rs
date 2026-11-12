@@ -39,6 +39,38 @@
 //! gap is added by the arithmetic instead: `space_width + word_spacing`. So
 //! justification and word spacing have one place to change the gap, rather than
 //! reaching inside a measured run.
+//!
+//! # Where a line breaks
+//!
+//! At Chrome's break opportunities, which are not only spaces, found over the
+//! paragraph's whole text so a segment boundary is never one in itself. Blink's
+//! line breaker takes three rules in order, and so does this module:
+//!
+//! 1. **After a run of spaces, always**, and never before one, so a space hangs
+//!    at the end of the line it ends. `( a` and `a )` both break at the space,
+//!    where UAX 14 keeps an opening bracket with what follows it and a closing
+//!    one with what precedes it.
+//! 2. **Between two printable ASCII characters, a table of Blink's own**: a
+//!    break after `-` and `?`, and before `(`, `<`, `[` and `{` after closing
+//!    and other punctuation. `a/b` and `C++` do not break, where UAX 14 breaks
+//!    both. A hyphen before a digit breaks only after a letter or digit, so
+//!    `x86-64` breaks and `-5` does not.
+//! 3. **Anywhere else, UAX 14**, version 17, as ICU computes it: between two
+//!    ideographs or kana, never before a closing mark such as `。` or `」` or
+//!    after an opening one such as `「`, with `line-break: normal`'s tailoring,
+//!    where small kana and the prolonged sound mark (`ぁ`, `ッ`, `ー`) may
+//!    begin a line, which `strict` forbids. Thai, Lao, Khmer and Burmese break
+//!    by dictionary, as ICU breaks them.
+//!
+//! A soft hyphen is not an opportunity, since nothing here draws the hyphen
+//! Chrome adds there. `chrome_line_break.rs` holds every pair of printable
+//! ASCII characters, every pair of a set from each class in running text, and
+//! wrapped strings against Chrome, and names the few rows that differ.
+//!
+//! What lies between two opportunities is placed whole. Two pieces with an
+//! opportunity and no space between them meet with no gap, and the kerning
+//! between them is kept: in 16px Noto Sans SC, `アイ` is 0.8px narrower than
+//! `ア` and `イ` apart.
 
 use std::collections::{HashMap, VecDeque};
 
@@ -54,7 +86,9 @@ use meo_skia_canvas::{
     FontVariantCaps,
 };
 
-use crate::{FINITE_CEILING, resolve::ResolvedText};
+use crate::{FINITE_CEILING, layout::LAYOUT_GRID, resolve::ResolvedText};
+
+mod breaks;
 
 /// The string every face measurement is taken with.
 ///
@@ -517,6 +551,26 @@ impl TextMeasurer {
             base.size.mul_add(FALLBACK_SPACE, letter_spacing)
         }
     }
+
+    /// The kerning between `left` and the first character of `right`: what
+    /// the two set together lose against each set alone. Letter spacing is in
+    /// all three measurements, so it cancels.
+    fn kerning(&mut self, style: &RunStyle, left: char, right: &str) -> f32 {
+        let Some(first) = right.chars().next() else {
+            return 0.0;
+        };
+        let mut pair = String::with_capacity(8);
+        pair.push(left);
+        let alone = self.run_width(style, style.letter_spacing, &pair);
+        pair.push(first);
+        let together = self.run_width(style, style.letter_spacing, &pair);
+        let second = self.run_width(
+            style,
+            style.letter_spacing,
+            &right[..first.len_utf8()],
+        );
+        together - alone - second
+    }
 }
 
 /// One run of text on a line, in one style.
@@ -532,12 +586,22 @@ pub struct Run {
 }
 
 impl Run {
-    /// Whether this run is inter-word whitespace rather than a word.
+    /// Whether this run is inter-word whitespace rather than a word: spaces,
+    /// tabs, carriage returns and no-break spaces, which are drawn as a gap.
+    /// Other Unicode spaces are text, measured in their face, as Chrome sets
+    /// them: an ideographic space is an em wide, and one that begins a
+    /// paragraph is drawn rather than dropped.
     #[must_use]
     pub fn is_space(&self) -> bool {
-        !self.text.is_empty()
-            && self.text.chars().all(|c| c.is_whitespace() && c != '\n')
+        !self.text.is_empty() && self.text.chars().all(is_gap)
     }
+}
+
+/// Whether `character` is drawn as an inter-word gap rather than measured:
+/// the white space `white-space: normal` collapses, and the no-break space,
+/// which `word-spacing` widens as it widens a space.
+const fn is_gap(character: char) -> bool {
+    matches!(character, ' ' | '\t' | '\r' | '\u{a0}')
 }
 
 /// One line box: its runs, and the three heights that place it.
@@ -696,42 +760,229 @@ const fn usable(pixels: f32) -> f32 {
     pixels
 }
 
-/// Splits a segment into words and the whitespace between them. Newlines are
-/// their own pieces, since a wrap must know a break was asked for; any other
-/// whitespace run collapses into one gap, as `white-space: normal` does.
-fn pieces(text: &str) -> Vec<&str> {
+/// One piece of a paragraph, as the wrap places it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Piece<'text> {
+    /// A newline the caller wrote, which ends the line whatever fits.
+    Newline,
+    /// A run of the characters [`is_gap`] names, collapsed into one gap as
+    /// `white-space: normal` collapses it.
+    Space(&'text str),
+    /// Characters with no break opportunity inside. `opens` says whether a
+    /// line may begin with it, which is a property of the paragraph's text
+    /// around it and not of the piece alone.
+    Word {
+        /// The characters.
+        text: &'text str,
+        /// Whether a break opportunity precedes it.
+        opens: bool,
+    },
+}
+
+/// Splits a segment into the pieces the wrap places: newlines, gaps, and
+/// words cut at the paragraph's opportunities `breaks`, `from` being the
+/// segment's offset in the paragraph. Its edges are not opportunities in
+/// themselves: `<b>a</b>b` is one word in two styles.
+fn pieces<'text>(
+    text: &'text str,
+    from: usize,
+    breaks: &[usize],
+) -> Vec<Piece<'text>> {
+    let opens = |at: usize| breaks.binary_search(&(from + at)).is_ok();
     let mut out = Vec::new();
-    let mut rest = text;
-    while !rest.is_empty() {
+    let mut start = 0;
+    while start < text.len() {
+        let rest = &text[start..];
         let kind = |c: char| {
             if c == '\n' {
                 0
-            } else if c.is_whitespace() {
+            } else if is_gap(c) {
                 1
             } else {
                 2
             }
         };
-        let first = kind(rest.chars().next().unwrap_or(' '));
+        let first = rest.chars().next().map_or(2, kind);
         // A newline is always alone, so two of them are two breaks.
         let end = if first == 0 {
-            rest.chars().next().map_or(1, char::len_utf8)
+            1
         } else {
             rest.char_indices()
                 .find(|(_, c)| kind(*c) != first)
                 .map_or(rest.len(), |(at, _)| at)
         };
-        out.push(&rest[..end]);
-        rest = &rest[end..];
+        match first {
+            0 => out.push(Piece::Newline),
+            1 => out.push(Piece::Space(&rest[..end])),
+            _ => {
+                let mut cut = start;
+                let stop = start + end;
+                let inside = breaks
+                    .iter()
+                    .filter(|&&offset| {
+                        offset > from + start && offset < from + stop
+                    })
+                    .map(|offset| offset - from);
+                for at in inside.chain([stop]) {
+                    out.push(Piece::Word {
+                        text: &text[cut..at],
+                        opens: opens(cut),
+                    });
+                    cut = at;
+                }
+            }
+        }
+        start += end;
     }
     out
 }
 
+/// A line under construction: its runs, the segment each came from, and the
+/// width they occupy with their gaps.
+#[derive(Debug, Default)]
+struct Builder {
+    /// The runs so far, spaces included.
+    runs: Vec<Run>,
+    /// The segment each run came from, which decides whether a word joins the
+    /// run before it.
+    origins: Vec<usize>,
+    /// The width so far, as [`line_width`] reckons it.
+    used: f32,
+}
+
+impl Builder {
+    /// Whether the line holds a word yet. Spaces before the first word are not
+    /// kept, so this is whether it holds a run at all.
+    const fn started(&self) -> bool {
+        !self.runs.is_empty()
+    }
+
+    /// Adds `items` to the line if `commit`, and returns the width they add
+    /// either way. A word directly after one of the same segment joins its run,
+    /// at the two widths plus the kerning where they meet, so the run is drawn
+    /// as the text it is.
+    fn extend(
+        &mut self,
+        styles: &[RunStyle],
+        items: &[Item<'_>],
+        gap: f32,
+        commit: bool,
+    ) -> f32 {
+        let mut added = 0.0;
+        let mut started = self.started();
+        let mut spaced = self.runs.last().is_some_and(Run::is_space);
+        // The segment of the word the line ends with, if it ends with one.
+        let mut last = self
+            .runs
+            .last()
+            .filter(|run| !run.is_space())
+            .and_then(|_| self.origins.last().copied());
+        for item in items {
+            let style = &styles[item.segment];
+            match item.piece {
+                Piece::Newline => {}
+                Piece::Space(text) => {
+                    // Kept at no width, so the gap it stands for is added
+                    // once, when the next word arrives; dropped before any.
+                    if started {
+                        spaced = true;
+                        last = None;
+                        if commit {
+                            self.push(text, style, 0.0, item.segment);
+                        }
+                    }
+                }
+                Piece::Word { text, .. } => {
+                    let joins = last == Some(item.segment);
+                    let advance = if spaced {
+                        gap + item.width
+                    } else if joins {
+                        item.width + item.kern
+                    } else {
+                        item.width
+                    };
+                    added += advance;
+                    if commit {
+                        if joins && let Some(run) = self.runs.last_mut() {
+                            run.text.push_str(text);
+                            run.width += advance;
+                        } else {
+                            self.push(text, style, item.width, item.segment);
+                        }
+                        self.used += advance;
+                    }
+                    started = true;
+                    spaced = false;
+                    last = Some(item.segment);
+                }
+            }
+        }
+        added
+    }
+
+    /// Appends one run.
+    fn push(
+        &mut self,
+        text: &str,
+        style: &RunStyle,
+        width: f32,
+        segment: usize,
+    ) {
+        self.runs.push(Run {
+            text: text.to_owned(),
+            style: style.clone(),
+            width,
+        });
+        self.origins.push(segment);
+    }
+
+    /// Closes the line, dropping the trailing space the wrap consumed there,
+    /// which CSS does not draw. `hard` records why the line ended: truncation
+    /// pulls text up across a wrap, never across a written newline. Returns
+    /// whether a space was dropped, which is whether the break fell at one.
+    fn finish(&mut self, lines: &mut Vec<Line>, hard: bool) -> bool {
+        let mut dropped = false;
+        while self.runs.last().is_some_and(Run::is_space) {
+            self.runs.pop();
+            dropped = true;
+        }
+        lines.push(Line {
+            runs: core::mem::take(&mut self.runs),
+            ascent: 0.0,
+            content_height: 0.0,
+            height: 0.0,
+            hard_break: hard,
+        });
+        self.origins.clear();
+        self.used = 0.0;
+        dropped
+    }
+}
+
+/// What a wrap produced: the lines, and for each whether the break after it
+/// fell at a space, which a truncation pulling the next line up puts back.
+#[derive(Debug)]
+struct Wrapped {
+    /// The lines, without their heights.
+    lines: Vec<Line>,
+    /// Per line, whether the wrap dropped a space where it ended.
+    spaced: Vec<bool>,
+}
+
 /// Wraps segments into lines that fit `max_width`.
 ///
-/// Word level, with a word wider than the line broken between characters. The
-/// first word on a line is placed whatever its width, so a line is never empty
-/// because nothing fits.
+/// A line breaks only at a break opportunity, found over the paragraph's
+/// whole text as Chrome finds them -- after a space, between ideographs, after
+/// a hyphen; this module's documentation has the rules -- so a segment
+/// boundary inside a word is not one.
+/// What lies between two opportunities is placed whole: a line takes it if it
+/// fits, and a line holding nothing yet takes it whatever its width, so a line
+/// is never empty because nothing fits.
+///
+/// A line fits as Chrome decides it, in its layout units of a 64th of a
+/// pixel: its width is within `max_width` truncated to one, plus one more.
+/// Chrome keeps six 16px ideographs on a line in a `95.984375`px block and not
+/// in a `95.984`px one.
 #[must_use]
 pub fn wrap(
     measurer: &mut TextMeasurer,
@@ -740,95 +991,160 @@ pub fn wrap(
     max_width: f32,
     metrics: Metrics,
 ) -> Vec<Line> {
-    let base_style = RunStyle::base(base);
-    let space = measurer.space_width(&base_style, metrics.letter_spacing);
-    let gap = space + metrics.word_spacing;
+    let prepared = Prepared::new(measurer, base, segments, metrics);
+    wrap_marked(&prepared, max_width).lines
+}
 
-    let mut lines: Vec<Line> = Vec::new();
-    let mut runs: Vec<Run> = Vec::new();
-    let mut used = 0.0_f32;
+/// One piece of a prepared paragraph, with what placing it costs.
+#[derive(Debug, Clone, Copy)]
+struct Item<'text> {
+    /// The segment it comes from, which styles it.
+    segment: usize,
+    /// The piece.
+    piece: Piece<'text>,
+    /// A word's width set alone; zero for anything else.
+    width: f32,
+    /// The kerning where a word meets the word before it, when that word is
+    /// of the same segment with nothing between them; zero otherwise.
+    kern: f32,
+}
 
-    for segment in segments {
-        let style = RunStyle::of(base, segment);
-        for piece in pieces(&segment.text) {
-            if piece == "\n" {
-                finish(&mut lines, &mut runs, &mut used, true);
-                continue;
-            }
-            if piece.chars().all(char::is_whitespace) {
-                // Kept, at no width, so the gap it stands for can be added
-                // once when the next word arrives.
-                if !runs.is_empty() {
-                    runs.push(Run {
-                        text: piece.to_owned(),
-                        style: style.clone(),
-                        width: 0.0,
-                    });
-                }
-                continue;
-            }
+/// A paragraph made ready to wrap: its pieces, each word's width and the
+/// kerning where words meet, none of which depends on the width offered.
+/// Layout asks one node about several widths per render, and a wrap over
+/// this is arithmetic.
+#[derive(Debug)]
+pub(crate) struct Prepared<'text> {
+    /// Each segment's run style.
+    styles: Vec<RunStyle>,
+    /// The width a space between words adds.
+    gap: f32,
+    /// The pieces, in order.
+    items: Vec<Item<'text>>,
+}
 
-            let width = measurer.run_width(&style, style.letter_spacing, piece);
-            let advance = if runs.last().is_some_and(Run::is_space) {
-                gap + width
-            } else {
-                width
-            };
-
-            if used + advance <= max_width || runs.is_empty() {
-                used += advance;
-                runs.push(Run {
-                    text: piece.to_owned(),
-                    style: style.clone(),
+impl<'text> Prepared<'text> {
+    /// Finds `segments`' break opportunities over the whole paragraph and
+    /// measures every piece between them.
+    pub(crate) fn new(
+        measurer: &mut TextMeasurer,
+        base: &ResolvedText,
+        segments: &'text [TextSegment],
+        metrics: Metrics,
+    ) -> Self {
+        let base_style = RunStyle::base(base);
+        let space = measurer.space_width(&base_style, metrics.letter_spacing);
+        let paragraph: String = segments
+            .iter()
+            .map(|segment| segment.text.as_str())
+            .collect();
+        let opportunities = breaks::opportunities(&paragraph);
+        let styles: Vec<RunStyle> = segments
+            .iter()
+            .map(|segment| RunStyle::of(base, segment))
+            .collect();
+        let mut items: Vec<Item<'text>> = Vec::new();
+        let mut from = 0;
+        for (segment, written) in segments.iter().enumerate() {
+            let style = &styles[segment];
+            for piece in pieces(&written.text, from, &opportunities) {
+                let (width, kern) = match piece {
+                    Piece::Word { text, .. } => {
+                        let width = measurer.run_width(
+                            style,
+                            style.letter_spacing,
+                            text,
+                        );
+                        let left = match items.last() {
+                            Some(&Item {
+                                segment: before,
+                                piece: Piece::Word { text: previous, .. },
+                                ..
+                            }) if before == segment => {
+                                previous.chars().next_back()
+                            }
+                            _ => None,
+                        };
+                        let kern = left.map_or(0.0, |left| {
+                            measurer.kerning(style, left, text)
+                        });
+                        (width, kern)
+                    }
+                    Piece::Newline | Piece::Space(_) => (0.0, 0.0),
+                };
+                items.push(Item {
+                    segment,
+                    piece,
                     width,
+                    kern,
                 });
-                continue;
             }
-
-            finish(&mut lines, &mut runs, &mut used, false);
-
-            // A word too wide for the line overflows it on a line of its own,
-            // as Chrome does with a 278px word in a 100px box, alone or after a
-            // short word. Only `overflow-wrap: break-word` breaks it; see
-            // [`break_word`].
-            used = width;
-            runs.push(Run {
-                text: piece.to_owned(),
-                style: style.clone(),
-                width,
-            });
+            from += written.text.len();
+        }
+        Self {
+            styles,
+            gap: space + metrics.word_spacing,
+            items,
         }
     }
-    finish(&mut lines, &mut runs, &mut used, false);
-
-    lines
 }
 
-/// Closes the line being built and starts the next, dropping the trailing space
-/// the wrap consumed there, which CSS does not draw. `hard` records why the
-/// line ended: truncation pulls text up across a wrap, never across a written
-/// newline.
-fn finish(
-    lines: &mut Vec<Line>,
-    runs: &mut Vec<Run>,
-    used: &mut f32,
-    hard: bool,
-) {
-    while runs.last().is_some_and(Run::is_space) {
-        runs.pop();
+/// Whether `used` fits `max_width` as Blink's line breaker decides: within the
+/// room truncated to a layout unit plus one unit, `AvailableWidthToFit`. That
+/// unit also absorbs the 16.0000305 that Linux's font scaler makes a 16px em
+/// of 1000 units; see `a_line_fits_with_one_layout_unit_to_spare`.
+fn fits(used: f32, max_width: f32) -> bool {
+    used * LAYOUT_GRID <= (max_width * LAYOUT_GRID).floor() + 1.0
+}
+
+/// [`wrap`] over a prepared paragraph, with where each break fell.
+fn wrap_marked(prepared: &Prepared<'_>, max_width: f32) -> Wrapped {
+    let (styles, gap) = (prepared.styles.as_slice(), prepared.gap);
+    let mut wrapped = Wrapped {
+        lines: Vec::new(),
+        spaced: Vec::new(),
+    };
+    let mut line = Builder::default();
+    let mut rest = prepared.items.as_slice();
+    while let Some(first) = rest.first() {
+        if first.piece == Piece::Newline {
+            line.finish(&mut wrapped.lines, true);
+            wrapped.spaced.push(false);
+            rest = &rest[1..];
+            continue;
+        }
+        // Up to the next piece a line may begin with, or a newline.
+        let end = rest[1..]
+            .iter()
+            .position(|item| {
+                matches!(
+                    item.piece,
+                    Piece::Newline | Piece::Word { opens: true, .. }
+                )
+            })
+            .map_or(rest.len(), |at| at + 1);
+        let (unit, after) = rest.split_at(end);
+        rest = after;
+
+        let advance = line.extend(styles, unit, gap, false);
+        if line.started() && !fits(line.used + advance, max_width) {
+            // A unit too wide for the line overflows it on a line of its own,
+            // as Chrome does with a 278px word in a 100px box, alone or after
+            // a short word. Only `overflow-wrap: break-word` breaks it; see
+            // [`break_word`].
+            let dropped = line.finish(&mut wrapped.lines, false);
+            wrapped.spaced.push(dropped);
+        }
+        line.extend(styles, unit, gap, true);
     }
-    lines.push(Line {
-        runs: core::mem::take(runs),
-        ascent: 0.0,
-        content_height: 0.0,
-        height: 0.0,
-        hard_break: hard,
-    });
-    *used = 0.0;
+    line.finish(&mut wrapped.lines, false);
+    wrapped.spaced.push(false);
+    wrapped
 }
 
-/// Breaks one word into pieces that each fit `max_width`, a character wider
-/// than the line taking a piece of its own. Chrome breaks a word only under
+/// Breaks what lies between two break opportunities into pieces that each fit
+/// `max_width`, a character wider than the line taking a piece of its own.
+/// Chrome breaks there only under
 /// `overflow-wrap: break-word`, which the scene lacks, so nothing outside the
 /// tests calls this.
 #[cfg_attr(
@@ -852,7 +1168,7 @@ fn break_word(
         let mut candidate = part.clone();
         candidate.push(character);
         let width = measurer.run_width(style, letter_spacing, &candidate);
-        if width <= max_width {
+        if fits(width, max_width) {
             part = candidate;
             continue;
         }
@@ -867,7 +1183,7 @@ fn break_word(
         }
         part.push(character);
         let alone = measurer.run_width(style, letter_spacing, &part);
-        if alone > max_width {
+        if !fits(alone, max_width) {
             parts.push(Run {
                 text: core::mem::take(&mut part),
                 style: style.clone(),
@@ -894,7 +1210,7 @@ fn break_word(
 fn truncate_with(
     measurer: &mut TextMeasurer,
     base: &ResolvedText,
-    all: &[Line],
+    all: &Wrapped,
     from: usize,
     max_width: f32,
     marker: &str,
@@ -906,7 +1222,7 @@ fn truncate_with(
 
     // The ellipsis takes the style of the last thing written before it, which
     // is v9's rule and the one that keeps a bold last word's marker bold.
-    let style = all[from]
+    let style = all.lines[from]
         .runs
         .iter()
         .rev()
@@ -917,10 +1233,12 @@ fn truncate_with(
     let budget = max_width - marker_width;
 
     // This line, then each soft-wrapped continuation, with the space the wrap
-    // consumed put back between them.
+    // consumed put back between them where it consumed one: `漢字` broken
+    // between its ideographs had none.
     let mut source: Vec<Run> = Vec::new();
-    for (offset, line) in all[from..].iter().enumerate() {
+    for (offset, line) in all.lines[from..].iter().enumerate() {
         if offset > 0
+            && all.spaced[from + offset - 1]
             && let Some(previous) = source.last()
         {
             source.push(Run {
@@ -1141,8 +1459,22 @@ pub fn layout(
     paragraph: &ParagraphStyle,
     metrics: Metrics,
 ) -> Block {
-    let all = wrap(measurer, base, segments, max_width, metrics);
-    let mut lines = all.clone();
+    let prepared = Prepared::new(measurer, base, segments, metrics);
+    layout_prepared(measurer, base, &prepared, max_width, paragraph, metrics)
+}
+
+/// [`layout`] over a paragraph prepared from `base` and `metrics`, which a
+/// caller laying one node out at several widths prepares once.
+pub(crate) fn layout_prepared(
+    measurer: &mut TextMeasurer,
+    base: &ResolvedText,
+    prepared: &Prepared<'_>,
+    max_width: f32,
+    paragraph: &ParagraphStyle,
+    metrics: Metrics,
+) -> Block {
+    let all = wrap_marked(prepared, max_width);
+    let mut lines = all.lines.clone();
     let mut truncated = false;
     let marker = paragraph
         .ellipsis
@@ -1191,7 +1523,7 @@ pub fn layout(
         lines,
         width,
         height: boxes + gaps,
-        wrapped_lines: all.len(),
+        wrapped_lines: all.lines.len(),
         truncated,
     }
 }
@@ -1204,9 +1536,9 @@ mod tests {
     use meo_skia_canvas::TextEngine;
 
     use super::{
-        Answer, Extent, Line, METRICS_STRING, Measurement, Metrics, Run,
-        RunStyle, TextMeasurer, layout, line_width, pieces, spacing_pixels,
-        wrap,
+        Answer, Extent, Line, METRICS_STRING, Measurement, Metrics, Piece, Run,
+        RunStyle, TextMeasurer, breaks, fits, layout, line_width, pieces,
+        spacing_pixels, wrap,
     };
     use crate::{
         FINITE_CEILING,
@@ -1497,14 +1829,55 @@ mod tests {
         }
     }
 
+    /// A word that opens, or one that does not, for the piece assertions.
+    fn word(text: &str, opens: bool) -> Piece<'_> {
+        Piece::Word { text, opens }
+    }
+
     #[test]
     fn a_newline_is_its_own_piece_and_a_run_of_spaces_is_one() {
-        assert_eq!(pieces("a b"), vec!["a", " ", "b"]);
-        assert_eq!(pieces("a  b"), vec!["a", "  ", "b"]);
+        fn at(text: &str) -> Vec<Piece<'_>> {
+            pieces(text, 0, &breaks::opportunities(text))
+        }
+        assert_eq!(
+            at("a  b"),
+            [word("a", false), Piece::Space("  "), word("b", true)]
+        );
         // Two newlines are two breaks, which is what makes an empty line
         // between paragraphs possible.
-        assert_eq!(pieces("a\n\nb"), vec!["a", "\n", "\n", "b"]);
-        assert_eq!(pieces("a \n b"), vec!["a", " ", "\n", " ", "b"]);
+        assert_eq!(
+            at("a\n\nb"),
+            [
+                word("a", false),
+                Piece::Newline,
+                Piece::Newline,
+                word("b", true)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_word_is_cut_at_every_opportunity_inside_it() {
+        let text = "漢字well-known";
+        assert_eq!(
+            pieces(text, 0, &breaks::opportunities(text)),
+            [
+                word("漢", false),
+                word("字", true),
+                word("well-", true),
+                word("known", true),
+            ]
+        );
+    }
+
+    /// The paragraph's opportunities decide, not the segment's: `b` continues
+    /// the word `a` began in the segment before, and `字` does not.
+    #[test]
+    fn a_segment_edge_opens_only_where_the_paragraph_breaks() {
+        let paragraph = "ab漢字";
+        let opportunities = breaks::opportunities(paragraph);
+        assert_eq!(pieces("b", 1, &opportunities), [word("b", false)]);
+        assert_eq!(pieces("字", 5, &opportunities), [word("字", true)]);
     }
 
     #[test]
@@ -1568,6 +1941,25 @@ mod tests {
             (spaced - plain - 8.0).abs() < 0.001,
             "{spaced} against {plain}"
         );
+    }
+
+    /// Chrome 158's fit, from three copies of a line in a block a hair
+    /// narrower: three lines while one fits, four once it does not. Six 16px
+    /// ideographs are 96 wide, and `アイウエオカ` 95.2 with its kerning.
+    #[test]
+    fn a_line_fits_with_one_layout_unit_to_spare() {
+        for (used, room, chrome) in [
+            (96.0, 96.0, true),
+            (96.0, 95.984_375, true),
+            (96.0, 95.984, false),
+            (95.2, 95.187_5, true),
+            (95.2, 95.187_125, false),
+            // Six ideographs as FreeType advances them, which Chrome on Linux
+            // also keeps on one 96px line.
+            (6.0 * (16.0 + 2.0 / 65536.0), 96.0, true),
+        ] {
+            assert_eq!(fits(used, room), chrome, "{used} in {room}");
+        }
     }
 
     #[test]
@@ -1846,6 +2238,101 @@ mod tests {
                 }
             })
             .collect()
+    }
+
+    /// Every line a wrap at 0px makes, which is one per break opportunity.
+    fn at_zero(segments: &[TextSegment]) -> Vec<String> {
+        let mut measurer = TextMeasurer::new();
+        let base = style();
+        wrap(&mut measurer, &base, segments, 0.0, Metrics::of(&base))
+            .iter()
+            .map(read)
+            .collect()
+    }
+
+    /// `parts` as segments, every other one at another size.
+    fn alternating(parts: &[&str]) -> Vec<TextSegment> {
+        parts
+            .iter()
+            .enumerate()
+            .map(|(index, text)| TextSegment {
+                text: (*text).to_owned(),
+                style: TextStyle {
+                    font_size: (index % 2 == 1).then_some(20.0),
+                    ..TextStyle::default()
+                },
+            })
+            .collect()
+    }
+
+    /// The opportunities are the paragraph's: a segment edge inside a word is
+    /// not one, and one between two ideographs, after a space or after a
+    /// hyphen still is.
+    #[test]
+    fn a_segment_edge_neither_makes_nor_removes_a_break() {
+        assert_eq!(at_zero(&alternating(&["ab", "cd"])), ["abcd"]);
+        assert_eq!(at_zero(&alternating(&["漢", "字"])), ["漢", "字"]);
+        assert_eq!(at_zero(&alternating(&["a ", "b"])), ["a", "b"]);
+        assert_eq!(
+            at_zero(&alternating(&["well-", "known"])),
+            ["well-", "known"]
+        );
+        assert_eq!(
+            at_zero(&alternating(&["漢字", "かな"])),
+            ["漢", "字", "か", "な"]
+        );
+        // `」` may not begin a line, wherever its segment starts.
+        assert_eq!(at_zero(&alternating(&["漢", "」漢"])), ["漢」", "漢"]);
+    }
+
+    /// Pieces with no space between them join one run, which is drawn as the
+    /// text it is, kerning included.
+    #[test]
+    fn pieces_that_meet_without_a_space_join_one_run() {
+        let mut measurer = TextMeasurer::new();
+        let base = style();
+        let lines = wrap(
+            &mut measurer,
+            &base,
+            &plain("漢字well-known"),
+            1e4,
+            Metrics::of(&base),
+        );
+        assert_eq!(lines.len(), 1);
+        let texts: Vec<&str> =
+            lines[0].runs.iter().map(|run| run.text.as_str()).collect();
+        assert_eq!(texts, ["漢字well-known"]);
+    }
+
+    /// A truncation pulling the next line up puts back the space the wrap
+    /// consumed, and only that: `漢字` broke from `Tokyo…` at no space.
+    #[test]
+    fn a_truncation_adds_no_space_where_the_break_had_none() {
+        let mut measurer = TextMeasurer::new();
+        let base = style();
+        let metrics = Metrics::of(&base);
+        let text = "漢字Tokyoooooooooooo";
+        let width = 70.0;
+        let wrapped = wrap(&mut measurer, &base, &plain(text), width, metrics);
+        assert_eq!(read(&wrapped[0]), "漢字", "the scene has to break there");
+
+        let block = layout(
+            &mut measurer,
+            &base,
+            &plain(text),
+            width,
+            &ParagraphStyle {
+                max_lines: Some(1),
+                ellipsis: Some("\u{2026}".to_owned()),
+            },
+            metrics,
+        );
+        let last = read(&block.lines[0]);
+        assert!(
+            last.starts_with("漢字To"),
+            "nothing was pulled up: {last:?}"
+        );
+        assert!(!last.contains(' '), "a space appeared: {last:?}");
     }
 
     #[test]
