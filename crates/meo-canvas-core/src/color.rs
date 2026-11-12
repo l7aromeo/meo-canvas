@@ -134,7 +134,7 @@ fn names_current_color(css: &str) -> bool {
 /// for `color(srgb 1 0)` and for `color(display-p3-linear 1 0 0)` alike, and
 /// only the second has well-formed channels in a space the reader does not
 /// convert. Those spaces are `display-p3-linear`, which Chrome paints and
-/// `meo-skia-canvas` 0.17.2 refuses (`l7aromeo/meo-skia-canvas#687`), a custom
+/// `meo-skia-canvas` 0.17.3 refuses (`l7aromeo/meo-skia-canvas#687`), a custom
 /// `--name` profile, and an identifier CSS does not name.
 ///
 /// Well-formed means the same channels in `srgb` parse. Returns `None` for a

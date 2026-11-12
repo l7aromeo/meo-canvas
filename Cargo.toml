@@ -27,9 +27,9 @@ meo-canvas-core = { path = "crates/meo-canvas-core", version = "0.2.0" }
 
 # No default features: its `node-addon` would add a second `#[neon::main]`, and
 # `meo-canvas-node` owns the only one. `patched-skia` links the patched Skia the
-# npm package draws with, from the justfile's `SKIA_BINARIES_URL`; 0.17.2 is
-# the first crate that reaches it.
-meo-skia-canvas = { version = "0.17.2", default-features = false, features = ["patched-skia"] }
+# npm package draws with, from the justfile's `SKIA_BINARIES_URL`. 0.17.3 is
+# the first with `Context2D::font_metrics`, the line gap `normal` adds.
+meo-skia-canvas = { version = "0.17.3", default-features = false, features = ["patched-skia"] }
 
 # `calc` is off: taffy's calc is an opaque handle the caller resolves, not an
 # evaluator. It is not what makes `TaffyTree` `!Send`; every length is a tagged

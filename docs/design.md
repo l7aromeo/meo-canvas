@@ -548,7 +548,7 @@ by construction, and the crate ships them together.
 
 | crate             |        |                                                          |
 | ----------------- | ------ | -------------------------------------------------------- |
-| `meo-skia-canvas` | 0.17.2 | Skia, text shaping, encoding. `patched-skia`, see below. |
+| `meo-skia-canvas` | 0.17.3 | Skia, text shaping, encoding. `patched-skia`, see below. |
 | `taffy`           | 0.15   | Flexbox, CSS grid, block layout. Without `calc`.         |
 | `neon`            | 1.1    | Node addon.                                              |
 | `clap`            | 4.6    | CLI.                                                     |
