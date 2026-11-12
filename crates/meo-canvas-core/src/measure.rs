@@ -223,11 +223,16 @@ pub(crate) const BROKEN_IMAGE_ICON: f32 = 16.0;
 /// Wrapping asks the same question relentlessly -- taffy calls a leaf several
 /// times per pass while it searches for a width that fits -- and shaping is
 /// the expensive half of answering. [`TextMeasurer`] holds the answers for the
-/// life of this measurer, which is one render. See [`crate::lines`].
+/// life of this measurer, which is one render, and each text node's paragraph
+/// is segmented and measured once, at the first question about it, so the
+/// questions after are line filling alone. See [`crate::lines`].
 pub struct SceneMeasurer<'resolved> {
     resolved: &'resolved Resolved<'resolved>,
     /// The shaping cache every line box is built through.
     text: TextMeasurer,
+    /// Each text node's paragraph, segmented and measured the first time
+    /// layout asks about it and wrapped at every width after.
+    prepared: HashMap<NodeId, lines::Prepared<'resolved>>,
     /// Answers keyed by the question, kept across the two solves of
     /// `compensate_ratio_direction`. Right while a measurement is a pure
     /// function of its key; one reading the tree or a previous pass would go
@@ -270,6 +275,7 @@ impl core::fmt::Debug for SceneMeasurer<'_> {
         // preparation found what it expected.
         f.debug_struct("SceneMeasurer")
             .field("shaped", &self.text.cached())
+            .field("prepared", &self.prepared.len())
             .field("answers", &self.answers.len())
             .finish_non_exhaustive()
     }
@@ -321,6 +327,7 @@ impl<'resolved> SceneMeasurer<'resolved> {
         Ok(Self {
             resolved,
             text: TextMeasurer::new(),
+            prepared: HashMap::new(),
             answers: HashMap::new(),
         })
     }
@@ -342,8 +349,9 @@ impl<'resolved> SceneMeasurer<'resolved> {
         width: f32,
         truncate: Truncate,
     ) -> Option<Block> {
-        let style = self.resolved.text(node)?;
-        let scene_node = self.resolved.scene.get(node)?;
+        let resolved = self.resolved;
+        let style = resolved.text(node)?;
+        let scene_node = resolved.scene.get(node)?;
         let NodeKind::Text {
             segments,
             paragraph,
@@ -360,13 +368,17 @@ impl<'resolved> SceneMeasurer<'resolved> {
             Truncate::Yes => paragraph,
             Truncate::No => &untruncated,
         };
-        Some(lines::layout(
+        let metrics = Metrics::of(style);
+        let prepared = self.prepared.entry(node).or_insert_with(|| {
+            lines::Prepared::new(&mut self.text, style, segments, metrics)
+        });
+        Some(lines::layout_prepared(
             &mut self.text,
             style,
-            segments,
+            prepared,
             width,
             paragraph,
-            Metrics::of(style),
+            metrics,
         ))
     }
 

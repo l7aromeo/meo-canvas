@@ -863,24 +863,23 @@ impl Builder {
     /// as the text it is.
     fn extend(
         &mut self,
-        measurer: &mut TextMeasurer,
         styles: &[RunStyle],
-        items: &[(usize, Piece<'_>)],
+        items: &[Item<'_>],
         gap: f32,
         commit: bool,
     ) -> f32 {
         let mut added = 0.0;
         let mut started = self.started();
         let mut spaced = self.runs.last().is_some_and(Run::is_space);
+        // The segment of the word the line ends with, if it ends with one.
         let mut last = self
             .runs
             .last()
             .filter(|run| !run.is_space())
-            .and_then(|run| run.text.chars().next_back())
-            .zip(self.origins.last().copied());
-        for &(segment, piece) in items {
-            let style = &styles[segment];
-            match piece {
+            .and_then(|_| self.origins.last().copied());
+        for item in items {
+            let style = &styles[item.segment];
+            match item.piece {
                 Piece::Newline => {}
                 Piece::Space(text) => {
                     // Kept at no width, so the gap it stands for is added
@@ -889,36 +888,32 @@ impl Builder {
                         spaced = true;
                         last = None;
                         if commit {
-                            self.push(text, style, 0.0, segment);
+                            self.push(text, style, 0.0, item.segment);
                         }
                     }
                 }
                 Piece::Word { text, .. } => {
-                    let width =
-                        measurer.run_width(style, style.letter_spacing, text);
-                    let joins = last.filter(|&(_, origin)| origin == segment);
-                    let advance = match (spaced, joins) {
-                        (true, _) => gap + width,
-                        (false, Some((left, _))) => {
-                            width + measurer.kerning(style, left, text)
-                        }
-                        (false, None) => width,
+                    let joins = last == Some(item.segment);
+                    let advance = if spaced {
+                        gap + item.width
+                    } else if joins {
+                        item.width + item.kern
+                    } else {
+                        item.width
                     };
                     added += advance;
                     if commit {
-                        if joins.is_some()
-                            && let Some(run) = self.runs.last_mut()
-                        {
+                        if joins && let Some(run) = self.runs.last_mut() {
                             run.text.push_str(text);
                             run.width += advance;
                         } else {
-                            self.push(text, style, width, segment);
+                            self.push(text, style, item.width, item.segment);
                         }
                         self.used += advance;
                     }
                     started = true;
                     spaced = false;
-                    last = text.chars().next_back().zip(Some(segment));
+                    last = Some(item.segment);
                 }
             }
         }
@@ -991,49 +986,115 @@ pub fn wrap(
     max_width: f32,
     metrics: Metrics,
 ) -> Vec<Line> {
-    wrap_marked(measurer, base, segments, max_width, metrics).lines
+    let prepared = Prepared::new(measurer, base, segments, metrics);
+    wrap_marked(&prepared, max_width).lines
 }
 
-/// [`wrap`], with where each break fell.
-fn wrap_marked(
-    measurer: &mut TextMeasurer,
-    base: &ResolvedText,
-    segments: &[TextSegment],
-    max_width: f32,
-    metrics: Metrics,
-) -> Wrapped {
-    let base_style = RunStyle::base(base);
-    let space = measurer.space_width(&base_style, metrics.letter_spacing);
-    let gap = space + metrics.word_spacing;
+/// One piece of a prepared paragraph, with what placing it costs.
+#[derive(Debug, Clone, Copy)]
+struct Item<'text> {
+    /// The segment it comes from, which styles it.
+    segment: usize,
+    /// The piece.
+    piece: Piece<'text>,
+    /// A word's width set alone; zero for anything else.
+    width: f32,
+    /// The kerning where a word meets the word before it, when that word is
+    /// of the same segment with nothing between them; zero otherwise.
+    kern: f32,
+}
 
-    let paragraph: String = segments
-        .iter()
-        .map(|segment| segment.text.as_str())
-        .collect();
-    let opportunities = breaks::opportunities(&paragraph);
-    let styles: Vec<RunStyle> = segments
-        .iter()
-        .map(|segment| RunStyle::of(base, segment))
-        .collect();
-    let mut items = Vec::new();
-    let mut from = 0;
-    for (index, segment) in segments.iter().enumerate() {
-        items.extend(
-            pieces(&segment.text, from, &opportunities)
-                .into_iter()
-                .map(|piece| (index, piece)),
-        );
-        from += segment.text.len();
+/// A paragraph made ready to wrap: its pieces, each word's width and the
+/// kerning where words meet, none of which depends on the width offered.
+/// Layout asks one node about several widths per render, and a wrap over
+/// this is arithmetic.
+#[derive(Debug)]
+pub(crate) struct Prepared<'text> {
+    /// Each segment's run style.
+    styles: Vec<RunStyle>,
+    /// The width a space between words adds.
+    gap: f32,
+    /// The pieces, in order.
+    items: Vec<Item<'text>>,
+}
+
+impl<'text> Prepared<'text> {
+    /// Finds `segments`' break opportunities over the whole paragraph and
+    /// measures every piece between them.
+    pub(crate) fn new(
+        measurer: &mut TextMeasurer,
+        base: &ResolvedText,
+        segments: &'text [TextSegment],
+        metrics: Metrics,
+    ) -> Self {
+        let base_style = RunStyle::base(base);
+        let space = measurer.space_width(&base_style, metrics.letter_spacing);
+        let paragraph: String = segments
+            .iter()
+            .map(|segment| segment.text.as_str())
+            .collect();
+        let opportunities = breaks::opportunities(&paragraph);
+        let styles: Vec<RunStyle> = segments
+            .iter()
+            .map(|segment| RunStyle::of(base, segment))
+            .collect();
+        let mut items: Vec<Item<'text>> = Vec::new();
+        let mut from = 0;
+        for (segment, written) in segments.iter().enumerate() {
+            let style = &styles[segment];
+            for piece in pieces(&written.text, from, &opportunities) {
+                let (width, kern) = match piece {
+                    Piece::Word { text, .. } => {
+                        let width = measurer.run_width(
+                            style,
+                            style.letter_spacing,
+                            text,
+                        );
+                        let left = match items.last() {
+                            Some(&Item {
+                                segment: before,
+                                piece: Piece::Word { text: previous, .. },
+                                ..
+                            }) if before == segment => {
+                                previous.chars().next_back()
+                            }
+                            _ => None,
+                        };
+                        let kern = left.map_or(0.0, |left| {
+                            measurer.kerning(style, left, text)
+                        });
+                        (width, kern)
+                    }
+                    Piece::Newline | Piece::Space(_) => (0.0, 0.0),
+                };
+                items.push(Item {
+                    segment,
+                    piece,
+                    width,
+                    kern,
+                });
+            }
+            from += written.text.len();
+        }
+        Self {
+            styles,
+            gap: space + metrics.word_spacing,
+            items,
+        }
     }
+}
 
+/// [`wrap`] over a prepared paragraph, with where each break fell.
+fn wrap_marked(prepared: &Prepared<'_>, max_width: f32) -> Wrapped {
+    let (styles, gap) = (prepared.styles.as_slice(), prepared.gap);
     let mut wrapped = Wrapped {
         lines: Vec::new(),
         spaced: Vec::new(),
     };
     let mut line = Builder::default();
-    let mut rest = items.as_slice();
-    while let Some(&(_, first)) = rest.first() {
-        if first == Piece::Newline {
+    let mut rest = prepared.items.as_slice();
+    while let Some(first) = rest.first() {
+        if first.piece == Piece::Newline {
             line.finish(&mut wrapped.lines, true);
             wrapped.spaced.push(false);
             rest = &rest[1..];
@@ -1042,9 +1103,9 @@ fn wrap_marked(
         // Up to the next piece a line may begin with, or a newline.
         let end = rest[1..]
             .iter()
-            .position(|(_, piece)| {
+            .position(|item| {
                 matches!(
-                    piece,
+                    item.piece,
                     Piece::Newline | Piece::Word { opens: true, .. }
                 )
             })
@@ -1052,7 +1113,7 @@ fn wrap_marked(
         let (unit, after) = rest.split_at(end);
         rest = after;
 
-        let advance = line.extend(measurer, &styles, unit, gap, false);
+        let advance = line.extend(styles, unit, gap, false);
         if line.started() && line.used + advance > max_width {
             // A unit too wide for the line overflows it on a line of its own,
             // as Chrome does with a 278px word in a 100px box, alone or after
@@ -1061,7 +1122,7 @@ fn wrap_marked(
             let dropped = line.finish(&mut wrapped.lines, false);
             wrapped.spaced.push(dropped);
         }
-        line.extend(measurer, &styles, unit, gap, true);
+        line.extend(styles, unit, gap, true);
     }
     line.finish(&mut wrapped.lines, false);
     wrapped.spaced.push(false);
@@ -1385,7 +1446,21 @@ pub fn layout(
     paragraph: &ParagraphStyle,
     metrics: Metrics,
 ) -> Block {
-    let all = wrap_marked(measurer, base, segments, max_width, metrics);
+    let prepared = Prepared::new(measurer, base, segments, metrics);
+    layout_prepared(measurer, base, &prepared, max_width, paragraph, metrics)
+}
+
+/// [`layout`] over a paragraph prepared from `base` and `metrics`, which a
+/// caller laying one node out at several widths prepares once.
+pub(crate) fn layout_prepared(
+    measurer: &mut TextMeasurer,
+    base: &ResolvedText,
+    prepared: &Prepared<'_>,
+    max_width: f32,
+    paragraph: &ParagraphStyle,
+    metrics: Metrics,
+) -> Block {
+    let all = wrap_marked(prepared, max_width);
     let mut lines = all.lines.clone();
     let mut truncated = false;
     let marker = paragraph
