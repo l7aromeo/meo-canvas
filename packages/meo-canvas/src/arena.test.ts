@@ -357,7 +357,11 @@ function readSource(input: Cursor): { tag: string; value: string | number[]; hea
   if (tag === undefined) throw new RangeError('ImageSource has no such tag')
   const value = sourceValue(side(input))
   if (tag !== 'url') return { tag, value }
+  return { tag, value, headers: readHeaders(input) }
+}
 
+/** Reads a header list: a count, then a name and a value each. */
+function readHeaders(input: Cursor): [string, string][] {
   const count = slot(input)
   const headers: [string, string][] = []
   for (let index = 0; index < count; index += 1) {
@@ -366,7 +370,7 @@ function readSource(input: Cursor): { tag: string; value: string | number[]; hea
     if (typeof name !== 'string' || typeof headerValue !== 'string') throw new TypeError('a header name and value are strings')
     headers.push([name, headerValue])
   }
-  return { tag, value, headers }
+  return headers
 }
 
 /** Reads the payload the node's kind carries. */
@@ -440,6 +444,8 @@ interface DecodedArena {
   readonly surface: { gpu: unknown; colorType: unknown; colorSpace: unknown }
   /** The pages. */
   readonly pages: readonly DecodedNode[]
+  /** The fetched bodies after the pages, with the request each answers. */
+  readonly fetched: readonly { url: SideValue; headers: [string, string][]; bytes: string | number[] }[]
 }
 
 /** Decodes an arena, refusing one that does not end where it should. */
@@ -479,11 +485,17 @@ function decode(slots: Float64Array, values: readonly SideValue[]): DecodedArena
 
   const count = slot(input)
   const pages = Array.from({ length: count }, () => readNode(input))
+  // The bodies a fetch returned, after the pages that use them.
+  const fetched = Array.from({ length: slot(input) }, () => {
+    const url = side(input)
+    const headers = readHeaders(input)
+    return { url, headers, bytes: sourceValue(side(input)) }
+  })
 
   // The check that turns a writer emitting the wrong number of slots from a
   // comparison failure into a structural one.
   expect(input.at, 'the arena has slots past the end of the scene').toBe(slots.length)
-  return { size, contentHeight, scale, surface, pages }
+  return { size, contentHeight, scale, surface, pages, fetched }
 }
 
 /** One case of the fixture: where the property sits, and what Rust wrote for it. */
@@ -1000,6 +1012,21 @@ describe('an image node', () => {
 
     expect(arena.values).toEqual([bytes])
     expect(decode(arena.slots, arena.values).pages[0]?.payload).toMatchObject({ source: { tag: 'bytes', value: [1, 2, 3] } })
+  })
+
+  // A fetched source stays a url so the renderer can tell the world's bytes
+  // from the caller's; the body follows the pages, once per request.
+  it('writes a fetched body after the pages, once, beside a source that stays a url', () => {
+    const url = 'https://example.invalid/a.png'
+    const init = { headers: { 'X-Key': '1' } }
+    const fetched = new Map([[requestKey(url, init), new Uint8Array([1, 2, 3])]])
+    const src = { url, httpOptions: init }
+    const arena = encodeScene([Box({ children: [Image({ src }), Image({ src })] })], SIZE[0], SIZE[1], false, SCALE, {}, fetched)
+
+    const decoded = decode(arena.slots, arena.values)
+    expect(decoded.pages[0]?.children[0]?.payload).toMatchObject({ source: { tag: 'url', value: url, headers: [['x-key', '1']] } })
+    expect(decoded.fetched).toEqual([{ url, headers: [['x-key', '1']], bytes: [1, 2, 3] }])
+    expect(arena.requests).toEqual([])
   })
 
   it('keeps `objectFit` and `frame` out of the style groups', () => {

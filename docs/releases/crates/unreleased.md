@@ -1,3 +1,11 @@
+### Added
+
+- **Breaking.** `Scene` is `#[non_exhaustive]`, so a field added later is not a breaking change, and it gains `Scene::fetched_images`: the bodies of fetches the caller made before rendering, each a `FetchedImage` with the URL and `HttpOptions` of the request that returned it. A `Url` source whose URL and options match one takes its body rather than being fetched, with or without `net`, and a body that will not decode softens under `on_image_error` as one the renderer fetched does, where the same bytes as `ImageSource::Bytes` fail the render. The npm package fills it for every image it fetches (`l7aromeo/meo-canvas#240`). Outside `meo-canvas-scene` a `Scene` can no longer be written as a struct expression, `..Scene::new(size)` included: call `Scene::new(size)` and set the public fields on the result.
+
+### Changed
+
+- The scene file format is version 11, which carries `fetched_images`. `codec::decode` still reads version 10, so a `.mcs` file written by 0.2.x loads as it did, with no fetched images; `codec::encode` writes 11, which 0.2.x refuses. Any other version is refused with `CodecError::UnsupportedVersion` ("scene format version 9, expected 10 or 11"), which carries the oldest version read as `oldest`.
+
 ### Fixed
 
 - Text with no spaces wraps where Chrome wraps it rather than running off the line. A line broke only at a space, so Chinese, Japanese, Korean or Thai written without spaces was one unbreakable word: `"漢字".repeat(20)` at 16px in a 200px box drew one line where Chrome draws four. Lines now break where Chrome's breaker allows: between ideographs and kana, between an ideograph and a Latin word but not inside the word, never before `、`, `。`, `」` or `）` and never after `「` or `（`, before small kana and `ー` as Chrome's `line-break: auto` allows, and inside Thai by dictionary. A text node's min-content width, which a flex item shrinks to, is its widest unbreakable piece, one ideograph for a run of them. Kerning across a break is kept, so a line of katakana fits as many characters as Chrome's (`line-break.tsv`, `l7aromeo/meo-canvas#237`).

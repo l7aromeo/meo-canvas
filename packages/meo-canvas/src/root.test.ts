@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
+import type { AddressInfo } from 'node:net'
 
 import { describe, expect, it } from 'vitest'
 
@@ -145,7 +147,7 @@ describe('a url source', () => {
     }
   }
 
-  it('fetches the bytes and sends those, never the url', async () => {
+  it('fetches the bytes and sends them with the url they came from', async () => {
     const png = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10])
     const asked: string[] = []
     const restore = withFetch(async (input: RequestInfo | URL) => {
@@ -159,18 +161,18 @@ describe('a url source', () => {
 
       expect(asked).toEqual(['https://example.invalid/a.png'])
       expect(painted).toHaveLength(1)
-      // The arena the addon received carries no url at all: the bytes were
-      // substituted at encode time, so nothing downstream knows a network was
-      // involved and `meo-canvas-core` needs no `net` feature to draw it.
+      // The source stays a url and the body follows the pages, so the renderer
+      // draws it with no `net` feature and still knows the bytes were fetched.
       const [first] = painted
       if (first === undefined) throw new Error('nothing reached the renderer')
-      expect(JSON.stringify(first.values)).not.toContain('example.invalid')
+      expect(first.values).toContain('https://example.invalid/a.png')
+      expect(first.values.filter(value => value instanceof Uint8Array)).toEqual([png])
     } finally {
       restore()
     }
   })
 
-  it('asks once for a url two nodes share', async () => {
+  it('asks once for a url two nodes share, and sends its body once', async () => {
     const asked: string[] = []
     const restore = withFetch(async (input: RequestInfo | URL) => {
       asked.push(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url)
@@ -178,7 +180,7 @@ describe('a url source', () => {
     })
 
     try {
-      const { dependencies } = fakeRenderer()
+      const { dependencies, painted } = fakeRenderer()
       await Root(
         {
           width: 10,
@@ -191,6 +193,7 @@ describe('a url source', () => {
       )
 
       expect(asked).toEqual(['https://a.invalid/1.png'])
+      expect(painted[0]?.values.filter(value => value instanceof Uint8Array)).toHaveLength(1)
     } finally {
       restore()
     }
@@ -584,6 +587,60 @@ describe('an image source that cannot be resolved', () => {
         children: Image({ src: { url: DEAD }, width: 40, height: 40 }),
       }),
     ).rejects.toThrow(/49151/)
+  })
+})
+
+describe('a fetched body that will not decode', () => {
+  // The crate's `a_fetched_body_that_will_not_decode_softens_as_a_404_does` in
+  // `meo-canvas-core/tests/fetch_policy.rs` serves the same response; these
+  // match its outcome under each policy, warning fields and error alike.
+  const serving = async (body: string): Promise<{ url: string; close: () => Promise<void> }> => {
+    const server = createServer((_, response) => {
+      response.writeHead(200, { 'content-type': 'image/png' })
+      response.end(body)
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const { port } = server.address() as AddressInfo
+    return {
+      url: `http://127.0.0.1:${port}/broken.png`,
+      close: () => new Promise<void>(resolve => server.close(() => resolve())),
+    }
+  }
+
+  for (const onImageError of ['placeholder', 'ignore'] as const) {
+    it(`softens under '${onImageError}', as a 404 at the same URL does`, async () => {
+      const { url, close } = await serving('not an image')
+      try {
+        const canvas = await Root({ width: 100, height: 100, onImageError, children: Image({ src: { url }, width: 100, height: 100 }) })
+        expect(canvas.warnings).toEqual([{ url, failure: 'other', detail: 'the bytes fetched are not an image any decoder here reads', nodes: 1 }])
+        canvas.release()
+      } finally {
+        await close()
+      }
+    })
+  }
+
+  it("fails the render under 'throw'", async () => {
+    const { url, close } = await serving('not an image')
+    try {
+      await expect(Root({ width: 100, height: 100, onImageError: 'throw', children: Image({ src: { url }, width: 100, height: 100 }) })).rejects.toThrow(
+        'image bytes for node 1 are in no format this decodes',
+      )
+    } finally {
+      await close()
+    }
+  })
+
+  // **The caller's own bytes stay loud**, under the policy that softens most:
+  // the same payload as bytes and as a `data:` URL, which `fetch` also reads.
+  it('leaves undecodable bytes the caller supplied an error', async () => {
+    const bytes = new TextEncoder().encode('not an image')
+    const dataUrl = `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`
+    for (const src of [{ bytes }, { url: dataUrl }]) {
+      await expect(Root({ width: 100, height: 100, onImageError: 'placeholder', children: Image({ src, width: 100, height: 100 }) })).rejects.toThrow(
+        'image bytes for node 1 are in no format this decodes',
+      )
+    }
   })
 })
 

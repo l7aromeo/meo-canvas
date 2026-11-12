@@ -92,7 +92,8 @@ pub use geometry::{Corners, Point, Rect, Sides, Size};
 pub use node::{Node, NodeId, NodeKind};
 pub use style::{Dimension, Length};
 pub use surface::{
-    ColorSpace, ColorType, ImageFetchAttempt, ImageFetchFailure, OnImageError,
+    ColorSpace, ColorType, FetchedImage, ImageFetchAttempt, ImageFetchFailure,
+    OnImageError,
 };
 
 /// A complete drawing: the surface to draw onto, and the pages to draw on it.
@@ -125,7 +126,13 @@ pub use surface::{
 /// frame one of an animation is `pages[0]`. A scene with no pages is an error
 /// for the same reason a scene with no nodes is -- there is nothing to draw,
 /// and the caller meant something they did not say.
+///
+/// **Built with [`Scene::new`], then field by field.** Every field is public
+/// and the struct is `#[non_exhaustive]`, so a field this project adds later
+/// is not a breaking change: outside this crate a `Scene` is never written as
+/// a struct expression.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct Scene {
     /// Surface dimensions in logical pixels, before `scale` is applied.
     ///
@@ -177,6 +184,14 @@ pub struct Scene {
     /// this build was never able to fetch -- the first is the broken-image
     /// case, the second is a missing feature flag and stays an error.
     pub image_fetch_attempts: Vec<ImageFetchAttempt>,
+    /// Bodies the caller fetched before the scene arrived, for the
+    /// [`Url`](node::ImageSource::Url) sources that name them.
+    ///
+    /// **Empty for every caller that does not resolve URLs itself**, as
+    /// [`Scene::image_fetch_attempts`] is. The npm surface fills it, so a
+    /// source it fetched stays a `Url` and a body that will not decode softens
+    /// under [`Scene::on_image_error`] as one this renderer fetched does.
+    pub fetched_images: Vec<FetchedImage>,
     /// What every URL in this scene is fetched with, unless a source says
     /// otherwise.
     ///
@@ -238,6 +253,7 @@ impl Scene {
             // headers and an empty list send the same request.
             http: node::HttpOptions::new(),
             image_fetch_attempts: Vec::new(),
+            fetched_images: Vec::new(),
             nodes: vec![Node::container()],
             pages: vec![NodeId::ROOT],
         }

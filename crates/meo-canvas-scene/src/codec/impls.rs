@@ -29,7 +29,7 @@ use crate::{
             TextStroke, TextStyle,
         },
     },
-    surface::{ImageFetchAttempt, ImageFetchFailure},
+    surface::{FetchedImage, ImageFetchAttempt, ImageFetchFailure},
 };
 
 /// The tag byte for a variant that carries nothing after it.
@@ -1160,6 +1160,22 @@ impl Wire for ImageFetchFailure {
             5 => Ok(Self::Other),
             tag => Err(CodecError::UnknownTag { offset, tag }),
         }
+    }
+}
+
+impl Wire for FetchedImage {
+    fn write(&self, out: &mut Writer<'_>) {
+        out.str(&self.url);
+        self.http.write(out);
+        out.bytes(&self.bytes);
+    }
+
+    fn read(input: &mut Reader<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            url: input.str()?,
+            http: HttpOptions::read(input)?,
+            bytes: input.bytes()?,
+        })
     }
 }
 

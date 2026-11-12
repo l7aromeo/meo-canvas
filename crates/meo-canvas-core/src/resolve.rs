@@ -89,7 +89,7 @@ use base64::{
 };
 use meo_canvas_scene::{
     OnImageError, Scene, Size,
-    node::{HttpOptions, ImageSource, Node, NodeId, NodeKind},
+    node::{ImageSource, Node, NodeId, NodeKind},
     style::{
         PaintOrder,
         effect::Mask,
@@ -628,7 +628,8 @@ impl<'scene> Resolved<'scene> {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::UnresolvedSource`] for any [`ImageSource::Url`],
+    /// Returns [`Error::UnresolvedSource`] for an [`ImageSource::Url`] this
+    /// build cannot fetch and [`Scene::fetched_images`] has no body for,
     /// [`Error::ImageRead`] for a path that cannot be read,
     /// [`Error::UndecodableImage`] for bytes no decoder recognises, and
     /// [`Error::UnknownFont`] for a family neither registered nor installed.
@@ -918,14 +919,11 @@ fn decode_sources<'scene>(
     // stay parallel; an SVG comes back as bytes and is parsed on this thread,
     // because a parsed document is neither `Send` nor `Sync` and cannot be
     // carried out of a worker at all.
-    let decoded: Vec<Result<DecodedImage, Error>> =
-        in_parallel(&wanted, &scene.http)
-            .into_iter()
-            .zip(wanted.iter())
-            .map(|(fetched, (_, node))| {
-                fetched.and_then(|it| parsed(it, *node))
-            })
-            .collect();
+    let decoded: Vec<Result<DecodedImage, Error>> = in_parallel(&wanted, scene)
+        .into_iter()
+        .zip(wanted.iter())
+        .map(|(fetched, (_, node))| fetched.and_then(|it| parsed(it, *node)))
+        .collect();
     let mut once = HashMap::with_capacity(decoded.len());
     // **`Vec::new` does not allocate.** A render where every source resolves
     // never pushes, so this costs three words of stack and no heap at all --
@@ -1040,7 +1038,7 @@ fn soft(
 /// by a lock inside it is unmeasured.
 fn in_parallel(
     wanted: &[(&ImageSource, NodeId)],
-    scene_http: &HttpOptions,
+    scene: &Scene,
 ) -> Vec<Result<Fetched, Error>> {
     let threads = std::thread::available_parallelism()
         .map_or(1, std::num::NonZeroUsize::get)
@@ -1048,7 +1046,7 @@ fn in_parallel(
     if threads <= 1 || wanted.len() <= 1 {
         return wanted
             .iter()
-            .map(|(source, id)| decode(*id, source, scene_http))
+            .map(|(source, id)| decode(*id, source, scene))
             .collect();
     }
 
@@ -1060,7 +1058,7 @@ fn in_parallel(
                 scope.spawn(move || {
                     chunk
                         .iter()
-                        .map(|(source, id)| decode(*id, source, scene_http))
+                        .map(|(source, id)| decode(*id, source, scene))
                         .collect::<Vec<_>>()
                 })
             })
@@ -1100,7 +1098,10 @@ fn taken(
 /// passing `ImageSource::Bytes`. `http` refuses a malformed header before
 /// sending.
 #[cfg(feature = "net")]
-fn fetch(url: &str, http: &HttpOptions) -> Result<Vec<u8>, Error> {
+fn fetch(
+    url: &str,
+    http: &meo_canvas_scene::node::HttpOptions,
+) -> Result<Vec<u8>, Error> {
     use std::io::Read as _;
 
     let refuse = |error: ureq::Error| Error::SourceFetch {
@@ -1486,12 +1487,8 @@ fn looks_like_svg(bytes: &[u8]) -> bool {
 fn decode(
     node: NodeId,
     source: &ImageSource,
-    scene_http: &HttpOptions,
+    scene: &Scene,
 ) -> Result<Fetched, Error> {
-    // Read only by the fetch arm below, which this build does not compile.
-    #[cfg(not(feature = "net"))]
-    let _ = scene_http;
-
     // The `Path` arm owns what it read and the `Bytes` arm borrows, so only the
     // one that must allocate does: a `Vec` in both copies a 5 MB PNG per image
     // node.
@@ -1515,6 +1512,17 @@ fn decode(
             })?;
             &read
         }
+        // Before either fetch arm: the caller fetched this one already, so the
+        // source stays a `Url` and `soft` reads it as the world's bytes, with
+        // or without `net`.
+        ImageSource::Url { url, http }
+            if let Some(fetched) = scene
+                .fetched_images
+                .iter()
+                .find(|fetched| fetched.answers(url, http)) =>
+        {
+            &fetched.bytes
+        }
         // The two arms are one decision spelt twice, and the second is why
         // the first is safe to add: with `net` off this is the refusal it has
         // always been, so a build that did not ask for an HTTP stack behaves
@@ -1525,7 +1533,7 @@ fn decode(
             // time -- so a source naming one header keeps the scene's
             // credentials rather than replacing them. The same rule the npm
             // surface applies, so the two answer a shared question alike.
-            read = fetch(url, &http.over(scene_http))?;
+            read = fetch(url, &http.over(&scene.http))?;
             &read
         }
         #[cfg(not(feature = "net"))]
@@ -1616,8 +1624,6 @@ mod softening {
         ));
         // A build that cannot fetch has not had a fetch fail; it has been
         // asked for something it does not do, and the message names the flag.
-        // A build that cannot fetch has not had a fetch fail; it has been
-        // asked for something it does not do, and the message names the flag.
         assert!(matches!(
             soft(&scene, node, &source, Error::UnresolvedSource(node), 1),
             Err(Error::UnresolvedSource(_))
@@ -1684,8 +1690,8 @@ mod softening {
 pub(crate) mod tests {
     use base64::Engine as _;
     use meo_canvas_scene::{
-        OnImageError, Scene, Size,
-        node::{ImageSource, Node, NodeId, NodeKind},
+        FetchedImage, OnImageError, Scene, Size,
+        node::{HttpOptions, ImageSource, Node, NodeId, NodeKind},
         style::{
             paint::Color,
             text::{FontWeight, TextStyle},
@@ -1909,6 +1915,142 @@ pub(crate) mod tests {
         let node = scene
             .push(NodeId::ROOT, image_node(ImageSource::url(UNREACHABLE)))
             .unwrap_or_else(|error| unreachable!("{error}"));
+        assert_url_is_refused(&scene, Some(node));
+    }
+
+    /// A scene of one image naming `source`, under `policy`, carrying `body`
+    /// as what the caller fetched for [`UNREACHABLE`] with `http`.
+    fn fetched(
+        source: ImageSource,
+        policy: OnImageError,
+        http: HttpOptions,
+        body: &[u8],
+    ) -> (Scene, NodeId) {
+        let mut scene = Scene::new(Size::ZERO);
+        scene.on_image_error = policy;
+        scene.fetched_images.push(FetchedImage {
+            url: UNREACHABLE.to_owned(),
+            http,
+            bytes: body.to_vec(),
+        });
+        let node = scene
+            .push(NodeId::ROOT, image_node(source))
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        (scene, node)
+    }
+
+    /// The body is used in place of a fetch, in a build with no fetch at all
+    /// and in one whose fetch would fail: [`UNREACHABLE`] refuses at once.
+    #[test]
+    fn a_fetched_body_answers_its_url_without_a_fetch() {
+        let (scene, node) = fetched(
+            ImageSource::url(UNREACHABLE),
+            OnImageError::Throw,
+            HttpOptions::new(),
+            RED_PNG,
+        );
+        let resolved = Resolved::new(&scene, &Fonts::new())
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let image = resolved
+            .image(node)
+            .unwrap_or_else(|| unreachable!("the body was not used"));
+        assert_eq!(image.intrinsic_size(), Size::new(4.0, 2.0));
+        assert!(resolved.warnings().is_empty());
+    }
+
+    /// The defect `l7aromeo/meo-canvas#240` reported: a fetched body that will
+    /// not decode softens as one this renderer fetched does, and throws only
+    /// where that one would.
+    #[test]
+    fn a_fetched_body_that_will_not_decode_softens_as_a_fetch_here_does() {
+        for policy in [OnImageError::Placeholder, OnImageError::Ignore] {
+            let (scene, node) = fetched(
+                ImageSource::url(UNREACHABLE),
+                policy,
+                HttpOptions::new(),
+                b"not an image",
+            );
+            let resolved = Resolved::new(&scene, &Fonts::new())
+                .unwrap_or_else(|error| unreachable!("{policy:?}: {error}"));
+            let [warning] = resolved.warnings() else {
+                unreachable!("{policy:?}: {:?}", resolved.warnings());
+            };
+            assert_eq!(warning.url, UNREACHABLE);
+            assert_eq!(warning.node, node);
+            assert_eq!(warning.failure, crate::FetchFailure::Other);
+            assert_eq!(
+                warning.detail,
+                "the bytes fetched are not an image any decoder here reads"
+            );
+            assert!(resolved.image(node).is_none());
+        }
+
+        let (scene, node) = fetched(
+            ImageSource::url(UNREACHABLE),
+            OnImageError::Throw,
+            HttpOptions::new(),
+            b"not an image",
+        );
+        assert!(matches!(
+            Resolved::new(&scene, &Fonts::new()),
+            Err(Error::UndecodableImage(id)) if id == node
+        ));
+    }
+
+    /// The caller's own bytes stay an error under the policy that softens
+    /// most, as bytes and as a `data:` URL carrying a body of its own.
+    #[test]
+    fn undecodable_bytes_the_caller_supplied_never_soften() {
+        let payload = b"not an image";
+        let data = format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(payload)
+        );
+        let mut by_data = fetched(
+            ImageSource::url(data.clone()),
+            OnImageError::Placeholder,
+            HttpOptions::new(),
+            payload,
+        );
+        by_data.0.fetched_images[0].url = data;
+        let by_bytes = fetched(
+            ImageSource::Bytes(payload.to_vec()),
+            OnImageError::Placeholder,
+            HttpOptions::new(),
+            payload,
+        );
+        for (scene, node) in [by_data, by_bytes] {
+            assert!(matches!(
+                Resolved::new(&scene, &Fonts::new()),
+                Err(Error::UndecodableImage(id)) if id == node
+            ));
+        }
+    }
+
+    /// A body answers the request it came from: the same headers in any case
+    /// and order, and not a source asking with others.
+    #[test]
+    fn a_fetched_body_answers_only_its_own_request() {
+        let asked = HttpOptions::new().header("x-b", "2").header("x-a", "1");
+        let (scene, node) = fetched(
+            ImageSource::url_with(UNREACHABLE, asked),
+            OnImageError::Throw,
+            HttpOptions::new().header("X-A", "1").header("X-B", "2"),
+            RED_PNG,
+        );
+        let resolved = Resolved::new(&scene, &Fonts::new())
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        assert!(resolved.image(node).is_some());
+
+        let (scene, node) = fetched(
+            ImageSource::url_with(
+                UNREACHABLE,
+                HttpOptions::new().header("x-a", "other"),
+            ),
+            OnImageError::Placeholder,
+            HttpOptions::new().header("x-a", "1"),
+            RED_PNG,
+        );
         assert_url_is_refused(&scene, Some(node));
     }
 

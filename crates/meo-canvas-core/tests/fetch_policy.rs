@@ -227,3 +227,57 @@ fn a_header_a_request_cannot_carry_is_refused_before_it_is_sent() {
         "the request was sent before it was refused"
     );
 }
+
+/// Serves `body` with a 200 to every request until the test ends.
+fn answering(body: &'static [u8]) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    let port = listener
+        .local_addr()
+        .unwrap_or_else(|error| unreachable!("{error}"))
+        .port();
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().map_while(Result::ok) {
+            drain_request(&stream);
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\
+                 Content-Type: image/png\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = stream.write_all(head.as_bytes());
+            let _ = stream.write_all(body);
+            let _ = stream.flush();
+        }
+    });
+    format!("http://127.0.0.1:{port}/broken.png")
+}
+
+/// The reference the npm surface's `a fetched body that will not decode` in
+/// `root.test.ts` matches: the same response, the same three outcomes.
+#[test]
+fn a_fetched_body_that_will_not_decode_softens_as_a_404_does() {
+    let url = answering(b"not an image");
+    for policy in [OnImageError::Placeholder, OnImageError::Ignore] {
+        let mut scene = scene_naming(url.clone());
+        scene.on_image_error = policy;
+        let canvas = Renderer::new()
+            .render(&scene)
+            .unwrap_or_else(|error| unreachable!("{policy:?}: {error}"));
+        let [warning] = canvas.warnings() else {
+            unreachable!("{policy:?}: {:?}", canvas.warnings());
+        };
+        assert_eq!(warning.url, url);
+        assert_eq!(warning.failure, FetchFailure::Other);
+        assert_eq!(
+            warning.detail,
+            "the bytes fetched are not an image any decoder here reads"
+        );
+        assert_eq!(warning.nodes, 1);
+    }
+
+    let refused = Renderer::new().render(&scene_naming(url));
+    assert!(
+        matches!(refused, Err(Error::UndecodableImage(_))),
+        "{refused:?}"
+    );
+}

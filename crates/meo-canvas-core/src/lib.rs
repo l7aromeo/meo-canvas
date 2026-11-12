@@ -18,7 +18,8 @@
 //!
 //! No network and no async runtime. [`resolve`] takes bytes the caller already
 //! has and reads local paths; a [`meo_canvas_scene::node::ImageSource::Url`]
-//! reaching this crate is a [`Error::UnresolvedSource`], not a fetch. A runtime
+//! reaching this crate is a [`Error::UnresolvedSource`], not a fetch, unless
+//! [`meo_canvas_scene::Scene::fetched_images`] carries its body. A runtime
 //! here is a runtime in every consumer, including the ones already running
 //! inside one, and neither the CLI nor a Rust caller with no executor can be
 //! asked to host it. The CLI fetches behind its own `net` feature.
@@ -1247,10 +1248,8 @@ mod tests {
 
     #[test]
     fn a_scene_with_no_pages_is_refused_before_a_surface_is_made() {
-        let scene = Scene {
-            pages: Vec::new(),
-            ..Scene::new(Size::new(10.0, 10.0))
-        };
+        let mut scene = Scene::new(Size::new(10.0, 10.0));
+        scene.pages = Vec::new();
         let Err(error) = renderer().render_to_buffer(
             &scene,
             ImageFormat::Png,
