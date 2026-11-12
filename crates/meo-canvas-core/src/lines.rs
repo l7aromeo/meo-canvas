@@ -86,7 +86,7 @@ use meo_skia_canvas::{
     FontVariantCaps,
 };
 
-use crate::{FINITE_CEILING, resolve::ResolvedText};
+use crate::{FINITE_CEILING, layout::LAYOUT_GRID, resolve::ResolvedText};
 
 mod breaks;
 
@@ -978,6 +978,11 @@ struct Wrapped {
 /// What lies between two opportunities is placed whole: a line takes it if it
 /// fits, and a line holding nothing yet takes it whatever its width, so a line
 /// is never empty because nothing fits.
+///
+/// A line fits as Chrome decides it, in its layout units of a 64th of a
+/// pixel: its width is within `max_width` truncated to one, plus one more.
+/// Chrome keeps six 16px ideographs on a line in a `95.984375`px block and not
+/// in a `95.984`px one.
 #[must_use]
 pub fn wrap(
     measurer: &mut TextMeasurer,
@@ -1084,6 +1089,14 @@ impl<'text> Prepared<'text> {
     }
 }
 
+/// Whether `used` fits `max_width` as Blink's line breaker decides: within the
+/// room truncated to a layout unit plus one unit, `AvailableWidthToFit`. That
+/// unit also absorbs the 16.0000305 that Linux's font scaler makes a 16px em
+/// of 1000 units; see `a_line_fits_with_one_layout_unit_to_spare`.
+fn fits(used: f32, max_width: f32) -> bool {
+    used * LAYOUT_GRID <= (max_width * LAYOUT_GRID).floor() + 1.0
+}
+
 /// [`wrap`] over a prepared paragraph, with where each break fell.
 fn wrap_marked(prepared: &Prepared<'_>, max_width: f32) -> Wrapped {
     let (styles, gap) = (prepared.styles.as_slice(), prepared.gap);
@@ -1114,7 +1127,7 @@ fn wrap_marked(prepared: &Prepared<'_>, max_width: f32) -> Wrapped {
         rest = after;
 
         let advance = line.extend(styles, unit, gap, false);
-        if line.started() && line.used + advance > max_width {
+        if line.started() && !fits(line.used + advance, max_width) {
             // A unit too wide for the line overflows it on a line of its own,
             // as Chrome does with a 278px word in a 100px box, alone or after
             // a short word. Only `overflow-wrap: break-word` breaks it; see
@@ -1155,7 +1168,7 @@ fn break_word(
         let mut candidate = part.clone();
         candidate.push(character);
         let width = measurer.run_width(style, letter_spacing, &candidate);
-        if width <= max_width {
+        if fits(width, max_width) {
             part = candidate;
             continue;
         }
@@ -1170,7 +1183,7 @@ fn break_word(
         }
         part.push(character);
         let alone = measurer.run_width(style, letter_spacing, &part);
-        if alone > max_width {
+        if !fits(alone, max_width) {
             parts.push(Run {
                 text: core::mem::take(&mut part),
                 style: style.clone(),
@@ -1524,7 +1537,7 @@ mod tests {
 
     use super::{
         Answer, Extent, Line, METRICS_STRING, Measurement, Metrics, Piece, Run,
-        RunStyle, TextMeasurer, breaks, layout, line_width, pieces,
+        RunStyle, TextMeasurer, breaks, fits, layout, line_width, pieces,
         spacing_pixels, wrap,
     };
     use crate::{
@@ -1928,6 +1941,25 @@ mod tests {
             (spaced - plain - 8.0).abs() < 0.001,
             "{spaced} against {plain}"
         );
+    }
+
+    /// Chrome 158's fit, from three copies of a line in a block a hair
+    /// narrower: three lines while one fits, four once it does not. Six 16px
+    /// ideographs are 96 wide, and `アイウエオカ` 95.2 with its kerning.
+    #[test]
+    fn a_line_fits_with_one_layout_unit_to_spare() {
+        for (used, room, chrome) in [
+            (96.0, 96.0, true),
+            (96.0, 95.984_375, true),
+            (96.0, 95.984, false),
+            (95.2, 95.187_5, true),
+            (95.2, 95.187_125, false),
+            // Six ideographs as FreeType advances them, which Chrome on Linux
+            // also keeps on one 96px line.
+            (6.0 * (16.0 + 2.0 / 65536.0), 96.0, true),
+        ] {
+            assert_eq!(fits(used, room), chrome, "{used} in {room}");
+        }
     }
 
     #[test]

@@ -10,6 +10,7 @@ use meo_canvas_core::{
 use meo_canvas_scene::style::text::{
     LineHeight, ParagraphStyle, TextSegment, TextStyle,
 };
+use meo_skia_canvas::{Canvas, CanvasOptions, Font, FontSlant, FontStretch};
 
 /// The recorded Chrome rows.
 const TABLE: &str =
@@ -19,8 +20,10 @@ const TABLE: &str =
 const FACE: (&str, &str) =
     ("Noto Sans SC", "tests/assets/fonts/NotoSansSC-Subset.ttf");
 
-/// How far a `min-content` width may sit from Chrome's: one of its layout
-/// units, a 64th of a pixel, which it rounds a text run's width to.
+/// One of Chrome's layout units, a 64th of a pixel: how far a `min-content`
+/// width may sit from Chrome's, which rounds a text run's width to one, and an
+/// ideograph's advance from its em, which Linux's font scaler puts at
+/// 16.0000305 at 16px.
 const SLACK: f32 = 1.0 / 64.0;
 
 /// The rows this renderer answers differently, each with why. Asserted both
@@ -201,6 +204,70 @@ fn line_starts(text: &str, block: &Block) -> Vec<usize> {
         cursor += body.chars().count();
     }
     out
+}
+
+/// Every string wrapped at a width is drawn in [`FACE`] here, not a fallback
+/// whose widths Chrome never measured; the 0px rows hold Hangul and emoji on
+/// purpose, and every piece overflows 0px whatever its face. A run reports
+/// the family it was drawn in, so an unregistered one is the control.
+#[test]
+fn every_row_is_drawn_in_the_registered_face() {
+    let fonts = Fonts::new();
+    fonts.register_path(FACE.0, FACE.1).unwrap_or_else(|error| {
+        unreachable!("{} did not register: {error}", FACE.0)
+    });
+    let options = CanvasOptions {
+        gpu: false,
+        ..CanvasOptions::default()
+    };
+    let mut canvas = Canvas::with_options(1.0, 1.0, options)
+        .unwrap_or_else(|error| unreachable!("no canvas: {error}"));
+    let context = canvas.context();
+    let mut drawn = |family: &str, text: &str| {
+        context.set_font(&Font {
+            families: vec![family.into()],
+            size: 16.0,
+            weight: 400,
+            slant: FontSlant::Normal,
+            stretch: FontStretch::Normal,
+            line_height: None,
+        });
+        let metrics = context.measure_text(text, None);
+        let families: Vec<String> = metrics
+            .lines
+            .into_iter()
+            .flat_map(|line| line.runs)
+            .map(|run| run.family)
+            .collect();
+        (metrics.width, families)
+    };
+
+    let (_, elsewhere) = drawn("No Such Family", "漢a");
+    assert!(
+        !elsewhere.is_empty()
+            && elsewhere.iter().all(|family| family != FACE.0),
+        "an unregistered family reports {elsewhere:?}"
+    );
+    let (em, _) = drawn(FACE.0, "漢");
+    assert!((em - 16.0).abs() < SLACK, "漢 is {em} wide at 16px");
+
+    let mut wrong = Vec::new();
+    let mut widths = 0;
+    for row in rows() {
+        let text = match row {
+            Row::Pairs { .. } | Row::Wrap { width: 0.0, .. } => continue,
+            Row::Wrap { text, .. } | Row::MinContent { text, .. } => text,
+        };
+        widths += 1;
+        let (_, families) = drawn(FACE.0, &text);
+        if families.is_empty() || families.iter().any(|family| family != FACE.0)
+        {
+            wrong.push(format!("{text:?}: {families:?}"));
+        }
+    }
+    // 49 wraps and 15 min-content rows: a parse that read none passes above.
+    assert!(widths > 60, "{widths} rows with a width");
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
 
 #[test]
