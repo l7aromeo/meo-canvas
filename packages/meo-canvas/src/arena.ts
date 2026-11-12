@@ -74,9 +74,8 @@ export interface Arena {
   /** The strings and buffers the slots index into. */
   readonly values: readonly SideValue[]
   /**
-   * Every URL source the scene named, with the options it resolved to. {@link Root}
-   * fetches them and encodes again with the bytes, so a URL reaches the wire only
-   * where its fetch failed.
+   * Every URL source the scene named and has no bytes for, with the options it
+   * resolved to. {@link Root} fetches them and encodes again with the bytes.
    */
   readonly requests: readonly ImageRequest[]
 }
@@ -177,6 +176,12 @@ export class ArenaWriter {
    * thing that knows every position a source can occupy.
    */
   fetched: ReadonlyMap<string, Uint8Array> | undefined = undefined
+
+  /**
+   * The fetched bodies the sources written so far use, once per request, with the
+   * URL and headers each answers. Written after the pages.
+   */
+  readonly bodies = new Map<string, { url: string; headers: [string, string][]; bytes: Uint8Array }>()
 
   /** The scene, ready to hand across. */
   finish(): Arena {
@@ -994,34 +999,38 @@ function writeSource(out: ArenaWriter, src: string | ImageSource): void {
     // agreement structural rather than a thing to keep in step.
     const init = mergeHttpOptions(out.httpOptions, source.httpOptions)
     const key = requestKey(source.url, init)
+    // Sorted by name, the wire contract the Rust writer keeps too; `Headers`
+    // already iterates in order and the `sort` states it. `writes them sorted by
+    // name` fails if a plain object replaces `Headers`.
+    const headers = [...new Headers(init?.headers)].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
 
-    // **Bytes cross the wire, never a URL**, where this render already fetched it,
-    // so nothing downstream needs a `net` feature. Keyed by request, so two sources
-    // at one URL with different headers each take their own bytes.
+    // **A fetched source stays a URL, its body beside it**, so the renderer reads
+    // an undecodable body as the world's bytes and softens it as its own fetch
+    // would; as `bytes` it would be the caller's, and fail. Keyed by request, so
+    // two sources at one URL with different headers each take their own body.
     const bytes = out.fetched?.get(key)
-    if (bytes !== undefined) {
-      out.enum(2)
-      out.bytes(bytes)
-      return
+    if (bytes === undefined) {
+      // Counted: `Root` reads the count to decide whether to fetch.
+      out.requests.push({ url: source.url, key, init })
+    } else if (!out.bodies.has(key)) {
+      out.bodies.set(key, { url: source.url, headers, bytes })
     }
-
-    // Otherwise written, and counted: `Root` reads the count to decide whether to
-    // fetch. The headers travel sorted by name, the wire contract the Rust writer
-    // keeps too; `Headers` already iterates in order and the `sort` states it.
-    // `writes them sorted by name` fails if a plain object replaces `Headers`.
-    out.requests.push({ url: source.url, key, init })
     out.enum(1)
     out.text(source.url)
-    const headers = [...new Headers(init?.headers)].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    out.count(headers.length)
-    for (const [name, value] of headers) {
-      out.text(name)
-      out.text(value)
-    }
+    writeHeaders(out, headers)
     return
   }
   out.enum(2)
   out.bytes(source.bytes)
+}
+
+/** Writes a header list: a count, then a name and a value each. */
+function writeHeaders(out: ArenaWriter, headers: readonly (readonly [string, string])[]): void {
+  out.count(headers.length)
+  for (const [name, value] of headers) {
+    out.text(name)
+    out.text(value)
+  }
 }
 
 /** Writes a background size: a tag, and the pair only the per-axis arm carries. */
@@ -1760,5 +1769,12 @@ export function encodeScene(
   out.httpOptions = httpOptions
   writeHeader(out, width, height, contentHeight, scale, surface, pages.length, attempts)
   for (const page of pages) writeNode(out, page)
+  // After the pages, since writing them is what finds which bodies they use.
+  out.count(out.bodies.size)
+  for (const { url, headers, bytes } of out.bodies.values()) {
+    out.text(url)
+    writeHeaders(out, headers)
+    out.bytes(bytes)
+  }
   return out.finish()
 }

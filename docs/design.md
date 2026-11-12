@@ -510,7 +510,8 @@ elsewhere says what it does and why, and none panics: a scene from a newer
 writer renders what this build understands rather than refusing the page.
 
 The same test applies to public structs, which carry the attribute too
-(`Diagnostic`, `ImageWarning`, `LayoutResult` and the builder types).
+(`Diagnostic`, `ImageWarning`, `LayoutResult`, the builder types and `Scene`,
+whose fields a caller sets after `Scene::new`).
 
 **Mark what a caller reads; give a constructor to what a caller writes.** The
 attribute on an enum stops a caller matching a new variant and does nothing

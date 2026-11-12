@@ -48,6 +48,7 @@
 //! scene    := "MCSC" u16(version) f32 f32 bool f32
 //!             opt<bool>(gpu) opt<enum>(color_type) opt<enum>(color_space)
 //!             enum(on_image_error) http list<attempt>(image_fetch_attempts)
+//!             list<fetched>(fetched_images)              -- absent in version 10
 //!             list<u32>(pages) list<node>
 //!             ^magic         ^1   ^w  ^h  ^ch  ^scale
 //!
@@ -60,9 +61,13 @@
 //!                                                            -- Path: fill, stroke, line_width,
 //!                                                               fill_rule, cap, join, dash, offset
 //!
-//! attempt  := str(url) enum(failure) opt<u16>(status) str(detail)
+//! attempt  := str(url) failure str(detail)
+//! failure  := u8(0) u16 | u8(1..=5)                         -- Status(code) | HostNotFound .. Other
+//! fetched  := str(url) http bytes
+//! http     := list<header>                                   -- canonical: lower-cased, combined, sorted
+//! header   := str(name) str(value)
 //! segment  := str textstyle
-//! source   := u8(0) str | u8(1) str | u8(2) bytes            -- Path | Url | Bytes
+//! source   := u8(0) str | u8(1) str http | u8(2) bytes       -- Path | Url | Bytes
 //! paint    := u8(0) color | u8(1) gradient                   -- Solid | Gradient
 //!
 //! length   := u8(0) f32 | u8(1) f32                          -- Points | Percent
@@ -138,6 +143,10 @@
 //! byte names nothing to this revision, so the buffer is refused rather than
 //! silently drawn without that node. Widening a field or reordering one is the
 //! same.
+//!
+//! [`decode`] reads [`OLDEST_VERSION`] too, which is 11 without the
+//! `fetched_images` list, so a scene saved by 0.2.x still loads. [`encode`]
+//! writes only [`VERSION`].
 
 mod impls;
 mod reader;
@@ -149,7 +158,9 @@ pub(crate) use writer::Writer;
 use crate::{
     Scene,
     node::{HttpOptions, NodeId},
-    surface::{ColorSpace, ColorType, ImageFetchAttempt, OnImageError},
+    surface::{
+        ColorSpace, ColorType, FetchedImage, ImageFetchAttempt, OnImageError,
+    },
 };
 
 /// The four bytes every encoded scene starts with.
@@ -158,12 +169,19 @@ use crate::{
 /// bytes in a fixture file for no further discrimination.
 pub const MAGIC: [u8; 4] = *b"MCSC";
 
-/// The format revision this crate reads and writes.
+/// The format revision this crate writes, and the newest it reads.
 ///
-/// [`decode`] refuses anything else. A reader that skipped fields it did not
+/// [`decode`] refuses a newer one. A reader that skipped fields it did not
 /// recognise would draw a picture missing whatever those fields said, which is
 /// worse than refusing to draw one.
-pub const VERSION: u16 = 10;
+pub const VERSION: u16 = 11;
+
+/// The oldest format revision [`decode`] reads: 10, which 0.2.x wrote.
+///
+/// It differs from 11 only in having no `fetched_images` list, and a scene
+/// saved then had no fetched bodies to carry, so it reads as one with none.
+/// Anything older is refused, since nothing else about it is known to match.
+pub const OLDEST_VERSION: u16 = 10;
 
 /// The largest node count [`decode`] will allocate for.
 ///
@@ -183,13 +201,16 @@ pub const MAX_NODES: u32 = 1 << 20;
 pub enum CodecError {
     /// The buffer does not begin with [`MAGIC`].
     NotAScene,
-    /// The buffer is well formed but written by another revision.
+    /// The buffer is well formed but written by a revision this crate does not
+    /// read.
     #[non_exhaustive]
     UnsupportedVersion {
         /// The revision the buffer claims.
         found: u16,
-        /// The revision this crate reads.
+        /// The newest revision this crate reads, [`VERSION`].
         expected: u16,
+        /// The oldest revision this crate reads, [`OLDEST_VERSION`].
+        oldest: u16,
     },
     /// The buffer ends inside a field.
     #[non_exhaustive]
@@ -248,8 +269,19 @@ impl core::fmt::Display for CodecError {
             Self::NotAScene => {
                 f.write_str("buffer does not begin with the scene magic")
             }
-            Self::UnsupportedVersion { found, expected } => {
-                write!(f, "scene format version {found}, expected {expected}")
+            Self::UnsupportedVersion {
+                found,
+                expected,
+                oldest,
+            } => {
+                write!(f, "scene format version {found}, expected ")?;
+                if oldest == expected {
+                    write!(f, "{expected}")
+                } else if oldest.checked_add(1) == Some(*expected) {
+                    write!(f, "{oldest} or {expected}")
+                } else {
+                    write!(f, "{oldest} to {expected}")
+                }
             }
             Self::Truncated {
                 offset,
@@ -344,6 +376,9 @@ pub fn encode_into(scene: &Scene, out: &mut Vec<u8>) {
     // Empty for every caller that does not fetch for itself, which is every
     // Rust one -- so this costs one `u32` of zero on an ordinary scene.
     writer.list(&scene.image_fetch_attempts);
+    // The bodies of the fetches that worked, beside those that did not, and
+    // as cheap on an ordinary scene.
+    writer.list(&scene.fetched_images);
     writer.list(&scene.pages);
     writer.list(&scene.nodes);
 }
@@ -366,10 +401,11 @@ pub fn decode(bytes: &[u8]) -> Result<Scene, CodecError> {
         return Err(CodecError::NotAScene);
     }
     let version = input.u16()?;
-    if version != VERSION {
+    if !(OLDEST_VERSION..=VERSION).contains(&version) {
         return Err(CodecError::UnsupportedVersion {
             found: version,
             expected: VERSION,
+            oldest: OLDEST_VERSION,
         });
     }
 
@@ -383,6 +419,12 @@ pub fn decode(bytes: &[u8]) -> Result<Scene, CodecError> {
     let on_image_error = OnImageError::read(&mut input)?;
     let http = HttpOptions::read(&mut input)?;
     let image_fetch_attempts: Vec<ImageFetchAttempt> = input.list()?;
+    // Version 10 has no list here: it predates fetched bodies.
+    let fetched_images: Vec<FetchedImage> = if version > OLDEST_VERSION {
+        input.list()?
+    } else {
+        Vec::new()
+    };
     let pages: Vec<NodeId> = input.list()?;
 
     let count = input.peek_u32()?;
@@ -409,6 +451,7 @@ pub fn decode(bytes: &[u8]) -> Result<Scene, CodecError> {
         on_image_error,
         http,
         image_fetch_attempts,
+        fetched_images,
         nodes,
         pages,
     };
@@ -419,8 +462,8 @@ pub fn decode(bytes: &[u8]) -> Result<Scene, CodecError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CodecError, MAGIC, MAX_NODES, Reader, VERSION, Wire, Writer, decode,
-        encode, encode_into,
+        CodecError, MAGIC, MAX_NODES, OLDEST_VERSION, Reader, VERSION, Wire,
+        Writer, decode, encode, encode_into,
     };
     use crate::{
         Scene, SceneError,
@@ -454,7 +497,8 @@ mod tests {
             },
         },
         surface::{
-            ColorSpace, ColorType, ImageFetchAttempt, ImageFetchFailure,
+            ColorSpace, ColorType, FetchedImage, ImageFetchAttempt,
+            ImageFetchFailure,
         },
     };
 
@@ -465,8 +509,8 @@ mod tests {
 
     /// The surface block with all three optional fields absent: a discriminant
     /// each, the byte `on_image_error` always takes, and the four-byte counts
-    /// of the empty `http` and `image_fetch_attempts` lists.
-    const ABSENT_SURFACE: usize = 3 + 1 + 4 + 4;
+    /// of the empty `http`, `image_fetch_attempts` and `fetched_images` lists.
+    const ABSENT_SURFACE: usize = 3 + 1 + 4 + 4 + 4;
 
     /// Byte offset of the page list in a scene whose surface says nothing.
     const PAGES_OFFSET: usize = SURFACE_OFFSET + ABSENT_SURFACE;
@@ -868,6 +912,22 @@ mod tests {
         );
     }
 
+    /// A fetched body keeps its URL and its headers, so the decoded scene still
+    /// knows which source it answers.
+    #[test]
+    fn a_fetched_body_travels_with_the_request_it_answers() {
+        let mut scene = Scene::new(Size::new(4.0, 4.0));
+        scene.fetched_images = vec![FetchedImage {
+            url: "https://example.invalid/a.png".to_owned(),
+            http: HttpOptions::new().header("x-key", "1"),
+            bytes: b"not an image".to_vec(),
+        }];
+
+        let back =
+            decode(&encode(&scene)).unwrap_or_else(|e| unreachable!("{e}"));
+        assert_eq!(back.fetched_images, scene.fetched_images);
+    }
+
     #[test]
     fn encode_into_appends_rather_than_replacing() {
         let scene = Scene::new(Size::ZERO);
@@ -918,6 +978,7 @@ mod tests {
             Err(CodecError::UnsupportedVersion {
                 found: 99,
                 expected: VERSION,
+                oldest: OLDEST_VERSION,
             })
         );
     }
@@ -1278,6 +1339,7 @@ mod tests {
             CodecError::UnsupportedVersion {
                 found: 2,
                 expected: 1,
+                oldest: 1,
             }
             .to_string(),
             CodecError::Truncated {

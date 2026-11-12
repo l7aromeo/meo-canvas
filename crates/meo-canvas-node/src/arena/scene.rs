@@ -4,7 +4,7 @@
 //! because these are the scene's own vocabulary rather than the format's.
 
 use meo_canvas_scene::{
-    OnImageError,
+    FetchedImage, OnImageError,
     node::{HttpOptions, ImageSource, LineCap, LineJoin, NodeTag, PathPaint},
     style::{
         Dimension, Length, PaintOrder,
@@ -357,6 +357,23 @@ impl ArenaValue for ImageSource {
                 found: f64::from(found),
             }),
         }
+    }
+}
+
+impl ArenaValue for FetchedImage {
+    /// The URL, its options as a source writes them, then the body.
+    fn read(input: &mut Reader<'_>) -> Result<Self, ArenaError> {
+        let slot = input.offset();
+        let url = input.index()?;
+        let url = input.text(url, slot)?;
+        let http = HttpOptions::read(input)?;
+        let slot = input.offset();
+        let bytes = input.index()?;
+        Ok(Self {
+            url,
+            http,
+            bytes: input.bytes(bytes, slot)?,
+        })
     }
 }
 

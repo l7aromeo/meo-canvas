@@ -60,8 +60,9 @@ spaces up to `detail=` and takes the rest as the detail.
 The exit code stays 0, since the image was written; a scene whose
 `on_image_error` is `Throw` fails instead, with exit code 6.
 
-Only URL images warn: a URL in a `net` build, or one whose failed fetch the
-scene records in `image_fetch_attempts`. A missing image file is an error with
+Only URL images warn: a URL in a `net` build, one whose failed fetch the scene
+records in `image_fetch_attempts`, or one whose body the scene carries in
+`fetched_images` and that will not decode. A missing image file is an error with
 exit code 3 whatever the policy.
 
 ## Diagnostics

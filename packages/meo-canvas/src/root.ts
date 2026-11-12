@@ -526,7 +526,7 @@ export async function Root(props: RootProps, dependencies: RootDependencies = in
   const height = props.height ?? (typeof props.minHeight === 'number' ? props.minHeight : 0)
   let arena = encodeScene(tree, props.width, height, contentHeight, scale, surface, undefined, [], props.httpOptions)
 
-  // Fetched here, at the surface, and only bytes cross the wire, so the addon
+  // Fetched here, at the surface, and the bodies cross the wire, so the addon
   // needs no HTTP stack and a Node caller gets the platform's proxy, TLS and DNS.
   // The second encode is the price of not keeping a second walker of every place
   // a source can appear; a scene naming no URL never runs it.

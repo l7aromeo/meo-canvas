@@ -349,3 +349,38 @@ pub struct ImageFetchAttempt {
     /// What the client reported, for a person to read.
     pub detail: String,
 }
+
+/// The body a fetch the caller made before the scene arrived returned.
+///
+/// **The other half of [`ImageFetchAttempt`]**: that one says a URL was tried
+/// and failed, this one what it answered. A
+/// [`Url`](crate::node::ImageSource::Url) source whose `url` and `http` are
+/// these takes these bytes rather than being fetched, so it stays a `Url` all
+/// the way to the decoder. That is what lets a body that will not decode soften
+/// under [`OnImageError`] as the renderer's own fetch does: the bytes came from
+/// the world, and handed over as
+/// [`Bytes`](crate::node::ImageSource::Bytes) they would read as the caller's.
+///
+/// The npm package fetches in JavaScript and writes one of these per request a
+/// source uses. A Rust caller with an HTTP client of its own may do the same.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FetchedImage {
+    /// The URL that was fetched.
+    pub url: String,
+    /// What the request carried, compared with a source's own options in
+    /// [`HttpOptions::canonical`](crate::node::HttpOptions::canonical) form.
+    pub http: crate::node::HttpOptions,
+    /// The body, as the server sent it.
+    pub bytes: Vec<u8>,
+}
+
+impl FetchedImage {
+    /// Whether this is the body for `url` requested with `http`.
+    ///
+    /// Compares canonical headers, so `X-A` against `x-a` or two orders of the
+    /// same headers are one request, as they are on the wire.
+    #[must_use]
+    pub fn answers(&self, url: &str, http: &crate::node::HttpOptions) -> bool {
+        self.url == url && self.http.canonical() == http.canonical()
+    }
+}

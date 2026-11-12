@@ -21,10 +21,15 @@
 //! where an integer is expected is an error, not a rounding.
 //!
 //! ```text
-//! arena  := MAGIC VERSION f32(width) f32(height) f32(scale) surface
-//!           enum(on_image_error)
-//!           list<node>(pages)
+//! arena  := MAGIC VERSION f32(width) f32(height) bool(content_height)
+//!           f32(scale) surface
+//!           enum(on_image_error) list<attempt>(attempts)
+//!           list<node>(pages) list<fetched>(fetched)
 //! surface := opt<bool>(gpu) opt<enum>(color_type) opt<enum>(color_space)
+//! attempt := str(url) failure str(detail)
+//! failure := enum(0) u16 | enum(1..=5)                  -- Status(code) | HostNotFound .. Other
+//! fetched := str(url) http bytes                         -- after the pages: see `read_fetched`
+//! http    := list<str(name) str(value)>
 //! node   := enum(kind)
 //!           mask(layout) mask(paint) mask(text) mask(effects)
 //!           layout-values paint-values text-values effect-values
@@ -138,6 +143,20 @@ fn read_attempts(
     Ok(out)
 }
 
+/// Reads the bodies the JavaScript half fetched. **After the pages**, because
+/// the writer learns which requests a source uses while it writes the source,
+/// and writes each body once however many sources name it.
+fn read_fetched(
+    input: &mut Reader<'_>,
+) -> Result<Vec<FetchedImage>, ArenaError> {
+    let count = input.count()?;
+    let mut out = Vec::new();
+    for _ in 0..count {
+        out.push(FetchedImage::read(input)?);
+    }
+    Ok(out)
+}
+
 /// One failure classification, with its HTTP status behind the tag, so a
 /// `Status` with no code can be neither written nor read -- the only thing to
 /// do with one would be to invent a number a consumer branches on.
@@ -170,8 +189,8 @@ pub(crate) mod value;
 use group::{BITS_PER_SLOT, Mask, arena_group, ascending};
 use meo_canvas_core::diagnostic::Diagnostic;
 use meo_canvas_scene::{
-    ImageFetchAttempt, ImageFetchFailure, OnImageError, Scene, SceneError,
-    Size,
+    FetchedImage, ImageFetchAttempt, ImageFetchFailure, OnImageError, Scene,
+    SceneError, Size,
     node::{
         ImageSource, LineCap, LineJoin, Node, NodeId, NodeKind, NodeTag,
         PathPaint,
@@ -192,7 +211,7 @@ use value::ArenaValue;
 pub const MAGIC: f64 = 1_296_649_810.0;
 
 /// The revision this crate reads.
-pub const VERSION: f64 = 7.0;
+pub const VERSION: f64 = 8.0;
 
 /// The largest node count [`decode`] will allocate for.
 ///
@@ -888,26 +907,24 @@ pub fn decode(
     let attempts: Vec<ImageFetchAttempt> = read_attempts(&mut input)?;
 
     let page_count = input.count()?;
-    let mut scene = Scene {
-        size: Size::new(width, height),
-        content_height,
-        scale,
-        gpu,
-        color_type,
-        color_space,
-        on_image_error,
-        // Empty on purpose: the JavaScript half merges `RootProps.httpOptions`
-        // into each source before writing, so merging the scene-wide set again
-        // here would apply it twice.
-        http: meo_canvas_scene::node::HttpOptions::new(),
-        image_fetch_attempts: attempts,
-        nodes: Vec::new(),
-        pages: Vec::with_capacity(page_count),
-    };
+    // `http` stays as `Scene::new` leaves it, empty: the JavaScript half merges
+    // `RootProps.httpOptions` into each source before writing, so merging the
+    // scene-wide set again here would apply it twice.
+    let mut scene = Scene::new(Size::new(width, height));
+    scene.content_height = content_height;
+    scene.scale = scale;
+    scene.gpu = gpu;
+    scene.color_type = color_type;
+    scene.color_space = color_space;
+    scene.on_image_error = on_image_error;
+    scene.image_fetch_attempts = attempts;
+    scene.nodes = Vec::new();
+    scene.pages = Vec::with_capacity(page_count);
     for _ in 0..page_count {
         let root = read_node(&mut input, &mut scene)?;
         scene.pages.push(root);
     }
+    scene.fetched_images = read_fetched(&mut input)?;
 
     let remaining = input.remaining();
     if remaining != 0 {
@@ -1157,7 +1174,25 @@ mod tests {
             self.slot(f64::from(tag.to_wire())).slots(&[0.0; 4]) // one empty mask per group
         }
 
+        /// Ends the arena with no fetched bodies after the pages.
         fn finish(self) -> (Vec<f64>, Values) {
+            self.finish_fetched(&[])
+        }
+
+        /// Ends the arena with these bodies after the pages, each fetched
+        /// with no headers.
+        fn finish_fetched(
+            mut self,
+            bodies: &[(&str, &[u8])],
+        ) -> (Vec<f64>, Values) {
+            self.slots.push(bodies.len() as f64);
+            for (url, bytes) in bodies {
+                let named;
+                (self, named) = self.text_value(url);
+                let body;
+                (self, body) = self.bytes_value(bytes);
+                self.slots.extend_from_slice(&[named, 0.0, body]);
+            }
             (self.slots, Values::new(self.values))
         }
     }
@@ -1410,6 +1445,36 @@ mod tests {
             }
             other => unreachable!("expected text, found {other:?}"),
         }
+    }
+
+    /// A body the JavaScript half fetched arrives beside a source that stays a
+    /// URL, so the renderer can tell the world's bytes from the caller's.
+    #[test]
+    fn a_fetched_body_follows_the_pages_and_its_source_stays_a_url() {
+        let url = "https://example.invalid/a.png";
+        let (writer, named) = Writer::default().text_value(url);
+        let (slots, values) = writer
+            .header(Size::new(10.0, 10.0), 1.0, 1)
+            .bare_node(NodeTag::Image)
+            // source: a URL with no headers; fill; centred; no frame
+            .slots(&[1.0, named, 0.0, 0.0, 1.0, 50.0, 1.0, 50.0, 0.0])
+            .slot(0.0) // name
+            .slot(0.0) // children
+            .finish_fetched(&[(url, b"not an image")]);
+
+        let (scene, _) = decode(&slots, &values)
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let NodeKind::Image { source, .. } = &scene.nodes[0].kind else {
+            unreachable!("expected an image, found {:?}", scene.nodes[0].kind);
+        };
+        assert_eq!(*source, meo_canvas_scene::node::ImageSource::url(url));
+        let [fetched] = scene.fetched_images.as_slice() else {
+            unreachable!("{:?}", scene.fetched_images);
+        };
+        assert!(
+            fetched.answers(url, &meo_canvas_scene::node::HttpOptions::new())
+        );
+        assert_eq!(fetched.bytes, b"not an image");
     }
 
     #[test]

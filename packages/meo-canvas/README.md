@@ -226,12 +226,14 @@ every image, including the ones that brought a signal of their own.
 address sharing the same options are fetched once; two that differ in a header
 are two fetches, each drawing what its own request returned.
 
-**A fetched image crosses as bytes, not as its URL**, so anything set here
-reaches the origin and nothing else. The exception is a URL that could not be
-fetched: under the default `onImageError: 'placeholder'` the render finishes,
-and the address crosses so the renderer can say which image is missing. It
-cannot act on it -- the addon is built without the `net` feature, so nothing on
-that side can open a connection.
+**A fetched image crosses as its bytes**, with the address and headers of the
+request that returned them, so the renderer can tell a body from the network
+from one you passed and can say which image a warning is about. It cannot act
+on them -- the addon is built without the `net` feature, so nothing on that side
+can open a connection, and anything set here reaches the origin and nothing
+else. A URL that could not be fetched crosses the same way, without a body:
+under the default `onImageError: 'placeholder'` the render finishes and names
+the image that is missing.
 
 Two bounds apply whatever you pass, and they match the ones the Rust crate sets
 for itself: **a fetch has 60 seconds** and **an image may not exceed 32 MiB**.
@@ -248,7 +250,9 @@ have done.
 
 If you need a different policy, fetch the bytes yourself and pass them as an
 inline source — that path carries no limits of ours at all, and it is the same
-escape the Rust crate offers.
+escape the Rust crate offers. Inline bytes are your own input, so a body that
+will not decode fails the render under every `onImageError`, where one this
+package fetched softens like a 404.
 
 One difference between the surfaces, since it is real: **you can tighten these
 bounds and a Rust caller cannot.** `httpOptions` is already a public object
