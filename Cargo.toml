@@ -6,7 +6,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 # The floor the workspace needs; a lower number would be a claim no CI job
 # checks.
@@ -22,8 +22,8 @@ authors = ["L A Romeo <ukasyahrz@outlook.com>"]
 # Both `path` and `version`: a published member carries the version and a
 # local build follows the path, so naming one leaves the crate either
 # unpublishable or untestable.
-meo-canvas-scene = { path = "crates/meo-canvas-scene", version = "0.2.0" }
-meo-canvas-core = { path = "crates/meo-canvas-core", version = "0.2.0" }
+meo-canvas-scene = { path = "crates/meo-canvas-scene", version = "0.2.1" }
+meo-canvas-core = { path = "crates/meo-canvas-core", version = "0.2.1" }
 
 # No default features: its `node-addon` would add a second `#[neon::main]`, and
 # `meo-canvas-node` owns the only one. `patched-skia` links the patched Skia the
