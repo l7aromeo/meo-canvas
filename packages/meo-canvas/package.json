@@ -45,7 +45,8 @@
     "!src/**/*.test.ts",
     "package.json",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "THIRD_PARTY_NOTICES"
   ],
   "dependencies": {
     "@types/node": "^22.20.5"

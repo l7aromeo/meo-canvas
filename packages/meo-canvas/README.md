@@ -423,4 +423,6 @@ Every enumerated value is a string-literal union, so an editor completes `'flex-
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). The native addon statically links third-party code,
+listed with its licences in the `THIRD_PARTY_NOTICES` each platform package
+ships beside the binary.

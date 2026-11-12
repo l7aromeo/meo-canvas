@@ -1,13 +1,15 @@
-// Installs the packed tarballs into a throwaway project and uses them as a consumer
-// does: `import` by name through the platform package, render, check for a PNG --
-// then `require` by name and `tsc` with a consumer's tsconfig, which a render
-// cannot see. Run by `just verify-pack` and the release, before publishing.
+// Installs the packed tarballs into a throwaway project, checks each carries its
+// THIRD_PARTY_NOTICES, and uses them as a consumer does: render through the platform
+// package, `require` by name, `tsc` with a consumer's tsconfig. Run by
+// `just verify-pack` and the release, before publishing.
 
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { NOTICES, TARGETS } from './stage-platform-package.mjs'
 
 /** This file's own directory, which is how the repository root is reached. */
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -69,6 +71,30 @@ try {
     stdio: 'inherit',
     shell: WINDOWS,
   })
+
+  // ── The notices each tarball carries ────────────────────────────────────
+  // Read from the installed tree, so what is checked is what a consumer gets.
+  // Each platform package's file must describe that package's own target: a
+  // notices file staged from another build would list another binary.
+  const mainNotices = join(project, 'node_modules', 'meo-canvas', NOTICES)
+  if (!existsSync(mainNotices) || !readFileSync(mainNotices, 'utf8').includes(`${NOTICES} file beside the binary`)) {
+    throw new Error(`the main package carries no ${NOTICES} pointing at the platform packages' notices`)
+  }
+  const scope = join(project, 'node_modules', '@meo-canvas')
+  const installed = existsSync(scope) ? readdirSync(scope) : []
+  if (installed.length === 0) throw new Error('no platform package was installed, so no notices could be checked')
+  for (const suffix of installed) {
+    const target = TARGETS[suffix]
+    if (target === undefined) throw new Error(`installed @meo-canvas/${suffix}, which TARGETS does not name`)
+    const path = join(scope, suffix, NOTICES)
+    const notices = existsSync(path) ? readFileSync(path, 'utf8') : ''
+    const expected = ['THIRD-PARTY SOFTWARE NOTICES', `for ${suffix} (${target.rust}`, '\nSkia\n', '\nRust crates\n']
+    const absent = expected.filter(text => !notices.includes(text))
+    if (absent.length > 0) {
+      throw new Error(`@meo-canvas/${suffix}'s ${NOTICES} ${notices === '' ? 'is missing' : `lacks ${absent.map(text => JSON.stringify(text)).join(', ')}`}`)
+    }
+    process.stderr.write(`@meo-canvas/${suffix} carries ${NOTICES} for ${target.rust}, ${notices.length} characters\n`)
+  }
 
   const script = `
 import { Box, Root } from 'meo-canvas'

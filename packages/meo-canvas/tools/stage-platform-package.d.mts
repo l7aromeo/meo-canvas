@@ -34,5 +34,8 @@ export declare function hostSuffix(): string
 /** The manifest a platform package ships, derived from the main one. */
 export declare function manifest(suffix: string, version: string): Record<string, unknown>
 
+/** The file a platform package carries its third-party notices in. */
+export declare const NOTICES: string
+
 /** Writes one staged package, and reports where it went. */
-export declare function stage(suffix: string, binary: string, outDir: string): { name: string; version: string; staged: string }
+export declare function stage(suffix: string, binary: string, notices: string, outDir: string): { name: string; version: string; staged: string }

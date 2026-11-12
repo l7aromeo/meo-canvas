@@ -29,6 +29,17 @@ addon_path := "packages/meo-canvas/meo-canvas.node"
 # addon with a format error. The suffix is `TARGETS`' spelling.
 container_addon := "target/container"
 
+# What cargo printed while building an addon, one JSON message per line, beside
+# the build it describes: which static libraries each build script linked and
+# which crates compiled. `tools/third-party-notices.mjs` reads it, so the
+# notices describe the binary that ships rather than a second resolution.
+build_messages := "build-messages.json"
+
+# The licence texts of the static fontconfig, FreeType and expat a release image
+# builds (`containers/install-fontlibs.sh`), copied out beside the build that
+# linked them, since they come from no crate.
+fontlib_licences := "fontlib-licences"
+
 # Default: show available recipes.
 default:
     @just --list
@@ -112,7 +123,7 @@ portable: gate-lists-check cache-budget-check release-tags-check typecheck docs-
 # `test-js`, and `test-js` precedes `test`, so a red Rust suite cannot hide the
 # JavaScript result; `gate-lists-check` asserts both.
 [doc("The half of `ci` that compiles, links or runs the addon, once per host.")]
-native: fmt-check arena-cases-check media-types-check lint-check docs addon test-js test coverage coverage-js example runtime-free unused
+native: fmt-check arena-cases-check media-types-check lint-check docs addon test-js test coverage coverage-js example runtime-free unused notices-check
 
 # The gate itself. Run `ci`, which takes the lock first.
 [private]
@@ -125,7 +136,7 @@ ci-steps: portable native
 setup:
     rustup component add rustfmt clippy llvm-tools-preview
     rustup toolchain install {{ fmt_toolchain }} --component rustfmt --component llvm-tools-preview
-    cargo install --locked cargo-llvm-cov cargo-machete
+    cargo install --locked cargo-llvm-cov cargo-machete cargo-about
     npx playwright install chromium
     @test -L CLAUDE.md || ln -s AGENTS.md CLAUDE.md
     @echo "ready -- run \`just ci\`"
@@ -171,6 +182,20 @@ test:
 [doc("Fail on a known vulnerability in the dependency tree.")]
 audit:
     cargo audit --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
+
+# Every target's crate graph, with every feature, against `about.toml`'s
+# allowlist, which needs no build; then this host's notices in full, from the
+# messages of the addon `addon` built, which is where an unmapped C library or a
+# licence file that moved shows up. Each release target writes its own in `pack`.
+[doc("Fail on a licence off the allowlist, or notices that cannot be written.")]
+notices-check:
+    node packages/meo-canvas/tools/third-party-notices.mjs --check-all
+    @mkdir -p target/debug
+    cargo build -p meo-canvas-node --features "{{ host_features }}" \
+        --message-format=json-render-diagnostics > target/debug/{{ build_messages }}
+    node packages/meo-canvas/tools/third-party-notices.mjs \
+        "$(node packages/meo-canvas/tools/stage-platform-package.mjs --host)" \
+        target/debug/{{ build_messages }} target/THIRD_PARTY_NOTICES
 
 # How many of the core's test files compile only under `net`: `fetch_policy`,
 # `image_soft_fail` and `image_cache`. A floor, so adding one needs no edit and
@@ -350,7 +375,9 @@ build-js: ensure-deps
 # TypeScript surface loads.
 [doc("Build the native addon in release mode.")]
 addon-release:
-    cargo build --locked --release -p meo-canvas-node --features "{{ host_features }}"
+    @mkdir -p target/release
+    cargo build --locked --release -p meo-canvas-node --features "{{ host_features }}" \
+        --message-format=json-render-diagnostics > target/release/{{ build_messages }}
     @rm -f {{ addon_path }}
     @cp target/release/{{ lib_name }} {{ addon_path }}
     @echo "built {{ addon_path }} (release)"
@@ -426,7 +453,11 @@ addon-container suffix:
         -e CARGO_TARGET_DIR=/src/target/container/{{ suffix }} \
         -e SKIA_BINARIES_URL \
         "$tag" \
-        cargo build --locked --release -p meo-canvas-node --features vulkan
+        sh -c 'mkdir -p "$CARGO_TARGET_DIR" \
+            && cargo build --locked --release -p meo-canvas-node --features vulkan \
+                --message-format=json-render-diagnostics > "$CARGO_TARGET_DIR/{{ build_messages }}" \
+            && rm -rf "$CARGO_TARGET_DIR/{{ fontlib_licences }}" \
+            && cp -R /usr/share/licenses/meo-canvas-fontlibs "$CARGO_TARGET_DIR/{{ fontlib_licences }}"'
 
     # The container ran as root, so hand `target/container` and the cargo
     # registry back to the user: root-owned, the cache action's post-job save
@@ -448,20 +479,23 @@ addon-container suffix:
 pack: ensure-deps build-js addon-release
     #!/usr/bin/env bash
     set -euo pipefail
-    just _pack-tarballs "$(node packages/meo-canvas/tools/stage-platform-package.mjs --host)" {{ addon_path }}
+    just _pack-tarballs "$(node packages/meo-canvas/tools/stage-platform-package.mjs --host)" {{ addon_path }} \
+        target/release/{{ build_messages }}
 
 # The same pack, from an addon built in its release container, with the suffix
 # named: `--host` reports the runner, so deriving it would stage a musl binary
 # into a glibc package.
 [doc("Build a Linux addon in its release container and pack it.")]
 pack-container suffix: ensure-deps build-js (addon-container suffix)
-    just _pack-tarballs "{{ suffix }}" "{{ container_addon }}/{{ suffix }}/meo-canvas.node"
+    just _pack-tarballs "{{ suffix }}" "{{ container_addon }}/{{ suffix }}/meo-canvas.node" \
+        "{{ container_addon }}/{{ suffix }}/{{ build_messages }}" \
+        "{{ container_addon }}/{{ suffix }}/{{ fontlib_licences }}"
 
 # The packing itself, for whatever addon is at `addon_path` under whatever name
 # it is given. Both spellings above end here, so there is one description of
 # what a release artefact is.
 [private]
-_pack-tarballs suffix addon:
+_pack-tarballs suffix addon messages image_licences="":
     #!/usr/bin/env bash
     set -euo pipefail
 
@@ -478,8 +512,14 @@ _pack-tarballs suffix addon:
 
     rm -rf release
     mkdir -p release/npm
+    # A release image's own static font libraries are read from the licences
+    # it kept; a host build links the system's shared ones.
+    image=()
+    if [[ -n "{{ image_licences }}" ]]; then image=("{{ image_licences }}"); fi
+    node packages/meo-canvas/tools/third-party-notices.mjs \
+        "{{ suffix }}" "{{ messages }}" release/npm/THIRD_PARTY_NOTICES ${image[@]+"${image[@]}"}
     node packages/meo-canvas/tools/stage-platform-package.mjs \
-        "{{ suffix }}" "{{ addon }}" release/npm
+        "{{ suffix }}" "{{ addon }}" release/npm/THIRD_PARTY_NOTICES release/npm
     npm pack --pack-destination "$PWD/release" ./release/npm/"{{ suffix }}" >/dev/null
     npm pack --pack-destination "$PWD/release" ./packages/meo-canvas >/dev/null
     echo ""
