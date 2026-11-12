@@ -167,3 +167,24 @@ describe('a text box rounded to a whole pixel', () => {
     expect([bottom - top + 1, lines]).toEqual([48, 2])
   })
 })
+
+describe('text with no spaces to break at', () => {
+  // `chrome_line_break.rs` pins every break against Chrome; this proves the npm
+  // surface wraps the same. Chrome 158 at 200px with a 20px line: four lines and three.
+  const CJK = fileURLToPath(new URL('../../../crates/meo-canvas-core/tests/assets/fonts/NotoSansSC-Subset.ttf', import.meta.url))
+  it.each([
+    ['漢字'.repeat(20), 80],
+    ['我们在Tokyo见面了，然后去了大阪看樱花。Hello世界こんにちは', 60],
+  ])('breaks %s between its characters', async (text, height) => {
+    const canvas = await Root({
+      width: 200,
+      display: 'block',
+      fonts: [{ family: 'Noto Sans SC', paths: [CJK] }],
+      children: Text(text, { fontFamily: 'Noto Sans SC', fontSize: 16, lineHeight: 1.25 }),
+    })
+    const raw = canvas.toBufferSync('raw')
+    canvas.release()
+    // The canvas is as tall as its content, so its height is the lines'.
+    expect(raw.length / (200 * 4)).toBe(height)
+  })
+})

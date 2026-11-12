@@ -390,7 +390,8 @@ impl<'resolved> SceneMeasurer<'resolved> {
     /// Measures a text node by wrapping at the width on offer: an open axis at
     /// infinity, since at exactly the max-content width, which flexbox re-asks
     /// with, a float comparison loses the last word. `MinContent` wraps at
-    /// every space.
+    /// every break opportunity, so a run of ideographs is as narrow as its
+    /// widest character.
     fn measure_text(
         &mut self,
         node: NodeId,

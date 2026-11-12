@@ -46,6 +46,15 @@ taffy = { version = "0.15", default-features = false, features = [
     "detailed_layout_info",
 ] }
 
+# Line break opportunities. `unstable` for the UAX 14 17 rules Chrome's ICU
+# follows, where the stable constructors give 15.1's: they disagree with Chrome
+# on 348 of 22,310 character pairs, these on 95. `~` because `unstable` may
+# change in a minor release. No `auto`: its LSTM is not what Chrome uses.
+icu_segmenter = { version = "~2.4.0", default-features = false, features = [
+    "compiled_data",
+    "unstable",
+] }
+
 # Decodes a `data:` image source. `ureq` already brings it under `net`; naming
 # it gives a build without `net` the same decoder rather than a hand-written one.
 base64 = "0.23"

@@ -33,6 +33,7 @@ net = ["dep:ureq", "dep:rustls-webpki"]
 
 [dependencies]
 base64 = { workspace = true }
+icu_segmenter = { workspace = true }
 meo-canvas-scene = { workspace = true }
 meo-skia-canvas = { workspace = true }
 taffy = { workspace = true }

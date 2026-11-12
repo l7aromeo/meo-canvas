@@ -1,0 +1,247 @@
+# Chrome, through `just conformance`: where a line of text breaks, at 16px in Noto Sans SC subset to
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
+# the width rows, line-height 20px, from each character's client rect in an HTML block.
+# Written by packages/meo-canvas/tools/conformance/linebreak.mjs.
+#
+# `ascii` and `class` rows lay out every two-character string `first` + one of `tried` in a 0px
+# block, which takes every break opportunity; `breaks` holds the seconds that went to a new line.
+# `opportunity` rows do the same for whole strings, and `wrap` rows at `width`; their `breaks` are
+# the code-point indices lines start at. `min-content` rows give the block's width as `width`.
+# Texts are JSON strings.
+#
+# Each row is measured at `text-spacing-trim: normal`, Chrome's default, and `space-all`, and
+# kept only where both agree: trimming narrows full-width punctuation, which is not breaking. 8 dropped.
+#
+# kind	text	width	breaks
+ascii	"!"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"(<[{"
+ascii	"\""	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"(<[{"
+ascii	"#"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"(<[{"
+ascii	"$"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"%"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"(<[{"
+ascii	"&"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"(<[{"
+ascii	"'"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"("	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	")"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"(<[{"
+ascii	"*"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"(<[{"
+ascii	"+"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"(<[{"
+ascii	","	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"(<[{"
+ascii	"-"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"\"#%&'(*+-<=>@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\^_`abcdefghijklmnopqrstuvwxyz{|~"
+ascii	"."	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"(<[{"
+ascii	"/"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"0"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"1"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"2"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"3"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"4"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"5"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"6"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"7"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"8"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"9"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	":"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"(<[{"
+ascii	";"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"(<[{"
+ascii	"<"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"="	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"(<[{"
+ascii	">"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"(<[{"
+ascii	"?"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"#$%&(*+-0123456789<=>@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\^_`abcdefghijklmnopqrstuvwxyz{|~"
+ascii	"@"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"A"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"B"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"C"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"D"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"E"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"F"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"G"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"H"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"I"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"J"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"K"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"L"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"M"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"N"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"O"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"P"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"Q"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"R"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"S"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"T"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"U"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"V"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"W"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"X"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"Y"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"Z"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"["	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"\\"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"(<[{"
+ascii	"]"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"(<[{"
+ascii	"^"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"_"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"`"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"a"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"b"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"c"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"d"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"e"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"f"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"g"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"h"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"i"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"j"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"k"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"l"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"m"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"n"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"o"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"p"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"q"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"r"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"s"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"t"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"u"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"v"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"w"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"x"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"y"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"z"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"{"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	""
+ascii	"|"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"(<[{"
+ascii	"}"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"(<[{"
+ascii	"~"	"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"	"(<[{"
+class	"漢"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄１٣éΩא—👍🏽🇯가각§´"
+class	"あ"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄１٣éΩא—👍🏽🇯가각§´"
+class	"ア"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄１٣éΩא—👍🏽🇯가각§´"
+class	"ぁ"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄１٣éΩא—👍🏽🇯가각§´"
+class	"ッ"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄１٣éΩא—👍🏽🇯가각§´"
+class	"ー"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄１٣éΩא—👍🏽🇯가각§´"
+class	"ｯ"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄１٣éΩא—👍🏽🇯가각§´"
+class	"々"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣éΩא—👍🏽🇯가각§´"
+class	"ゝ"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣éΩא—👍🏽🇯가각§´"
+class	"ヽ"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣éΩא—👍🏽🇯가각§´"
+class	"・"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣éΩא—👍🏽🇯가각§´"
+class	"‼"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣éΩא—👍🏽🇯가각§´"
+class	"、"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣éΩא—👍🏽🇯가각§´"
+class	"。"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣éΩא—👍🏽🇯가각§´"
+class	"」"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣éΩא—👍🏽🇯가각§´"
+class	"）"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣éΩא—👍🏽🇯가각§´"
+class	"，"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣éΩא—👍🏽🇯가각§´"
+class	"］"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣éΩא—👍🏽🇯가각§´"
+class	"「"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	""
+class	"（"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	""
+class	"［"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	""
+class	"¿"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	""
+class	"！"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣éΩא—👍🏽🇯가각§´"
+class	"？"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣éΩא—👍🏽🇯가각§´"
+class	"．"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣éΩא—👍🏽🇯가각§´"
+class	"："	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣éΩא—👍🏽🇯가각§´"
+class	"“"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	""
+class	"”"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	""
+class	"«"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	""
+class	"»"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	""
+class	"¥"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"「（［¿¥￥€＄％¢°—🇯´"
+class	"￥"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"「（［¿¥￥€＄％¢°—🇯´"
+class	"€"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"「（［¿¥￥€＄％¢°—🇯´"
+class	"＄"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"「（［¿¥￥€＄％¢°—🇯´"
+class	"％"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１—👍🏽🇯가각´"
+class	"¢"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１—👍🏽🇯가각´"
+class	"°"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１—👍🏽🇯가각´"
+class	"１"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄１٣éΩא—👍🏽🇯가각§´"
+class	"٣"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［１—👍🏽🇯가각´"
+class	"é"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［１—👍🏽🇯가각´"
+class	"Ω"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［１—👍🏽🇯가각´"
+class	"א"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［１—👍🏽🇯가각´"
+class	"　"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣éΩא— 👍🏽🇯가각§´"
+class	"–"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣— 👍🏽🇯가각´"
+class	"‐"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣— 👍🏽🇯가각´"
+class	"—"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣éΩא👍🏽🇯가각§´"
+class	" "	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	""
+class	"…"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣éΩא—👍🏽🇯가각§´"
+class	"​"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא–‐— …👍🏽🇯가각§´"
+class	"⁠"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	""
+class	"́"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［１—👍🏽🇯가각´"
+class	"‍"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	""
+class	"👍"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄１٣éΩא—👍🇯가각§´"
+class	"🏽"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄１٣éΩא—👍🏽🇯가각§´"
+class	"🇯"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄％¢°１٣éΩא—👍🏽가각§´"
+class	"가"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄１٣éΩא—👍🏽🇯가각§´"
+class	"각"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［¿¥￥€＄１٣éΩא—👍🏽🇯가각§´"
+class	"§"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	"漢あアぁッーｯ「（［１—👍🏽🇯가각´"
+class	"´"	"漢あアぁッーｯ々ゝヽ・‼、。」），］「（［¿！？．：“”«»¥￥€＄％¢°１٣éΩא　–‐— …​⁠́‍👍🏽🇯가각§´"	""
+opportunity	"我们在Tokyo见面了，然后去了大阪看樱花。Hello世界こんにちは"	0	1,2,3,8,9,10,12,13,14,15,16,17,18,19,20,22,27,28,29,30,31,32,33
+opportunity	"「漢字」は（かんじ）と読む。"	0	2,4,5,7,8,10,11,12
+opportunity	"漢字(kanji)漢字[1]漢字"	0	1,2,9,10,11,14,15
+opportunity	"価格は¥1,000円、税込￥1,100（10%）です。"	0	1,2,3,9,11,12,13,19,24,25
+opportunity	"50%漢 ¥100漢 $100漢 100円漢 １２３漢"	0	3,5,9,11,15,17,20,21,23,24,25,26
+opportunity	"well-known state-of-the-art long-term x86-64 C++ e.g. a/b"	0	5,11,17,20,24,28,33,38,42,45,49,54
+opportunity	"what?yes http://x.y/z?q=1&r=2 (a b) ( a a )"	0	5,9,22,30,33,36,38,40,42
+opportunity	"ペン・パイナップル・アップル・ペン"	0	1,3,4,5,6,7,8,10,11,12,13,15,16
+opportunity	"ちょっと待ってください、ゃゅょ。"	0	1,2,3,4,5,6,7,8,9,10,12,13,14
+opportunity	"一石二鳥……ですね——はい"	0	1,2,3,6,7,8,9,11,12
+opportunity	"第1章 5月12日 東京-大阪 東京—大阪 東京/大阪"	0	1,2,4,5,6,8,10,11,13,14,16,17,18,19,20,22,23,25,26
+opportunity	"한국어 텍스트를 한국어텍스트"	0	1,2,4,5,6,7,9,10,11,12,13,14
+opportunity	"สวัสดีครับผมชื่อสมชาย"	0	6,10,12,16
+opportunity	"Emoji👍🏽👍and🇯🇵flags"	0	5,7,8,11,13
+opportunity	"a b 漢 漢 a　b 漢​漢 a⁠b"	0	4,8,10,12,14,16
+wrap	"漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字"	96	6,12,18,24,30,36
+wrap	"ひらがなカタカナひらがなカタカナひらがなカタカナひらがなカタカナひらがなカタカナ"	96	6,12,18,24,30,36
+wrap	"アイウエオカキクケコサシスセソタチツテト"	96	6,12,18
+wrap	"我们在Tokyo见面了，然后去了大阪看樱花。Hello世界こんにちは"	96	8,14,20,28
+wrap	"「漢字」「漢字」「漢字」「漢字」「漢字」「漢字」"	96	6,12,18
+wrap	"ちょっと待ってください。ちょっと待ってください。"	96	6,12,18
+wrap	"well-known state-of-the-art long-term"	96	11,24,33
+wrap	"Type-Token Ty-To L-T what?Yes x86-64"	96	11,21,30
+wrap	"word word word word word word word word word word word word word word word word word word word word"	96	10,20,30,40,50,60,70,80,90
+wrap	"漢字漢字漢字漢字漢字漢字。漢字漢字"	96	6,11
+wrap	"漢字漢字漢字漢字漢字漢字」漢字漢字"	96	6,11
+wrap	"漢字漢字漢字漢字漢字漢「字漢字漢字"	96	6,11
+wrap	"漢字漢字漢字漢字漢字漢字々漢字漢字"	96	6,11
+wrap	"漢字漢字漢字漢字漢字漢字ッ漢字漢字"	96	6,12
+wrap	"漢字漢字漢字漢字漢字漢字ー漢字漢字"	96	6,12
+wrap	"漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字"	200	12,24,36
+wrap	"ひらがなカタカナひらがなカタカナひらがなカタカナひらがなカタカナひらがなカタカナ"	200	12,24,36
+wrap	"アイウエオカキクケコサシスセソタチツテト"	200	12
+wrap	"我们在Tokyo见面了，然后去了大阪看樱花。Hello世界こんにちは"	200	14,29
+wrap	"ちょっと待ってください。ちょっと待ってください。"	200	12
+wrap	"well-known state-of-the-art long-term"	200	24
+wrap	"Type-Token Ty-To L-T what?Yes x86-64"	200	21
+wrap	"价格是¥1,000（含税10%），共计100件商品。"	200	12
+wrap	"word word word word word word word word word word word word word word word word word word word word"	200	20,40,60,80
+wrap	"漢字漢字漢字漢字漢字漢字。漢字漢字"	200	11
+wrap	"漢字漢字漢字漢字漢字漢「字漢字漢字"	200	11
+wrap	"漢字漢字漢字漢字漢字漢字々漢字漢字"	200	11
+wrap	"漢字漢字漢字漢字漢字漢字ッ漢字漢字"	200	12
+wrap	"漢字漢字漢字漢字漢字漢字ー漢字漢字"	200	12
+wrap	"漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字"	333	20
+wrap	"ひらがなカタカナひらがなカタカナひらがなカタカナひらがなカタカナひらがなカタカナ"	333	20
+wrap	"アイウエオカキクケコサシスセソタチツテト"	333	-
+wrap	"我们在Tokyo见面了，然后去了大阪看樱花。Hello世界こんにちは"	333	22
+wrap	"漢字漢字漢字漢字漢字、。」漢字漢字"	333	-
+wrap	"ちょっと待ってください。ちょっと待ってください。"	333	20
+wrap	"well-known state-of-the-art long-term"	333	-
+wrap	"Type-Token Ty-To L-T what?Yes x86-64"	333	-
+wrap	"价格是¥1,000（含税10%），共计100件商品。"	333	-
+wrap	"word word word word word word word word word word word word word word word word word word word word"	333	40,80
+wrap	"漢字漢字漢字漢字漢字漢字。漢字漢字"	333	-
+wrap	"漢字漢字漢字漢字漢字漢字」漢字漢字"	333	-
+wrap	"漢字漢字漢字漢字漢字漢「字漢字漢字"	333	-
+wrap	"漢字漢字漢字漢字漢字漢字々漢字漢字"	333	-
+wrap	"漢字漢字漢字漢字漢字漢字ッ漢字漢字"	333	-
+wrap	"漢字漢字漢字漢字漢字漢字ー漢字漢字"	333	-
+wrap	"アイウエオカキクケコサシスセソタチツテト"	111.303	7,13,19
+wrap	"アイウエオカキクケコサシスセソタチツテト"	207.303	13
+wrap	"L-TL-TL-TL-TL-TL-TL-TL-TL-T"	79.147	11,20
+wrap	"L-TL-TL-TL-TL-TL-TL-TL-TL-T"	144.959	20
+min-content	"漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字"	16.000	1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39
+min-content	"ひらがなカタカナひらがなカタカナひらがなカタカナひらがなカタカナひらがなカタカナ"	16.000	1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39
+min-content	"アイウエオカキクケコサシスセソタチツテト"	16.000	1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19
+min-content	"我们在Tokyo见面了，然后去了大阪看樱花。Hello世界こんにちは"	44.828	2,3,8,10,12,14,16,18,20,22,27,29,31,33
+min-content	"「漢字」「漢字」「漢字」「漢字」「漢字」「漢字」"	32.000	2,4,6,8,10,12,14,16,18,20,22
+min-content	"ちょっと待ってください。ちょっと待ってください。"	32.000	2,4,6,8,10,12,14,16,18,20,22
+min-content	"well-known state-of-the-art long-term"	50.766	5,11,17,24,28,33
+min-content	"Type-Token Ty-To L-T what?Yes x86-64"	45.156	5,11,17,21,26,30,34
+min-content	"word word word word word word word word word word word word word word word word word word word word"	38.328	5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95
+min-content	"漢字漢字漢字漢字漢字漢字。漢字漢字"	32.000	2,4,6,8,10,11,13,15
+min-content	"漢字漢字漢字漢字漢字漢字」漢字漢字"	32.000	2,4,6,8,10,11,13,15
+min-content	"漢字漢字漢字漢字漢字漢「字漢字漢字"	32.000	2,4,6,8,10,11,13,15
+min-content	"漢字漢字漢字漢字漢字漢字々漢字漢字"	32.000	2,4,6,8,10,11,13,15
+min-content	"漢字漢字漢字漢字漢字漢字ッ漢字漢字"	16.000	1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16
+min-content	"漢字漢字漢字漢字漢字漢字ー漢字漢字"	16.000	1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16
