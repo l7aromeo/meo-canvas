@@ -1,7 +1,7 @@
-//! Line boxes against Chrome's HTML layout, at `line-height: normal` and two
-//! multiples, on a face with no line gap and one with a gap of a tenth of its
-//! em. Every row of `line-height-normal.tsv` is built from its own columns and
-//! compared on the box and the first baseline.
+//! Line boxes against Chrome's HTML layout, at `line-height: normal` and three
+//! multiples, on a face with no line gap, one with a gap of a tenth of its em,
+//! and lines holding both. Every row of `line-height-normal.tsv` is built from
+//! its own columns and compared on the box and the first baseline.
 
 use meo_canvas_core::{
     lines::{Metrics, TextMeasurer, layout},
@@ -28,45 +28,29 @@ const WIDTH: f32 = 400.0;
 /// noise of summing whole pixels.
 const SLACK: f32 = 0.01;
 
-/// The rows this renderer answers differently, by family, line height, size
-/// and line count: `normal` leaves the face's line gap out of the box
-/// (`l7aromeo/meo-canvas#232`), as meo-skia-canvas exposes no line gap to add
-/// (`l7aromeo/meo-skia-canvas#689`). Asserted both ways, so the fix fails this
-/// test until the list is emptied.
-const KNOWN: &[&str] = &[
-    "Poppins normal 12 1",
-    "Poppins normal 12 2",
-    "Poppins normal 13 1",
-    "Poppins normal 13 2",
-    "Poppins normal 15 1",
-    "Poppins normal 15 2",
-    "Poppins normal 16 1",
-    "Poppins normal 16 2",
-    "Poppins normal 17 1",
-    "Poppins normal 17 2",
-    "Poppins normal 20 1",
-    "Poppins normal 20 2",
-    "Poppins normal 25 1",
-    "Poppins normal 25 2",
-    "Poppins normal 40 1",
-    "Poppins normal 40 2",
-];
+/// The rows this renderer answers differently: empty. Asserted both ways, so a
+/// row named here that agrees fails and says to delete the entry.
+const KNOWN: &[&str] = &[];
 
-/// One row: family, line height as written, size, lines, Chrome's box and
-/// first baseline.
+/// One row: family, line height as written, size, lines, the span's family
+/// and size where the line holds one, Chrome's box and first baseline.
 struct Row<'a> {
     family: &'a str,
     line_height: &'a str,
     size: f32,
     lines: usize,
+    span: Option<(&'a str, f32)>,
     chrome_box: f32,
     chrome_baseline: f32,
 }
 
 impl Row<'_> {
     fn name(&self) -> String {
+        let span = self.span.map_or(String::new(), |(family, size)| {
+            format!(" + {family} {size}")
+        });
         format!(
-            "{} {} {} {}",
+            "{} {} {} {}{span}",
             self.family, self.line_height, self.size, self.lines
         )
     }
@@ -83,7 +67,7 @@ fn rows() -> Vec<Row<'static>> {
     for line in TABLE.lines() {
         if let Some(rest) = line.strip_prefix('#') {
             header |= rest.trim()
-                == "family\tline_height\tsize\tlines\tbox\tbaseline";
+                == "family\tline_height\tsize\tlines\tspan_family\tspan_size\tbox\tbaseline";
             continue;
         }
         assert!(header, "a row before the column line: {line}");
@@ -93,11 +77,13 @@ fn rows() -> Vec<Row<'static>> {
             line_height,
             size,
             lines,
+            span_family,
+            span_size,
             chrome_box,
             chrome_baseline,
         ] = cells.as_slice()
         else {
-            unreachable!("{line} does not have six cells")
+            unreachable!("{line} does not have eight cells")
         };
         rows.push(Row {
             family,
@@ -106,13 +92,17 @@ fn rows() -> Vec<Row<'static>> {
             lines: lines
                 .parse()
                 .unwrap_or_else(|_| unreachable!("{lines} is not a count")),
+            span: match *span_family {
+                "-" => None,
+                family => Some((family, number(span_size))),
+            },
             chrome_box: number(chrome_box),
             chrome_baseline: number(chrome_baseline),
         });
     }
     assert_eq!(
         rows.len(),
-        80,
+        90,
         "line-height-normal.tsv holds {}",
         rows.len()
     );
@@ -135,10 +125,21 @@ fn ours(
         },
         ..ResolvedText::initial()
     };
-    let segments = vec![TextSegment {
+    let mut segments = vec![TextSegment {
         text: vec!["Ag"; row.lines].join("\n"),
         style: TextStyle::default(),
     }];
+    if let Some((family, size)) = row.span {
+        assert!(fonts.has(family), "{family} is not registered");
+        segments.push(TextSegment {
+            text: "Ag".to_owned(),
+            style: TextStyle {
+                font_family: Some(family.to_owned()),
+                font_size: Some(size),
+                ..TextStyle::default()
+            },
+        });
+    }
     let block = layout(
         measurer,
         &base,

@@ -19,7 +19,7 @@ const TOLERANCE: i32 = 1;
 /// why: a pinned list, so a row that starts agreeing fails and is moved.
 const KNOWN_APART: &[(&str, &str)] = &[(
     "unread",
-    "`meo-skia-canvas` 0.17.2 refuses `color(display-p3-linear ...)`, which \
+    "`meo-skia-canvas` 0.17.3 refuses `color(display-p3-linear ...)`, which \
      Chrome paints (l7aromeo/meo-skia-canvas#687)",
 )];
 
