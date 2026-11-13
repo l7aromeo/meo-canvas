@@ -280,10 +280,7 @@ jobs:
         if: runner.os == 'Linux'
         run: just net-check
 
-      # An ordinary addon under vitest's threads pool, where the instrumented
-      # one segfaults. It passes, so that crash is the profiling runtime's and
-      # `worker_threads` works on Windows; this keeps it so. See `just
-      # threads-probe`.
+      # An ordinary addon under vitest's threads pool. See `just threads-probe`.
       - name: Does an ordinary addon survive worker threads?
         if: runner.os == 'Windows'
         run: just threads-probe

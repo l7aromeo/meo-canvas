@@ -236,13 +236,26 @@ brand: build-js addon
     node tools/brand/banner.mjs
 
 
-# Whether an ordinary addon survives vitest's threads pool, where the
-# instrumented one segfaults on Windows. It passes there, so that crash is the
-# profiling runtime's; a crash here would be a shipping defect, since
-# `worker_threads` is how a server keeps a render off its loop. Gates on Windows.
+# Whether an ordinary addon survives vitest's threads pool. A crash here is a
+# shipping defect, since `worker_threads` is how a server keeps a render off its
+# loop. Judged by vitest's own summary as well as its status: a crashed run
+# writes none, and its status can reach a Windows step as 0. Gates on Windows.
 [doc("Check an ordinary addon survives a worker-thread pool.")]
 threads-probe: ensure-deps addon
-    ./node_modules/.bin/vitest run --pool=threads
+    #!/usr/bin/env bash
+    set -uo pipefail
+    report=target/threads-probe.json
+    rm -f "$report"
+    ./node_modules/.bin/vitest run --pool=threads --reporter=default --reporter=json --outputFile.json="$report"
+    status=$?
+    node -e '
+      const [path, status] = process.argv.slice(1)
+      const fs = require("node:fs")
+      const r = fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, "utf8")) : undefined
+      if (status === "0" && r?.success === true && r.numTotalTests > 0 && r.numFailedTests === 0) process.exit(0)
+      console.error(`threads-probe: vitest exited ${status}, ${r === undefined ? "with no summary, so the run did not complete" : `a summary of ${r.numTotalTests} tests, ${r.numFailedTests} failing`}`)
+      process.exit(1)
+    ' "$report" "$status"
 
 
 # Fails below 90% of regions and lines (no tool fails on branches) on the pinned
