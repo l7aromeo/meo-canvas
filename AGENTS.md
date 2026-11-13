@@ -296,11 +296,9 @@ failure count.
 
 **The machine is shared**, so a repository-scoped ownership check clears a
 saturated box. **All timeouts and no assertion failures is contention until
-proven otherwise**: run `uptime` first, and above about 8 on the fifteen-minute
-average, time nothing and trust no timeout-shaped red. Load only slows tests, so
-a green under load is strong, a red under load says nothing, and a timing is
-worthless. Run targeted checks while another build runs and the full gate when
-the machine is quiet.
+proven otherwise**: trust no timeout-shaped red. Load only slows tests, so a
+green under load is strong and a red under load says nothing. Run targeted
+checks while another build runs and the full gate when the machine is quiet.
 
 **Say what you checked and what you did not.** Name negative results and what
 you judged rather than verified; a green with no denominator is not a result.
