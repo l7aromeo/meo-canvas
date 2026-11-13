@@ -445,16 +445,20 @@ describe('crates whose licence text is committed', () => {
     const downloaded = text.replace('2019 LongYinan & Armin Sander', '2024 A Downloaded External')
     put(join(root, 'skia-bindings', 'skia', 'third_party', 'externals', 'x', 'LICENSE'), downloaded)
     const manifest = join(root, 'Cargo.toml')
-    execFileSync('cargo', ['generate-lockfile', '--offline', '--manifest-path', manifest], { stdio: 'ignore' })
+    execFileSync('cargo', ['generate-lockfile', '--offline', '--manifest-path', manifest], { stdio: ['ignore', 'ignore', 'pipe'] })
     const textsOf = (about: AboutReport) => about.licenses.filter(l => l.used_by.some(use => use.crate.name === 'skia-bindings')).map(l => l.text)
 
-    // The control: without the clarification cargo-about reads the tree.
-    const plain = JSON.parse(
-      execFileSync('cargo', ['about', 'generate', '--locked', '--offline', '-c', resolve(HERE, '../../../about.toml'), '-m', manifest, '--format', 'json'], {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }),
-    ) as AboutReport
+    // The control: without the clarification cargo-about reads the tree. To a
+    // file, as the tool writes it, since a PowerShell ancestor refuses stdout.
+    const report = join(root, 'about.json')
+    execFileSync(
+      'cargo',
+      ['about', 'generate', '--locked', '--offline', '-c', resolve(HERE, '../../../about.toml'), '-m', manifest, '--format', 'json', '-o', report],
+      {
+        stdio: ['ignore', 'ignore', 'pipe'],
+      },
+    )
+    const plain = JSON.parse(readFileSync(report, 'utf8')) as AboutReport
     expect(textsOf(plain)).toContain(downloaded)
 
     expect(textsOf(cargoAbout(manifest, []))).toEqual([text])

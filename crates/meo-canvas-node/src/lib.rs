@@ -3,11 +3,11 @@
 //! decodes the `f64` arena ([`arena`] carries the specification), calls
 //! `meo-canvas-core` and converts back; no rendering logic lives here.
 
-// No source in this workspace writes `unsafe`, and this makes adding one a
-// deliberate decision rather than a line that passes review. Integration tests
-// are separate crates and not covered; their one `unsafe` is the
-// `GlobalAlloc` that measures `codec::decode`'s reservation.
-#![forbid(unsafe_code)]
+// `unsafe` is denied, so adding one is a deliberate decision rather than a line
+// that passes review. The one allowed is `pin`'s two Win32 calls, which no safe
+// API offers. Integration tests are separate crates and not covered; their one
+// `unsafe` is the `GlobalAlloc` that measures `codec::decode`'s reservation.
+#![deny(unsafe_code)]
 // `unreachable_pub` is a workspace lint, and `clippy::redundant_pub_crate` is
 // its opposite: one asks for `pub(crate)` on an item a private module exports,
 // the other calls that redundant. The workspace chose `unreachable_pub`, so the
@@ -18,6 +18,12 @@
 )]
 
 pub mod arena;
+#[cfg(windows)]
+#[allow(
+    unsafe_code,
+    reason = "two Win32 calls that pin the module; see pin.rs"
+)]
+mod pin;
 
 use std::{cell::RefCell, rc::Rc};
 
@@ -579,10 +585,15 @@ fn paint(mut cx: FunctionContext<'_>) -> JsResult<'_, JsObject> {
     Ok(surface)
 }
 
-/// The module's single registration point. A name that cannot be exported is
-/// a Neon error, which Node reports as a failure to load the addon.
+/// The module's single registration point. On Windows it first keeps the
+/// module loaded for the life of the process (see `pin`). A failure there, like
+/// a name that cannot be exported, is a Neon error, which Node reports as a
+/// failure to load the addon.
 #[neon::main]
 fn main(mut cx: ModuleContext<'_>) -> NeonResult<()> {
+    // Before anything that could start a thread pool; see `pin`.
+    #[cfg(windows)]
+    pin::keep_loaded().or_else(|message| cx.throw_error(message))?;
     cx.export_function("paint", paint)?;
     cx.export_function("render", render)?;
     cx.export_function("backend", backend)?;

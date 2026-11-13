@@ -136,9 +136,9 @@
 //! here -- that API already exists, in `meo-skia-canvas`, and reproducing it
 //! would give the workspace two answers to the same question.
 
-// No source in this workspace writes `unsafe`, and this makes adding one a
-// deliberate decision rather than a line that passes review. Integration tests
-// are separate crates and not covered; their one `unsafe` is the
+// This crate writes no `unsafe`, and this makes adding one a deliberate
+// decision rather than a line that passes review. The workspace's others are
+// the addon's Windows module pin and, in the integration tests, the
 // `GlobalAlloc` that measures `codec::decode`'s reservation.
 #![forbid(unsafe_code)]
 pub mod chart;
