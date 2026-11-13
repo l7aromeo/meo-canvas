@@ -249,8 +249,13 @@ jobs:
 
       # `--locked` so a run installs the versions the tools' own lockfiles
       # name, rather than whatever published since the last cache miss.
+      # cargo-about's binary needs its `cli` feature, and an install without it
+      # succeeds with no binary, so the last line asks for its version.
       - name: Install the cargo tools just ci calls
-        run: cargo install --locked cargo-llvm-cov cargo-machete
+        run: |
+          cargo install --locked cargo-llvm-cov cargo-machete
+          cargo install --locked cargo-about --features cli
+          cargo about --version
 
       # `native`, not `ci`: the portable half runs in the job above, once. This
       # skips the lock `ci` takes as well, which guards one checkout against two

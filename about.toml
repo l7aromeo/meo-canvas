@@ -1,0 +1,24 @@
+# The licences a crate compiled into the npm addon may carry, which
+# `tools/third-party-notices.mjs` holds every target to: any other fails CI
+# until added here. Of a choice such as `MIT OR Apache-2.0`, the notices
+# reproduce the first accepted in this order.
+accepted = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "0BSD",
+  "Unlicense",
+  "Unicode-3.0",
+]
+
+# The addon links neither: build scripts and their dependencies run on the
+# build machine, and dev-dependencies build only the tests.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+
+# Clarifications are added per run by the tool's `CLARIFIED`, since each names
+# a committed licence file by absolute path.

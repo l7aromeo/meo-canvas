@@ -87,6 +87,14 @@
 # The package manifest's `files` list names LICENSE, so the tarball npm
 # publishes carries one rather than claiming MIT with nothing to show.
 !/packages/*/LICENSE
+# Both packages ship THIRD_PARTY_NOTICES: the main one points at the platform
+# packages', which `tools/third-party-notices.mjs` writes at pack time. The
+# texts it reads from no package are committed beside it, and `about.toml` is
+# the licence allowlist it holds the crates to.
+!/packages/*/THIRD_PARTY_NOTICES
+!/packages/*/tools/notices/
+!/packages/*/tools/notices/**
+!/about.toml
 !/packages/**/*.ts
 !/packages/**/*.js
 !/packages/**/*.mjs

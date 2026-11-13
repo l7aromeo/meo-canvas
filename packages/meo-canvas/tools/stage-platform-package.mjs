@@ -1,4 +1,4 @@
-// Stages one platform package: the compiled addon and a manifest naming its host.
+// Stages one platform package: the addon, its notices and a manifest naming its host.
 // One package per target, so an install downloads only the 51 MB binary it can
 // run; `os`, `cpu` and `libc` let a package manager skip the rest, and
 // `optionalDependencies` makes skipping succeed. Run by `just pack` and the release.
@@ -127,17 +127,26 @@ export function manifest(suffix, version) {
     // `require('@meo-canvas/darwin-arm64')` resolve to it rather than to a
     // directory with no entry point.
     main: 'meo-canvas.node',
-    files: ['meo-canvas.node'],
+    // The notices travel with the binary they describe: the third-party code
+    // is compiled into it, and its licences ask for their text beside it.
+    files: ['meo-canvas.node', NOTICES],
   }
 }
 
+/**
+ * The file a platform package carries its third-party notices in, which
+ * `tools/third-party-notices.mjs` writes and `tools/verify-package.mjs` looks for.
+ */
+export const NOTICES = 'THIRD_PARTY_NOTICES'
+
 /** Writes one staged package, and reports where it went. */
-export function stage(suffix, binary, outDir) {
+export function stage(suffix, binary, notices, outDir) {
   const { version } = JSON.parse(readFileSync(PACKAGE, 'utf8'))
   const staged = resolve(outDir, suffix)
   mkdirSync(staged, { recursive: true })
   writeFileSync(resolve(staged, 'package.json'), `${JSON.stringify(manifest(suffix, version), null, 2)}\n`)
   copyFileSync(resolve(binary), resolve(staged, 'meo-canvas.node'))
+  copyFileSync(resolve(notices), resolve(staged, NOTICES))
   return { name: manifest(suffix, version).name, version, staged }
 }
 
@@ -145,7 +154,7 @@ export function stage(suffix, binary, outDir) {
 // `hostSuffix` and `manifest` are imported by `src/addon.test.ts`, and an
 // unguarded body would end that test run with a usage message.
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [suffix, binary, outDir] = process.argv.slice(2)
+  const [suffix, binary, notices, outDir] = process.argv.slice(2)
   // The host's own suffix, so `just pack` asks rather than deciding.
   if (suffix === '--host') {
     process.stdout.write(`${hostSuffix()}\n`)
@@ -161,10 +170,10 @@ if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(
     )
     process.exit(0)
   }
-  if (suffix === undefined || binary === undefined || outDir === undefined) {
-    process.stderr.write('usage: stage-platform-package.mjs <suffix> <path to .node> <output directory>\n')
+  if (suffix === undefined || binary === undefined || notices === undefined || outDir === undefined) {
+    process.stderr.write('usage: stage-platform-package.mjs <suffix> <path to .node> <path to notices> <output directory>\n')
     process.exit(2)
   }
-  const written = stage(suffix, binary, outDir)
+  const written = stage(suffix, binary, notices, outDir)
   process.stderr.write(`staged ${written.name}@${written.version} in ${written.staged}\n`)
 }

@@ -18,6 +18,16 @@ export CFLAGS="${CFLAGS:-} -fPIC"
 PREFIX=/usr
 LIBDIR="${LIBDIR:-lib64}"
 mkdir -p "$PREFIX" /opt/src
+
+# The licence texts of the three, one directory per source tarball, kept after
+# `/opt/src` goes: the archives are linked into the addon, and
+# `addon-container` copies this out for its THIRD_PARTY_NOTICES.
+LICENCES=/usr/share/licenses/meo-canvas-fontlibs
+keep_licences() {
+  local name="$1"; shift
+  mkdir -p "$LICENCES/$name"
+  cp "$@" "$LICENCES/$name/"
+}
 cd /opt/src
 
 # Fetched to a file and checksummed before unpacking, with a second source:
@@ -54,6 +64,7 @@ cd "$EXPAT"
   --enable-static --disable-shared --with-pic \
   --without-docbook --without-examples --without-tests
 make -j"$(nproc)" && make install
+keep_licences "$EXPAT" COPYING
 cd /opt/src
 
 # freetype, with every optional dependency off. `--without-zlib` matters: it
@@ -69,6 +80,12 @@ cd "$FREETYPE"
   --enable-static --disable-shared --with-pic \
   --with-zlib=no --with-bzip2=no --with-png=no --with-brotli=no --with-harfbuzz=no
 make -j"$(nproc)" && make install
+keep_licences "$FREETYPE" LICENSE.TXT docs/FTL.TXT
+# The FTL's credit names the year of the FreeType in use: the last year of the
+# copyright line in its own header.
+sed -n 's/.*Copyright (C) [0-9]\{4\}-\([0-9]\{4\}\) by.*/\1/p' include/freetype/freetype.h \
+  | head -n 1 > "$LICENCES/$FREETYPE/credit-year"
+test -s "$LICENCES/$FREETYPE/credit-year"
 cd /opt/src
 
 # fontconfig, static, no tools and no tests; `--wrap-mode=nofallback` refuses to
@@ -89,6 +106,7 @@ PKG_CONFIG_PATH="$PREFIX/$LIBDIR/pkgconfig" meson setup build \
   -Dtests=disabled -Dtools=disabled -Ddoc=disabled -Dcache-build=disabled
 meson compile -C build
 meson install -C build
+keep_licences "$FONTCONFIG" COPYING
 
 # No linker name for expat: the base image's `-devel` symlink would win over the
 # archive and put `libexpat.so.1`, absent from every target image, in the

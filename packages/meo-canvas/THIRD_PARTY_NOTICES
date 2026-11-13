@@ -1,0 +1,11 @@
+THIRD-PARTY SOFTWARE NOTICES
+
+This package is the TypeScript surface of meo-canvas, under the MIT licence in
+LICENSE. It contains no third-party code.
+
+The native addon it loads comes from the platform package for your system,
+@meo-canvas/<platform>, for example @meo-canvas/linux-x64-gnu. That addon
+statically links third-party libraries: Skia and the libraries it builds with,
+libaom, and the Rust crates the renderer depends on. Each platform package
+ships a THIRD_PARTY_NOTICES file beside the binary, listing every component
+compiled into it with its licence text.

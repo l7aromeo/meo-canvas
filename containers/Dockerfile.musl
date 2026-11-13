@@ -1,7 +1,7 @@
 # The image the musl Linux addons are built in. musl versions no symbols, so
 # these targets carry no `floors` in `TARGETS` and loading the binary is the
-# whole evidence. rust-skia has no prebuilt Skia for musl, so this image
-# compiles all of it, and the toolchain blocks below have no glibc counterpart.
+# whole evidence. Skia is downloaded, as on glibc: `patched-skia` refuses to
+# compile it, and meo-skia-canvas publishes the musl archives it links.
 
 # `musllinux_1_2_*` is PyPA's Alpine 3.22 with gcc, g++ and cmake, an `ARG` so
 # one file serves both architectures. Alpine uses `lib`, not `lib64`, which
@@ -19,18 +19,17 @@ RUN apk add --no-cache \
       gn clang clang-dev llvm llvm-dev \
       git
 
-# Skia's `gn` comes from Alpine: skia-bindings downloads, or falls back to, a
-# glibc x86_64 `gn` that cannot run on musl. The build then panics in
-# `config.rs` with an empty message and a missing glibc loader, naming neither
-# gn nor musl. `meo-skia-canvas` does the same.
+# For a Skia compile, which `patched-skia` refuses: skia-bindings' own `gn` is a
+# glibc x86_64 binary that cannot run on musl and panics in `config.rs` naming
+# neither, so `gn` comes from Alpine. `meo-skia-canvas` does the same.
 ENV GN_EXE=gn \
     SKIA_GN_COMMAND=/usr/bin/gn \
     SKIA_NINJA_COMMAND=/usr/bin/ninja
 
-# bindgen needs `libclang.so`, which Alpine ships in `clang-dev`, not `clang`;
-# without it Skia compiles and then panics "Unable to find libclang". `git` is
-# above because Skia's `git-sync-deps` needs it. Neither arises on glibc, which
-# takes rust-skia's prebuilt Skia and bindings.
+# bindgen needs `libclang.so`, which Alpine ships in `clang-dev`, not `clang`,
+# and a Skia compile without it panics "Unable to find libclang"; `git` is for
+# Skia's `git-sync-deps`. A download needs neither: the archive carries the
+# bindings, here as on glibc.
 ENV LIBCLANG_PATH=/usr/lib/llvm20/lib
 
 # clang finds GCC by the target triple, and `libaom-sys` passes the Rust one,

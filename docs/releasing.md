@@ -73,11 +73,11 @@ five of the six images the package claims; built in
 artefacts in the containers.
 
 The musl image is its own piece of work rather than a variant: Rust's musl
-targets default to `crt-static`, which cannot produce a `cdylib`; rust-skia
-ships no prebuilt Skia for musl, so the image compiles all of it; and an
+targets default to `crt-static`, which cannot produce a `cdylib`; and an
 explicit `--target` must **not** be passed, because cargo then builds build
-scripts without `RUSTFLAGS` and `skia-bindings`' script cannot `dlopen`
-libclang.
+scripts and proc-macros without `RUSTFLAGS`, so without the image's
+`-crt-static`. Skia itself is downloaded from meo-skia-canvas's musl archives,
+as on glibc, since `patched-skia` refuses to compile it.
 
 **Two instruments, and they are not substitutes.** `just abi-floor` reads the
 built `.node`'s undefined symbols, fails if it demands more than `TARGETS`
@@ -104,6 +104,46 @@ a failure names all three. So a checkout tests what it just built, and
 dropped, and a platform package's `main` can name a binary that is not there;
 both pack cleanly and fail at the first import. `just verify-pack` installs the
 tarballs somewhere that is not this repository and renders through them.
+
+## Each binary carries its notices
+
+The addon statically links Skia and the libraries it builds with, libaom and
+the renderer's Rust crates, so each platform package ships a `THIRD_PARTY_NOTICES`
+beside `meo-canvas.node`, and the main package one pointing at them.
+`tools/third-party-notices.mjs` writes it at pack time from what the build
+linked rather than from a list: `addon-release` and `addon-container` record
+cargo's build messages, which name every static library each build script
+linked, and the tool reads the members of each Skia archive to place them by GN
+target. Where meo-skia-canvas publishes notices for the Skia archive itself --
+`THIRD-PARTY-NOTICES.md` inside it, or a release asset named for it with
+`.tar.gz` replaced by `.notices.md` -- those describe the archive instead, and
+the members are not read. The Rust crates come from cargo-about over the lockfile filtered to the
+target and the build's features, held to `about.toml`'s allowlist, and a crate
+it lists that the build did not compile fails the run. skia-bindings ships no
+licence file, and a Skia compile downloads Skia's source into its registry copy,
+so cargo-about is told to take rust-skia's LICENSE, committed beside the tool,
+rather than read that directory; the notices are the same on any machine.
+
+Anything it cannot place fails rather than shipping a notice with a gap: an
+archive member, a static library or a library linked by name that its tables do
+not map, a licence off the allowlist, a licence file that moved. Three sources
+are not crates. The skia-bindings crate holds no Skia source, so the texts of
+Skia and the externals it builds are committed under `tools/notices/skia/`, read
+at the Skia tag skia-bindings' `Cargo.toml` names and at each external's `DEPS`
+revision; a skia-bindings naming another tag fails until they are read again.
+The Linux Skia archives are built over meo-skia-canvas's own FreeType and zlib
+submodules, recorded in the tool for the release `SKIA_BINARIES_URL` names; a
+different release fails until they are read again. Both of these are read only
+when meo-skia-canvas's notices are absent. And the Linux release images link the static fontconfig, FreeType and expat
+`containers/install-fontlibs.sh` builds, whose licence files the image keeps and
+`addon-container` copies out beside the build. cargo-about is a prerequisite of
+`just pack`; `just setup` installs it.
+
+`just notices-check`, in `native`, holds every target's crate graph with every
+feature to the allowlist, and writes this host's notices in full. The Linux
+images' own libraries are exercised only by `pack-container`, in a release.
+`verify-pack` checks each installed platform package's file names its own
+target.
 
 ## What triggers a publish
 
