@@ -447,11 +447,12 @@ function archivePath(library) {
 
 /**
  * Whether a library is one of skia-bindings' archives. Its Windows build links
- * them by name, since `static=` breaks MSVC linking there (rust-skia#354), so
- * one linked by name is an archive when it lies in the script's search paths.
+ * them by name, since `static=` breaks MSVC linking there (rust-skia#354); its
+ * other builds name pkg-config libraries whose archives may sit in its paths.
  */
-function isSkiaArchive(library) {
-  return library.pkg === 'skia-bindings' && (library.kind === 'static' || (library.kind === '' && findArchive(library) !== undefined))
+function isSkiaArchive(library, os) {
+  if (library.pkg !== 'skia-bindings') return false
+  return library.kind === 'static' || (os === 'win32' && library.kind === '' && findArchive(library) !== undefined)
 }
 
 /**
@@ -469,7 +470,7 @@ export function nativeComponents(libraries, os, { imageLicences, archiveNotices 
   }
   for (const library of libraries) {
     if (library.kind === 'framework' || library.kind === 'dylib') continue
-    if (isSkiaArchive(library)) {
+    if (isSkiaArchive(library, os)) {
       const archive = archivePath(library)
       if (archiveNotices) add(SKIA_ARCHIVE, library.name)
       else for (const member of readArchive(archive)) for (const component of memberComponents(member)) add(component, library.name)
@@ -524,8 +525,8 @@ export async function archiveNotices(archiveDir, binariesUrl, fetchAsset = fetch
 }
 
 /** The directory skia-bindings' archives were linked from, one for all of them. */
-export function skiaArchiveDir(libraries) {
-  const dirs = new Set(libraries.filter(isSkiaArchive).map(l => dirname(archivePath(l))))
+export function skiaArchiveDir(libraries, os) {
+  const dirs = new Set(libraries.filter(library => isSkiaArchive(library, os)).map(l => dirname(archivePath(l))))
   if (dirs.size !== 1) refuse(`expected skia-bindings' archives in one directory, found ${dirs.size}`)
   return [...dirs][0]
 }
@@ -794,7 +795,7 @@ export async function generate(suffix, messagesFile, imageLicences, fetchAsset =
   const binariesUrl = process.env.SKIA_BINARIES_URL
   const skiaRelease = skiaReleaseOf(binariesUrl)
   if (skiaRelease === undefined) refuse('SKIA_BINARIES_URL is not set; run this through `just`, which exports it')
-  const archive = await archiveNotices(skiaArchiveDir(libraries), binariesUrl, fetchAsset)
+  const archive = await archiveNotices(skiaArchiveDir(libraries, target.os[0]), binariesUrl, fetchAsset)
   const native = nativeComponents(libraries, target.os[0], { imageLicences, archiveNotices: archive !== undefined })
   if (!native.has('skia') && !native.has(SKIA_ARCHIVE)) refuse(`the build in ${messagesFile} linked no Skia archive, so it is not the addon's build`)
   const about = rustLicences(target.rust, features)

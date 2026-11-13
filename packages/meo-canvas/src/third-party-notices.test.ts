@@ -183,11 +183,21 @@ describe('nativeComponents', () => {
     const windows = [lib('skia-bindings', 'skia', '', [skiaDir]), lib('skia-bindings', 'skshaper', '', [skiaDir]), lib('skia-bindings', 'usp10', '', [skiaDir])]
     const found = nativeComponents(windows, 'win32', { readArchive })
     expect(Object.fromEntries([...found].map(([id, libs]) => [id, [...libs]]))).toEqual({ skia: ['skia'], zlib: ['skia'], harfbuzz: ['skshaper'] })
-    expect(skiaArchiveDir(windows)).toBe(skiaDir)
+    expect(skiaArchiveDir(windows, 'win32')).toBe(skiaDir)
     // A name with no archive beside it is still the platform's or refused, and
     // only skia-bindings' own archives are read this way.
     expect(() => nativeComponents([lib('skia-bindings', 'svg', '', [skiaDir])], 'win32', { readArchive })).toThrow(/links svg by name/)
     expect(() => nativeComponents([lib('libaom-sys', 'skia', '', [skiaDir])], 'win32', { readArchive })).toThrow(/libaom-sys links skia by name/)
+  })
+
+  // Elsewhere it links pkg-config's libraries by name, and pkg-config adds the
+  // system's library directory, where a `libfontconfig.a` may be installed.
+  it("reads a library linked by name as the platform's off Windows, whatever its paths hold", () => {
+    const system = join(scratch, 'usr', 'lib')
+    put(join(system, 'libfontconfig.a'), '')
+    const linux = [lib('skia-bindings', 'skia', 'static', [skiaDir, system]), lib('skia-bindings', 'fontconfig', '', [skiaDir, system])]
+    expect(skiaArchiveDir(linux, 'linux')).toBe(skiaDir)
+    expect([...nativeComponents(linux, 'linux', { readArchive }).keys()]).toEqual(['skia', 'zlib'])
   })
 
   it('refuses an archive that is not where its build script said', () => {

@@ -80,7 +80,7 @@ export declare function nativeComponents(
 export declare const ARCHIVE_NOTICES: string
 
 /** The directory skia-bindings' archives were linked from, one for all of them. */
-export declare function skiaArchiveDir(libraries: readonly Linked[]): string
+export declare function skiaArchiveDir(libraries: readonly Linked[], os: string): string
 
 /** meo-skia-canvas's notices for one Skia archive, and where they were read. */
 export interface ArchiveNotices {
