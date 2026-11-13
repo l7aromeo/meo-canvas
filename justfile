@@ -136,7 +136,10 @@ ci-steps: portable native
 setup:
     rustup component add rustfmt clippy llvm-tools-preview
     rustup toolchain install {{ fmt_toolchain }} --component rustfmt --component llvm-tools-preview
-    cargo install --locked cargo-llvm-cov cargo-machete cargo-about
+    cargo install --locked cargo-llvm-cov cargo-machete
+    # The binary needs `cli`; without it the install succeeds and installs none.
+    cargo install --locked cargo-about --features cli
+    cargo about --version
     npx playwright install chromium
     @test -L CLAUDE.md || ln -s AGENTS.md CLAUDE.md
     @echo "ready -- run \`just ci\`"

@@ -162,9 +162,12 @@ jobs:
 
       # Each platform package's THIRD_PARTY_NOTICES is written with cargo-about,
       # on the runner for Linux too: it reads the crate graph and the registry
-      # the container build mounted, never the container. `--locked`, as CI.
+      # the container build mounted, never the container. `--locked` and
+      # `--features cli` as in CI, which says why.
       - name: Install cargo-about
-        run: cargo install --locked cargo-about
+        run: |
+          cargo install --locked cargo-about --features cli
+          cargo about --version
 
       # `just pack` builds the release addon, builds `dist`, stages the platform
       # package for this host and packs both tarballs. The same recipe a person
