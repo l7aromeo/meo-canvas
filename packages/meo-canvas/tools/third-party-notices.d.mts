@@ -79,6 +79,9 @@ export declare function nativeComponents(
 /** The file meo-skia-canvas puts in a skia-binaries archive with its notices. */
 export declare const ARCHIVE_NOTICES: string
 
+/** The directory skia-bindings' archives were linked from, one for all of them. */
+export declare function skiaArchiveDir(libraries: readonly Linked[]): string
+
 /** meo-skia-canvas's notices for one Skia archive, and where they were read. */
 export interface ArchiveNotices {
   readonly text: string

@@ -36,6 +36,7 @@ import {
   memberComponents,
   nativeComponents,
   renderNotices,
+  skiaArchiveDir,
   type AboutReport,
   type Linked,
 } from '../tools/third-party-notices.mjs'
@@ -174,6 +175,19 @@ describe('nativeComponents', () => {
       readArchive,
     })
     expect(Object.fromEntries([...found].map(([id, libs]) => [id, [...libs]]))).toEqual({ skia: ['skia'], zlib: ['skia'], harfbuzz: ['skshaper'] })
+  })
+
+  // skia-bindings' build script links its own archives on Windows by name, with no
+  // `static=`, which it says breaks MSVC linking (rust-skia#354).
+  it("reads skia-bindings' archives linked by name, as its Windows build does", () => {
+    const windows = [lib('skia-bindings', 'skia', '', [skiaDir]), lib('skia-bindings', 'skshaper', '', [skiaDir]), lib('skia-bindings', 'usp10', '', [skiaDir])]
+    const found = nativeComponents(windows, 'win32', { readArchive })
+    expect(Object.fromEntries([...found].map(([id, libs]) => [id, [...libs]]))).toEqual({ skia: ['skia'], zlib: ['skia'], harfbuzz: ['skshaper'] })
+    expect(skiaArchiveDir(windows)).toBe(skiaDir)
+    // A name with no archive beside it is still the platform's or refused, and
+    // only skia-bindings' own archives are read this way.
+    expect(() => nativeComponents([lib('skia-bindings', 'svg', '', [skiaDir])], 'win32', { readArchive })).toThrow(/links svg by name/)
+    expect(() => nativeComponents([lib('libaom-sys', 'skia', '', [skiaDir])], 'win32', { readArchive })).toThrow(/libaom-sys links skia by name/)
   })
 
   it('refuses an archive that is not where its build script said', () => {

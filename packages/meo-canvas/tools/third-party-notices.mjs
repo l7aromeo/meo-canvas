@@ -427,14 +427,31 @@ export function linkedLibraries(messages, root = ROOT) {
   return { libraries, features: node.features }
 }
 
-/** The archive a static library was linked from: `lib<name>.a`, or `<name>.lib` on Windows. */
-function archivePath(library) {
+/** The archive a library was linked from, `lib<name>.a` or `<name>.lib`, if one is in its search paths. */
+function findArchive(library) {
   for (const dir of library.dirs) {
     for (const file of [`lib${library.name}.a`, `${library.name}.lib`]) {
       if (existsSync(join(dir, file))) return join(dir, file)
     }
   }
-  return refuse(`${library.pkg} links ${library.name} statically, but no lib${library.name}.a or ${library.name}.lib is in ${library.dirs.join(', ')}`)
+  return undefined
+}
+
+/** The archive a static library was linked from, which has to exist. */
+function archivePath(library) {
+  return (
+    findArchive(library) ??
+    refuse(`${library.pkg} links ${library.name} statically, but no lib${library.name}.a or ${library.name}.lib is in ${library.dirs.join(', ')}`)
+  )
+}
+
+/**
+ * Whether a library is one of skia-bindings' archives. Its Windows build links
+ * them by name, since `static=` breaks MSVC linking there (rust-skia#354), so
+ * one linked by name is an archive when it lies in the script's search paths.
+ */
+function isSkiaArchive(library) {
+  return library.pkg === 'skia-bindings' && (library.kind === 'static' || (library.kind === '' && findArchive(library) !== undefined))
 }
 
 /**
@@ -452,6 +469,12 @@ export function nativeComponents(libraries, os, { imageLicences, archiveNotices 
   }
   for (const library of libraries) {
     if (library.kind === 'framework' || library.kind === 'dylib') continue
+    if (isSkiaArchive(library)) {
+      const archive = archivePath(library)
+      if (archiveNotices) add(SKIA_ARCHIVE, library.name)
+      else for (const member of readArchive(archive)) for (const component of memberComponents(member)) add(component, library.name)
+      continue
+    }
     if (library.kind === '') {
       if (imageLicences !== undefined && IMAGE_LIBS[library.name] !== undefined) {
         add(`${IMAGE}${IMAGE_LIBS[library.name]}`, library.name)
@@ -461,12 +484,6 @@ export function nativeComponents(libraries, os, { imageLicences, archiveNotices 
       continue
     }
     if (library.kind !== 'static') refuse(`${library.pkg} links ${library.name} as \`${library.kind}\`, a kind this does not know`)
-    if (library.pkg === 'skia-bindings') {
-      const archive = archivePath(library)
-      if (archiveNotices) add(SKIA_ARCHIVE, library.name)
-      else for (const member of readArchive(archive)) for (const component of memberComponents(member)) add(component, library.name)
-      continue
-    }
     const held = NATIVE_LIBS[library.pkg]?.[library.name]
     if (held === undefined) refuse(`${library.pkg} links ${library.name} statically, and no licence is mapped for it in NATIVE_LIBS`)
     if (held !== OWN) for (const component of held) add(component, library.name)
@@ -507,8 +524,8 @@ export async function archiveNotices(archiveDir, binariesUrl, fetchAsset = fetch
 }
 
 /** The directory skia-bindings' archives were linked from, one for all of them. */
-function skiaArchiveDir(libraries) {
-  const dirs = new Set(libraries.filter(l => l.pkg === 'skia-bindings' && l.kind === 'static').map(l => dirname(archivePath(l))))
+export function skiaArchiveDir(libraries) {
+  const dirs = new Set(libraries.filter(isSkiaArchive).map(l => dirname(archivePath(l))))
   if (dirs.size !== 1) refuse(`expected skia-bindings' archives in one directory, found ${dirs.size}`)
   return [...dirs][0]
 }
