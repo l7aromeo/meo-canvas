@@ -928,8 +928,8 @@ impl Builder {
     /// either way. A word directly after one of the same segment joins its run,
     /// at the two widths plus the kerning where they meet, so the run is drawn
     /// as the text it is; a narrowed mark is a run of its own. `narrow_end`
-    /// narrows the last word if it is a closing mark that may lose its half at
-    /// a line end.
+    /// narrows the closing mark the last word ends in, if a line end may
+    /// narrow it.
     fn extend(
         &mut self,
         prepared: &Prepared<'_>,
@@ -966,48 +966,65 @@ impl Builder {
                     }
                 }
                 Piece::Word { text, .. } => {
-                    let (width, trimmed) = match item.trim {
+                    // Each part: its text, width, whether narrowed, and the
+                    // kerning where it meets what it joins.
+                    let parts = match item.trim {
                         // An opening mark is narrowed by the mark before it,
                         // which a line start leaves on the line above.
                         Trim::Beside { full, after: true } if !started => {
-                            (full, false)
+                            [Some((text, full, false, item.kern)), None]
                         }
-                        Trim::Beside { .. } => (item.width, true),
-                        Trim::LineEnd { narrow }
+                        Trim::Beside { .. } => {
+                            [Some((text, item.width, true, item.kern)), None]
+                        }
+                        // The closing mark a line end narrows is drawn as a
+                        // run of its own after the rest of its piece.
+                        Trim::LineEnd { head, narrow, mark }
                             if narrow_end && last_word == Some(index) =>
                         {
-                            (narrow, true)
+                            let at = text.len() - mark;
+                            [
+                                Some((&text[..at], head, false, item.kern)),
+                                Some((&text[at..], narrow, true, 0.0)),
+                            ]
                         }
                         Trim::Never | Trim::LineEnd { .. } => {
-                            (item.width, false)
+                            [Some((text, item.width, false, item.kern)), None]
                         }
                     };
-                    let joins = !trimmed && last == Some(item.segment);
-                    let advance = if spaced {
-                        prepared.gap + width
-                    } else if joins {
-                        width + item.kern
-                    } else {
-                        width
-                    };
-                    added += advance;
-                    if commit {
-                        if joins && let Some(run) = self.runs.last_mut() {
-                            run.text.push_str(text);
-                            run.width += advance;
+                    for (part, width, trimmed, kern) in
+                        parts.into_iter().flatten()
+                    {
+                        if part.is_empty() {
+                            continue;
+                        }
+                        let joins = !trimmed && last == Some(item.segment);
+                        let advance = if spaced {
+                            prepared.gap + width
+                        } else if joins {
+                            width + kern
                         } else {
-                            let style = if trimmed {
-                                &prepared.narrowed[item.segment]
+                            width
+                        };
+                        added += advance;
+                        if commit {
+                            if joins && let Some(run) = self.runs.last_mut() {
+                                run.text.push_str(part);
+                                run.width += advance;
                             } else {
-                                style
-                            };
-                            self.push(text, style, width, item.segment);
+                                let style = if trimmed {
+                                    &prepared.narrowed[item.segment]
+                                } else {
+                                    style
+                                };
+                                self.push(part, style, width, item.segment);
+                            }
+                            self.used += advance;
                         }
-                        self.used += advance;
+                        started = true;
+                        spaced = false;
+                        last = (!trimmed).then_some(item.segment);
                     }
-                    started = true;
-                    spaced = false;
-                    last = (!trimmed).then_some(item.segment);
                 }
             }
         }
@@ -1096,7 +1113,8 @@ struct Item<'text> {
     /// for anything else.
     width: f32,
     /// The kerning where a word meets the word before it, when that word is
-    /// of the same segment with nothing between them; zero otherwise.
+    /// of the same segment with nothing between them and the two can join;
+    /// zero otherwise.
     kern: f32,
     /// What `text-spacing-trim` may do to it.
     trim: Trim,
@@ -1118,11 +1136,16 @@ enum Trim {
         /// Whether the mark before it narrows it, rather than the one after.
         after: bool,
     },
-    /// A closing bracket or quote set whole, which loses its empty half,
-    /// down to `narrow`, at the end of a line that fits only that way.
+    /// A piece ending in a closing bracket or quote, set whole, whose mark
+    /// loses its empty half at the end of a line that fits only that way and
+    /// is then drawn as a run of its own after the rest.
     LineEnd {
-        /// Its width narrowed.
+        /// The width of the piece without its mark.
+        head: f32,
+        /// The mark's width narrowed.
         narrow: f32,
+        /// The mark's length in bytes, at the end of the piece.
+        mark: usize,
     },
 }
 
@@ -1177,8 +1200,11 @@ impl<'text> Prepared<'text> {
                 from,
                 &beside,
             );
+            // A mark a neighbour narrows is a piece of its own; one only a
+            // line end may narrow stays in its piece, as the text it is.
             let cuts: Vec<usize> = marks
                 .iter()
+                .filter(|mark| mark.beside)
                 .flat_map(|mark| [mark.at, mark.at + mark.len])
                 .collect();
             let mut at = from;
@@ -1189,48 +1215,9 @@ impl<'text> Prepared<'text> {
                     Piece::Space(text) | Piece::Word { text, .. } => text.len(),
                 };
                 let (width, kern, trim) = match piece {
-                    Piece::Word { text, .. } => {
-                        let mark = marks.iter().find(|mark| {
-                            mark.at == start && mark.len == text.len()
-                        });
-                        let (width, trim) = match mark {
-                            Some(mark) if mark.beside => (
-                                mark.narrow,
-                                Trim::Beside {
-                                    full: mark.full,
-                                    after: mark.after,
-                                },
-                            ),
-                            Some(mark) => (
-                                mark.full,
-                                Trim::LineEnd {
-                                    narrow: mark.narrow,
-                                },
-                            ),
-                            None => (
-                                measurer.run_width(
-                                    style,
-                                    style.letter_spacing,
-                                    text,
-                                ),
-                                Trim::Never,
-                            ),
-                        };
-                        let left = match items.last() {
-                            Some(&Item {
-                                segment: before,
-                                piece: Piece::Word { text: previous, .. },
-                                ..
-                            }) if before == segment => {
-                                previous.chars().next_back()
-                            }
-                            _ => None,
-                        };
-                        let kern = left.map_or(0.0, |left| {
-                            measurer.kerning(style, left, text)
-                        });
-                        (width, kern, trim)
-                    }
+                    Piece::Word { text, .. } => word(
+                        measurer, style, text, start, segment, &marks, &items,
+                    ),
                     Piece::Newline | Piece::Space(_) => (0.0, 0.0, Trim::Never),
                 };
                 items.push(Item {
@@ -1249,6 +1236,95 @@ impl<'text> Prepared<'text> {
             gap: space + metrics.word_spacing,
             items,
         }
+    }
+}
+
+/// What placing one word of `segment` at `start` costs: its width, the
+/// kerning where it joins the word before it, and what `text-spacing-trim`
+/// may do to it, given the `marks` its face narrows and the `items` so far.
+fn word(
+    measurer: &mut TextMeasurer,
+    style: &RunStyle,
+    text: &str,
+    start: usize,
+    segment: usize,
+    marks: &[Narrowable],
+    items: &[Item<'_>],
+) -> (f32, f32, Trim) {
+    let end = start + text.len();
+    let beside = marks
+        .iter()
+        .find(|mark| mark.beside && mark.at == start && mark.len == text.len());
+    let line_end = marks
+        .iter()
+        .find(|mark| !mark.beside && mark.at + mark.len == end);
+    let mut measure =
+        |part: &str| measurer.run_width(style, style.letter_spacing, part);
+    let (width, trim) = match (beside, line_end) {
+        (Some(mark), _) => (
+            mark.narrow,
+            Trim::Beside {
+                full: mark.full,
+                after: mark.after,
+            },
+        ),
+        (None, Some(mark)) => (
+            measure(text),
+            Trim::LineEnd {
+                head: measure(&text[..text.len() - mark.len]),
+                narrow: mark.narrow,
+                mark: mark.len,
+            },
+        ),
+        (None, None) => (measure(text), Trim::Never),
+    };
+    let left = match items {
+        [
+            ..,
+            before,
+            last @ Item {
+                piece:
+                    Piece::Word {
+                        text: previous,
+                        opens,
+                    },
+                ..
+            },
+        ] if last.segment == segment => {
+            joinable(last.trim, *opens, before.piece)
+                .then(|| previous.chars().next_back())
+                .flatten()
+        }
+        [
+            last @ Item {
+                piece: Piece::Word { text: previous, .. },
+                ..
+            },
+        ] if last.segment == segment => {
+            joinable(last.trim, true, Piece::Newline)
+                .then(|| previous.chars().next_back())
+                .flatten()
+        }
+        _ => None,
+    };
+    // A narrowed mark joins nothing, and one set whole
+    // begins its line, with nothing before it to join.
+    let kern = match (trim, left) {
+        (Trim::Beside { .. }, _) | (_, None) => 0.0,
+        (_, Some(left)) => measurer.kerning(style, left, text),
+    };
+    (width, kern, trim)
+}
+
+/// Whether the word after a piece of `trim` can join it: anything but a mark
+/// a neighbour narrows, which is whole, and so joinable, only where it is an
+/// opening mark beginning a line, as one that `opens` or follows a newline.
+fn joinable(trim: Trim, opens: bool, before: Piece<'_>) -> bool {
+    match trim {
+        Trim::Beside { after, .. } => {
+            after && (opens || before == Piece::Newline)
+        }
+        Trim::Never | Trim::LineEnd { .. } => true,
     }
 }
 
@@ -2632,6 +2708,42 @@ mod tests {
         // budget before a character is kept.
         let space = measurer.space_width(&RunStyle::base(&base), 0.0);
         assert!(line_width(&block.lines[0], space, 0.0) <= width);
+    }
+
+    #[test]
+    fn no_kerning_is_measured_where_a_narrowed_mark_cannot_join() {
+        // In `漢「「漢` the second `「` is narrowed and never begins a line,
+        // so neither it nor the `漢` after it joins a run: the pairs `「「`
+        // and `「漢` would be measured for kerning nothing uses.
+        let fonts = test_fonts();
+        fonts
+            .register_path("Trim", "tests/assets/fonts/NotoSansCJKsc-Trim.otf")
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let mut measurer = TextMeasurer::new();
+        let base = ResolvedText {
+            family: "Trim".to_owned(),
+            size: 16.0,
+            ..ResolvedText::initial()
+        };
+        let lines = wrap(
+            &mut measurer,
+            &base,
+            &plain("漢「「漢"),
+            1000.0,
+            Metrics::of(&base),
+        );
+        assert_eq!(
+            lines[0].runs.iter().filter(|run| run.style.trimmed).count(),
+            1
+        );
+        let asked: Vec<&str> = measurer
+            .answers
+            .keys()
+            .map(|(_, _, text)| text.as_str())
+            .collect();
+        for pair in ["「「", "「漢"] {
+            assert!(!asked.contains(&pair), "{pair} was measured: {asked:?}");
+        }
     }
 
     #[test]
