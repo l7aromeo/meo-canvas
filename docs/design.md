@@ -465,6 +465,20 @@ four spellings of `none` against Chrome, on both properties.
 The rule is to match Chrome, and these are the places the maintainer has decided
 otherwise, each with the reason and its source.
 
+**Chrome means Chrome on macOS, on every platform.** Every Chrome table and pin
+is measured on macOS through the harness in `packages/meo-canvas/tools/conformance/`,
+and the renderer gives one layout on every platform, so Linux and Windows are
+held to the macOS numbers and have no Chrome tables of their own. Chrome on
+Linux at device scale 1 rounds a web font's glyph advances to whole pixels, and
+this renderer does not copy it: a 13.5px CJK advance is 13 there, and Oswald at
+16px sets "Hamburgefonstiv" 100px wide against an exact 98.784. At scale 2 its
+laid-out spans use half pixels while `measureText` stays whole, and a system
+face of 2048 units per em stays fractional. Those figures are Chrome 158's, in
+Playwright 1.65.0's Ubuntu 24.04 arm64 image. Chrome on Windows has not been
+measured, and nothing here says how it lays text out. The source is the
+maintainer's decision to give one result everywhere rather than follow each
+platform's Chrome.
+
 **Blur is the exact Gaussian.** `filter: blur()`, `drop-shadow()`,
 `backdrop-filter` and blurred box shadows follow `meo-skia-canvas` 0.17, which
 blurs what a draw paints exactly, the Gaussian of Filter Effects Level 1 sampled
