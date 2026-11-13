@@ -29,7 +29,10 @@ wire_enum! {
         Center = 3,
         /// At the right edge regardless of direction.
         Right = 4,
-        /// Stretched so both edges are flush, except on the last line.
+        /// Stretched so both edges are flush, except on the last line and a
+        /// line a newline ends, as Chrome stretches it: the slack is shared
+        /// between the gaps between words and those beside a CJK character,
+        /// so Chinese or Japanese written without spaces is spread too.
         Justify = 5,
     }
 }

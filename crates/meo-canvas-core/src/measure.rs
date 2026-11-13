@@ -386,6 +386,12 @@ impl<'resolved> SceneMeasurer<'resolved> {
         ))
     }
 
+    /// The wrap's measurer, which the painter places a justified line's
+    /// pieces with, so they are measured through the same cache.
+    pub(crate) const fn text_mut(&mut self) -> &mut TextMeasurer {
+        &mut self.text
+    }
+
     /// The width of one inter-word space in a node's own face, which the
     /// painter needs for the gap a space stands for. Answered through the
     /// wrap's cache.

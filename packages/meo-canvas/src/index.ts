@@ -125,7 +125,9 @@ export type BackgroundRepeat = 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat' 
  *
  * `start` and `end` follow the reading direction; `left` and `right` do not, and are
  * the pair to reach for when a label must sit on one particular side whatever the
- * text direction is.
+ * text direction is. `justify` stretches every line but the last and those a newline
+ * ends, as Chrome does, sharing the slack between the gaps between words and those
+ * beside a Chinese or Japanese character, so text written without spaces is spread too.
  */
 export type TextAlign = 'start' | 'end' | 'left' | 'center' | 'right' | 'justify'
 

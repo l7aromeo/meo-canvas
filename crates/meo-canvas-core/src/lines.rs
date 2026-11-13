@@ -37,8 +37,9 @@
 //!
 //! A space between two words is kept as a run carrying a width of zero, and the
 //! gap is added by the arithmetic instead: `space_width + word_spacing`. So
-//! justification and word spacing have one place to change the gap, rather than
-//! reaching inside a measured run.
+//! word spacing has one place to change the gap, rather than reaching inside a
+//! measured run, and so does justification, which also spreads a run between
+//! its CJK characters, as `lines::justify` finds them.
 //!
 //! # Where a line breaks
 //!
@@ -118,6 +119,7 @@ use meo_skia_canvas::{
 use crate::{FINITE_CEILING, layout::LAYOUT_GRID, resolve::ResolvedText};
 
 mod breaks;
+pub(crate) mod justify;
 mod trim;
 
 /// The string every face measurement is taken with.

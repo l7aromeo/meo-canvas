@@ -1,0 +1,337 @@
+# Chrome, through `just conformance`: where `text-align: justify` puts a line's slack, at 16px with a 20px
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
+# line in a 120px block unless `css` says otherwise, from each character's client rect.
+# Written by packages/meo-canvas/tools/conformance/justify.mjs.
+#
+# A `line` row: `face` is `Trim`, the cut of Noto Sans CJK SC 2.004 the text-spacing-trim table uses, or `Wide`, the cut
+# of Noto Sans SC the line-break table uses. `characters` has one entry per code point: `line:x:width`
+# against the block, or `-` for a newline or a character with no box. Texts are JSON strings.
+#
+# A `class` row is a run of swept code points with one answer: `from`, `to`, how many were swept between
+# them, and `shares` where each took a share of `aXaXa` justified on one 400px line, `-` where none did.
+# Marks, format characters, spaces and unassigned code points are not swept. Blocks of one script are
+# sampled: U+3400 every 97th, U+4E00 every 61st, U+AC00 every 127th, U+20000 every 1021st, U+30000 every 997th.
+#
+# kind	face	text	css	characters
+# kind	from	to	swept	shares
+line	Wide	"漢漢漢漢"	text-align-last:justify	0:0:34.672 0:34.656:34.688 0:69.328:34.672 0:104:16
+line	Wide	"a漢a漢a"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.5 0:110.984:9.016
+line	Wide	"かかかか"	text-align-last:justify	0:0:34.672 0:34.656:34.688 0:69.328:34.672 0:104:16
+line	Wide	"aかaかa"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.5 0:110.984:9.016
+line	Wide	"カカカカ"	text-align-last:justify	0:0:34.672 0:34.656:34.688 0:69.328:34.672 0:104:16
+line	Wide	"aカaカa"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.5 0:110.984:9.016
+line	Wide	"ｶｶｶｶ"	text-align-last:justify	0:0:37.344 0:37.328:37.344 0:74.656:37.344 0:112:8
+line	Wide	"aｶaｶa"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.5 0:110.984:9.016
+line	Wide	"ｱｱｱｱ"	text-align-last:justify	0:0:37.344 0:37.328:37.344 0:74.656:37.344 0:112:8
+line	Wide	"aｱaｱa"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.5 0:110.984:9.016
+line	Wide	"한한한한"	text-align-last:justify	0:0:13.844 0:13.828:13.859 0:27.672:13.859 0:41.516:13.859
+line	Wide	"a한a한a"	text-align-last:justify	0:0:9.016 0:9:13.859 0:22.844:9.016 0:31.844:13.859 0:45.688:9.031
+line	Wide	"ＡＡＡＡ"	text-align-last:justify	0:0:34.563 0:34.547:34.578 0:69.109:34.578 0:103.672:16.328
+line	Wide	"aＡaＡa"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.484 0:110.969:9.031
+line	Wide	"ＺＺＺＺ"	text-align-last:justify	0:0:34.563 0:34.547:34.578 0:69.109:34.578 0:103.672:16.328
+line	Wide	"aＺaＺa"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.484 0:110.969:9.031
+line	Wide	"１１１１"	text-align-last:justify	0:0:34.672 0:34.656:34.688 0:69.328:34.672 0:104:16
+line	Wide	"a１a１a"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.5 0:110.984:9.016
+line	Wide	"ㄅㄅㄅㄅ"	text-align-last:justify	0:0:34.563 0:34.547:34.578 0:69.109:34.578 0:103.672:16.328
+line	Wide	"aㄅaㄅa"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.484 0:110.969:9.031
+line	Wide	"、、、、"	text-align-last:justify	0:0:34.672 0:34.656:34.688 0:69.328:34.672 0:104:16
+line	Wide	"a、a、a"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.5 0:110.984:9.016
+line	Wide	"。。。。"	text-align-last:justify	0:0:34.672 0:34.656:34.688 0:69.328:34.672 0:104:16
+line	Wide	"a。a。a"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.5 0:110.984:9.016
+line	Wide	"，，，，"	text-align-last:justify	0:0:34.672 0:34.656:34.688 0:69.328:34.672 0:104:16
+line	Wide	"a，a，a"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.5 0:110.984:9.016
+line	Wide	"「「「「"	text-align-last:justify	0:0:42.672 0:42.656:34.688 0:77.328:34.672 0:112:8
+line	Wide	"a「a「a"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.5 0:110.984:9.016
+line	Wide	"」」」」"	text-align-last:justify	0:0:34.672 0:34.656:34.688 0:69.328:34.672 0:104:16
+line	Wide	"a」a」a"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.5 0:110.984:9.016
+line	Wide	"（（（（"	text-align-last:justify	0:0:42.672 0:42.656:34.688 0:77.328:34.672 0:112:8
+line	Wide	"a（a（a"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.5 0:110.984:9.016
+line	Wide	"））））"	text-align-last:justify	0:0:34.672 0:34.656:34.688 0:69.328:34.672 0:104:16
+line	Wide	"a）a）a"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.5 0:110.984:9.016
+line	Wide	"・・・・"	text-align-last:justify	0:0:34.672 0:34.656:34.688 0:69.328:34.672 0:104:16
+line	Wide	"a・a・a"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.5 0:110.984:9.016
+line	Wide	"ーーーー"	text-align-last:justify	0:0:34.672 0:34.656:34.688 0:69.328:34.672 0:104:16
+line	Wide	"aーaーa"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.5 0:110.984:9.016
+line	Wide	"～～～～"	text-align-last:justify	0:0:34.563 0:34.547:34.578 0:69.109:34.578 0:103.672:16.328
+line	Wide	"a～a～a"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.484 0:110.969:9.031
+line	Wide	"！！！！"	text-align-last:justify	0:0:34.672 0:34.656:34.688 0:69.328:34.672 0:104:16
+line	Wide	"a！a！a"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.5 0:110.984:9.016
+line	Wide	"　　　　"	text-align-last:justify	0:0:16 0:16:16 0:32:16 0:48:16
+line	Wide	"a　a　a"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.5 0:110.984:9.016
+line	Wide	"①①①①"	text-align-last:justify	0:0:34.672 0:34.656:34.688 0:69.328:34.672 0:104:16
+line	Wide	"a①a①a"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.5 0:110.984:9.016
+line	Wide	"㈱㈱㈱㈱"	text-align-last:justify	0:0:34.563 0:34.547:34.578 0:69.109:34.578 0:103.672:16.328
+line	Wide	"a㈱a㈱a"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.484 0:110.969:9.031
+line	Wide	"…………"	text-align-last:justify	0:0:16 0:16:16 0:32:16 0:48:16
+line	Wide	"a…a…a"	text-align-last:justify	0:0:9.016 0:9:16.953 0:25.938:9.031 0:34.953:16.953 0:51.891:9.031
+line	Wide	"————"	text-align-last:justify	0:0:13.125 0:13.109:13.125 0:26.219:13.141 0:39.344:14.313
+line	Wide	"a—a—a"	text-align-last:justify	0:0:9.016 0:9:14.313 0:23.297:9.031 0:32.313:14.313 0:46.609:9.031
+line	Wide	"‥‥‥‥"	text-align-last:justify	0:0:10.672 0:10.672:10.672 0:21.344:10.672 0:32.016:10.672
+line	Wide	"a‥a‥a"	text-align-last:justify	0:0:9.016 0:9:10.688 0:19.672:9.031 0:28.688:10.688 0:39.359:9.016
+line	Wide	"éééé"	text-align-last:justify	0:0:8.875 0:8.859:8.875 0:17.719:8.875 0:26.578:8.891
+line	Wide	"aéaéa"	text-align-last:justify	0:0:9.016 0:9:8.578 0:17.563:9.016 0:26.563:8.578 0:35.125:9.031
+line	Wide	"กกกก"	text-align-last:justify	0:0:9.609 0:9.594:9.609 0:19.188:9.625 0:28.797:9.609
+line	Wide	"aกaกa"	text-align-last:justify	0:0:9.016 0:9:9.609 0:18.594:9.031 0:27.609:9.609 0:37.203:9.031
+line	Wide	"aaaaa"	text-align-last:justify	0:0:9.016 0:9:9.031 0:18.016:9.016 0:27.016:9.031 0:36.031:9.016
+line	Trim	"漢字漢字漢字漢字漢字"	-	0:0:17.344 0:17.328:17.344 0:34.656:17.344 0:51.984:17.359 0:69.328:17.344 0:86.656:17.344 0:104:16 1:0:16 1:16:16 1:32:16
+line	Trim	"漢字漢字漢字漢字漢字"	width:100px	0:0:16.813 0:16.797:16.813 0:33.594:16.813 0:50.391:16.813 0:67.188:16.813 0:84:16 1:0:16 1:16:16 1:32:16 1:48:16
+line	Wide	"かなかなかなかなかな"	-	0:0:17.344 0:17.328:17.344 0:34.656:17.344 0:51.984:17.359 0:69.328:17.344 0:86.656:17.344 0:104:16 1:0:16 1:16:16 1:32:16
+line	Trim	"漢字abc漢字漢字漢字漢字"	-	0:0:18.594 0:18.578:18.609 0:37.172:9.016 0:46.172:9.906 0:56.063:8.172 0:64.219:21.188 0:85.391:18.609 0:103.984:16.016 1:0:16 1:16:16 1:32:16 1:48:16 1:64:16
+line	Trim	"abc漢字漢字漢字漢字漢字"	-	0:0:9.016 0:9:9.906 0:18.891:8.172 0:27.047:21.188 0:48.219:18.609 0:66.813:18.594 0:85.391:18.609 0:103.984:16.016 1:0:16 1:16:16 1:32:16 1:48:16 1:64:16
+line	Trim	"漢字 漢字 漢字漢字漢字漢字"	-	0:0:16.109 0:16.094:16.125 0:32.203:3.703 0:35.891:16.109 0:51.984:16.125 0:68.094:3.703 0:71.781:16.125 0:87.891:16.109 0:103.984:16.016 1:0:16 1:16:16 1:32:16 1:48:16 1:64:16
+line	Trim	"ab cd 漢字漢字漢字漢字漢字"	-	0:0:9.016 0:9:9.906 0:18.891:6.047 0:24.922:7.781 0:32.688:9.938 0:42.609:6.047 0:48.641:18.469 0:67.094:18.469 0:85.547:18.453 0:103.984:16.016 1:0:16 1:16:16 1:32:16 1:48:16 1:64:16 1:80:16
+line	Trim	"Flower of Paradise in bloom"	-	0:0:8.844 0:8.828:4.563 0:13.375:9.641 0:23:12.781 0:35.766:8.875 0:44.625:6.234 0:50.844:54.266 0:105.094:9.719 0:114.797:5.203 0:119.984:0 1:0:9.375 1:9.359:9.016 1:18.359:5.797 1:24.141:9.016 1:33.141:9.938 1:43.063:4.422 1:47.469:7.5 1:54.953:8.875 1:63.813:42.031 1:105.828:4.406 1:110.219:9.781 1:119.984:0 2:0:9.891 2:9.875:4.563 2:14.422:9.719 2:24.125:9.703 2:33.813:14.828
+line	Trim	"漢字、漢字。漢字漢字漢字"	-	0:0:17.344 0:17.328:17.344 0:34.656:17.344 0:51.984:17.359 0:69.328:17.344 0:86.656:17.344 0:104:16 1:0:16 1:16:16 1:32:16 1:48:16 1:64:16
+line	Trim	"漢「漢字」漢字漢字漢字漢字"	-	0:0:17.344 0:17.328:17.344 0:34.656:17.344 0:51.984:17.359 0:69.328:17.344 0:86.656:17.344 0:104:16 1:0:16 1:16:16 1:32:16 1:48:16 1:64:16 1:80:16
+line	Trim	"漢字　漢字漢字漢字漢字"	-	0:0:17.344 0:17.328:17.344 0:34.656:17.344 0:51.984:17.359 0:69.328:17.344 0:86.656:17.344 0:104:16 1:0:16 1:16:16 1:32:16 1:48:16
+line	Trim	"漢字、。漢字漢字漢字漢字"	width:128px	0:0:17.156 0:17.141:17.156 0:34.281:9.156 0:43.422:17.156 0:60.563:17.156 0:77.703:17.156 0:94.844:17.156 0:112:16 1:0:16 1:16:16 1:32:16 1:48:16
+line	Trim	"漢字」「漢字漢字漢字漢字"	width:128px	0:0:17.156 0:17.141:17.156 0:34.281:17.156 0:51.422:9.156 0:60.563:17.156 0:77.703:17.156 0:94.844:17.156 0:112:16 1:0:16 1:16:16 1:32:16 1:48:16
+line	Trim	"漢字漢字漢字漢字漢字"	text-align-last:auto	0:0:17.344 0:17.328:17.344 0:34.656:17.344 0:51.984:17.359 0:69.328:17.344 0:86.656:17.344 0:104:16 1:0:16 1:16:16 1:32:16
+line	Trim	"漢字漢字漢字漢\n漢字"	white-space:pre-line	0:0:16 0:16:16 0:32:16 0:48:16 0:64:16 0:80:16 0:96:16 - 1:0:16 1:16:16
+line	Trim	"漢字 漢字\n漢字漢字漢字漢字漢字"	white-space:pre-line	0:0:16 0:16:16 0:32:3.594 0:35.578:16.016 0:51.578:16.016 - 1:0:17.344 1:17.328:17.344 1:34.656:17.344 1:51.984:17.359 1:69.328:17.344 1:86.656:17.344 1:104:16 2:0:16 2:16:16 2:32:16
+line	Trim	"漢字漢字漢字漢字漢字"	letter-spacing:2px	0:0:20.406 0:20.391:20.422 0:40.797:20.406 0:61.188:20.422 0:81.594:20.406 0:102:18 1:0:18 1:18:18 1:36:18 1:54:18
+line	Wide	"Tokyo東京Tokyo東京Tokyo東京"	-	0:0:8.375 0:8.359:9.719 0:18.063:8.844 0:26.891:8.234 0:35.109:9.719 0:44.813:59.188 0:103.984:16.016 1:0:8.375 1:8.359:9.719 1:18.063:8.844 1:26.891:8.234 1:35.109:9.719 1:44.813:59.188 1:103.984:16.016 2:0:8.375 2:8.359:9.719 2:18.063:8.844 2:26.891:8.234 2:35.109:9.719 2:44.813:16.016 2:60.813:16.016
+line	Trim	"abcdefgh漢字漢字漢字"	-	0:0:9.016 0:9:9.906 0:18.891:7.797 0:26.672:9.922 0:36.578:8.891 0:45.453:4.953 0:50.391:9.047 0:59.422:9.719 0:69.125:17.922 0:87.031:16.969 0:103.984:16.016 1:0:16 1:16:16 1:32:16
+class	0021	02C6	643	-
+class	02C7	02C7	1	shares
+class	02C8	02C9	2	-
+class	02CA	02CB	2	shares
+class	02CC	02D8	13	-
+class	02D9	02D9	1	shares
+class	02DA	201F	5559	-
+class	2020	2021	2	shares
+class	2022	2029	8	-
+class	2030	2030	1	shares
+class	2031	203A	10	-
+class	203B	203C	2	shares
+class	203D	2041	5	-
+class	2042	2042	1	shares
+class	2043	2046	4	-
+class	2047	2049	3	shares
+class	204A	2050	7	-
+class	2051	2051	1	shares
+class	2052	20C1	89	-
+class	2100	2100	1	shares
+class	2101	2102	2	-
+class	2103	2103	1	shares
+class	2104	2104	1	-
+class	2105	2105	1	shares
+class	2106	2108	3	-
+class	2109	210A	2	shares
+class	210B	2112	8	-
+class	2113	2113	1	shares
+class	2114	2115	2	-
+class	2116	2116	1	shares
+class	2117	2120	10	-
+class	2121	2121	1	shares
+class	2122	212A	9	-
+class	212B	212B	1	shares
+class	212C	213A	15	-
+class	213B	213B	1	shares
+class	213C	214F	20	-
+class	2150	2152	3	shares
+class	2153	2155	3	-
+class	2156	215A	5	shares
+class	215B	215F	5	-
+class	2160	216B	12	shares
+class	216C	216F	4	-
+class	2170	217B	12	shares
+class	217C	217E	3	-
+class	217F	217F	1	shares
+class	2180	2188	9	-
+class	2189	2189	1	shares
+class	218A	2193	6	-
+class	2194	2195	2	shares
+class	2196	2306	369	-
+class	2307	2307	1	shares
+class	2308	2311	10	-
+class	2312	2312	1	shares
+class	2313	2319	7	-
+class	231A	231B	2	shares
+class	231C	23BD	162	-
+class	23BE	23CC	15	shares
+class	23CD	23CD	1	-
+class	23CE	23CE	1	shares
+class	23CF	23E8	26	-
+class	23E9	23EC	4	shares
+class	23ED	23EF	3	-
+class	23F0	23F0	1	shares
+class	23F1	23F2	2	-
+class	23F3	23F3	1	shares
+class	23F4	2422	47	-
+class	2423	2423	1	shares
+class	2424	244A	17	-
+class	2460	2492	51	shares
+class	2493	249B	9	-
+class	249C	24FF	100	shares
+class	2500	259F	160	-
+class	25A0	25A2	3	shares
+class	25A3	25A9	7	-
+class	25AA	25AB	2	shares
+class	25AC	25B0	5	-
+class	25B1	25B3	3	shares
+class	25B4	25B5	2	-
+class	25B6	25B7	2	shares
+class	25B8	25BB	4	-
+class	25BC	25BD	2	shares
+class	25BE	25BF	2	-
+class	25C0	25C1	2	shares
+class	25C2	25C5	4	-
+class	25C6	25C7	2	shares
+class	25C8	25C8	1	-
+class	25C9	25C9	1	shares
+class	25CA	25CA	1	-
+class	25CB	25CC	2	shares
+class	25CD	25CD	1	-
+class	25CE	25D3	6	shares
+class	25D4	25E1	14	-
+class	25E2	25E6	5	shares
+class	25E7	25EE	8	-
+class	25EF	25EF	1	shares
+class	25F0	25FC	13	-
+class	25FD	25FE	2	shares
+class	25FF	25FF	1	-
+class	2600	2603	4	shares
+class	2604	2604	1	-
+class	2605	2606	2	shares
+class	2607	260D	7	-
+class	260E	260E	1	shares
+class	260F	2613	5	-
+class	2614	2617	4	shares
+class	2618	261C	5	-
+class	261D	261D	1	shares
+class	261E	261F	2	-
+class	2620	2620	1	shares
+class	2621	263F	31	-
+class	2640	2640	1	shares
+class	2641	2641	1	-
+class	2642	2642	1	shares
+class	2643	2647	5	-
+class	2648	2653	12	shares
+class	2654	265F	12	-
+class	2660	266F	16	shares
+class	2670	2671	2	-
+class	2672	267D	12	shares
+class	267E	267E	1	-
+class	267F	267F	1	shares
+class	2680	2692	19	-
+class	2693	2693	1	shares
+class	2694	2694	1	-
+class	2695	2696	2	shares
+class	2697	269F	9	-
+class	26A0	26A1	2	shares
+class	26A2	26A6	5	-
+class	26A7	26A7	1	shares
+class	26A8	26A9	2	-
+class	26AA	26AB	2	shares
+class	26AC	26BC	17	-
+class	26BD	26BE	2	shares
+class	26BF	26C3	5	-
+class	26C4	26C5	2	shares
+class	26C6	26CD	8	-
+class	26CE	26CE	1	shares
+class	26CF	26D2	4	-
+class	26D3	26D4	2	shares
+class	26D5	26E9	21	-
+class	26EA	26EA	1	shares
+class	26EB	26F1	7	-
+class	26F2	26F3	2	shares
+class	26F4	26F4	1	-
+class	26F5	26F5	1	shares
+class	26F6	26F8	3	-
+class	26F9	26FA	2	shares
+class	26FB	26FC	2	-
+class	26FD	26FD	1	shares
+class	26FE	2704	7	-
+class	2705	2705	1	shares
+class	2706	2707	2	-
+class	2708	2708	1	shares
+class	2709	2709	1	-
+class	270A	270D	4	shares
+class	270E	2712	5	-
+class	2713	2713	1	shares
+class	2714	2719	6	-
+class	271A	271A	1	shares
+class	271B	2727	13	-
+class	2728	2728	1	shares
+class	2729	273E	22	-
+class	273F	2740	2	shares
+class	2741	2743	3	-
+class	2744	2744	1	shares
+class	2745	274B	7	-
+class	274C	274C	1	shares
+class	274D	274D	1	-
+class	274E	274E	1	shares
+class	274F	2752	4	-
+class	2753	2757	5	shares
+class	2758	2762	11	-
+class	2763	2764	2	shares
+class	2765	2775	17	-
+class	2776	277F	10	shares
+class	2780	2794	21	-
+class	2795	2797	3	shares
+class	2798	27A0	9	-
+class	27A1	27A1	1	shares
+class	27A2	27AF	14	-
+class	27B0	27B0	1	shares
+class	27B1	27BE	14	-
+class	27BF	27BF	1	shares
+class	27C0	2B19	858	-
+class	2B1A	2B1C	3	shares
+class	2B1D	2B4F	51	-
+class	2B50	2B50	1	shares
+class	2B51	2B54	4	-
+class	2B55	2B55	1	shares
+class	2B56	2E5D	687	-
+class	2E80	3029	386	shares
+class	3030	3030	1	-
+class	3031	312F	245	shares
+class	3131	318E	94	-
+class	3190	31EF	87	shares
+class	31F0	31FF	16	-
+class	3200	9FF8	924	shares
+class	A000	D729	2823	-
+class	F900	FAD9	472	shares
+class	FB00	FDFF	713	-
+class	FE10	FE12	3	shares
+class	FE13	FE18	6	-
+class	FE19	FE6B	59	shares
+class	FE70	FEFC	140	-
+class	FF01	FF0C	12	shares
+class	FF0D	FF0D	1	-
+class	FF0E	FF1A	13	shares
+class	FF1B	FF1C	2	-
+class	FF1D	FF1D	1	shares
+class	FF1E	FF1E	1	-
+class	FF1F	FF9D	127	shares
+class	FF9E	FFA0	3	-
+class	FFA1	FFEE	65	shares
+class	FFFC	1F003	6	-
+class	1F004	1F004	1	shares
+class	1F005	1F0CE	183	-
+class	1F0CF	1F0CF	1	shares
+class	1F0D1	1F0F5	37	-
+class	1F100	1F100	1	shares
+class	1F101	1F10F	15	-
+class	1F110	1F129	26	shares
+class	1F12A	1F12F	6	-
+class	1F130	1F149	26	shares
+class	1F14A	1F14F	6	-
+class	1F150	1F169	26	shares
+class	1F16A	1F16F	6	-
+class	1F170	1F189	26	shares
+class	1F18A	1F18D	4	-
+class	1F18E	1F18E	1	shares
+class	1F18F	1F190	2	-
+class	1F191	1F19A	10	shares
+class	1F19B	1F1AD	19	-
+class	1F1E6	1F3FA	341	shares
+class	1F3FB	1F3FF	5	-
+class	1F400	1F6FC	759	shares
+class	1F700	1F7D9	218	-
+class	1F7E0	1F7F0	13	shares
+class	1F800	1F8D8	171	-
+class	1F900	1F9FF	256	shares
+class	1FA00	1FA6D	102	-
+class	1FA70	2EB4F	180	shares
+class	30000	30F94	5	-

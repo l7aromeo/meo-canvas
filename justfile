@@ -831,7 +831,7 @@ example: build-js addon
 
 # The conformance tools in measuring order, written out: `browser.mjs` and
 # `png.mjs` share the directory and measure nothing.
-conformance_tools := "ellipsis colormix colorstrings currentcolor gradients gradientalpha flex borders dotted blend boxshadow shadowextent objectfit objectfit-overflow grid mincontent replacedinsets replacedratio overflowposition abspositioned aspectratio textaligndirection boxsizing paintorder flexratiocross flexbasiscollapse ratiostretchmain transformorder directioninherit flexcolumntext wrapwidth texttruth justifyitems justifybaseline failedimage viewbox backgroundtile filterstacking lineheightnormal linebreak httpcache spacingtrim"
+conformance_tools := "ellipsis colormix colorstrings currentcolor gradients gradientalpha flex borders dotted blend boxshadow shadowextent objectfit objectfit-overflow grid mincontent replacedinsets replacedratio overflowposition abspositioned aspectratio textaligndirection boxsizing paintorder flexratiocross flexbasiscollapse ratiostretchmain transformorder directioninherit flexcolumntext wrapwidth texttruth justifyitems justifybaseline failedimage viewbox backgroundtile filterstacking lineheightnormal linebreak httpcache spacingtrim justify"
 
 # Not in `ci`: a re-measurement is a diff someone reads, not a suite going red
 # on whichever machine updated Chrome first. Named, one tool rewrites one table.
