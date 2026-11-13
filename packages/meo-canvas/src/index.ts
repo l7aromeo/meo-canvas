@@ -225,6 +225,8 @@ export interface ImageWarning {
    * `'host-not-found'` is a host whose name does not resolve, and a retry will
    * not change it; a lookup that could not finish, because the resolver was
    * unreachable or said to try again, is `'transport'`, which a retry may fix.
+   * `'too-large'` is the 32 MiB this renderer fetches and nothing else: a body
+   * that stops partway is `'transport'`, as a connection that fails before it is.
    */
   readonly failure: 'status' | 'host-not-found' | 'bad-url' | 'transport' | 'too-large' | 'other'
   /** The HTTP status, when {@link ImageWarning.failure} is `'status'`. */

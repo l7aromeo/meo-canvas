@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
-import type { AddressInfo } from 'node:net'
+import type { AddressInfo, Socket } from 'node:net'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { SideValue } from './arena.js'
 import type { NativeCanvas } from './canvas.js'
@@ -263,6 +263,12 @@ describe('a url source', () => {
       await expect(
         Root({ width: 10, height: 10, onImageError: 'throw', children: Image({ src: { url: 'https://a.invalid/big.png' } }) }, dependencies),
       ).rejects.toThrow(/larger than the 32 MiB this renderer fetches/)
+      // The class and the detail the crate's `MAX_IMAGE_BYTES` refusal carries.
+      const canvas = await Root({ width: 10, height: 10, children: Image({ src: { url: 'https://a.invalid/big.png' } }) })
+      expect(canvas.warnings).toEqual([
+        { url: 'https://a.invalid/big.png', failure: 'too-large', detail: 'the image is larger than the 32 MiB this renderer fetches', nodes: 1 },
+      ])
+      canvas.release()
     } finally {
       restore()
     }
@@ -642,6 +648,121 @@ describe('a fetched body that will not decode', () => {
       )
     }
   })
+})
+
+describe('a body that fails partway', () => {
+  // The crate's `a_body_cut_off_partway_is_transport_not_too_large` in
+  // `meo-canvas-core/tests/fetch_policy.rs` serves the same response. Only the
+  // limit is `'too-large'`; anything else that stops the body is classified as
+  // the same event is when it stops `fetch` itself.
+  const LENGTH = 100_000
+  const SENT = 1000
+
+  /**
+   * A server that sends a 200 head claiming {@link LENGTH} bytes and {@link SENT}
+   * of them, then holds the socket; `fetch` runs `then` once the head has arrived,
+   * so what `then` does lands in the body read and never in `fetch`.
+   */
+  const partway = async (then: (socket: Socket | undefined) => void): Promise<{ url: string; close: () => Promise<void> }> => {
+    let held: Socket | undefined
+    const server = createServer((request, response) => {
+      held = request.socket
+      response.writeHead(200, { 'content-type': 'image/png', 'content-length': String(LENGTH) })
+      response.write(new Uint8Array(SENT))
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const { port } = server.address() as AddressInfo
+    const real = globalThis.fetch
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await real(input, init)
+      then(held)
+      return response
+    }
+    return {
+      url: `http://127.0.0.1:${port}/cut.png`,
+      close: () => {
+        globalThis.fetch = real
+        server.closeAllConnections()
+        return new Promise<void>(resolve => server.close(() => resolve()))
+      },
+    }
+  }
+
+  const reset = (socket: Socket | undefined): void => {
+    socket?.destroy()
+  }
+
+  for (const onImageError of ['placeholder', 'ignore'] as const) {
+    it(`is a transport failure under '${onImageError}' when the connection drops`, async () => {
+      const { url, close } = await partway(reset)
+      try {
+        const canvas = await Root({ width: 100, height: 100, onImageError, children: Image({ src: { url }, width: 100, height: 100 }) })
+        expect(canvas.warnings.map(({ url, failure, status, nodes }) => ({ url, failure, status, nodes }))).toEqual([
+          { url, failure: 'transport', status: undefined, nodes: 1 },
+        ])
+        expect(canvas.warnings[0]?.detail).toMatch(/terminated/)
+        canvas.release()
+      } finally {
+        await close()
+      }
+    })
+  }
+
+  it("fails the render in this renderer's words under 'throw' when the connection drops", async () => {
+    const { url, close } = await partway(reset)
+    try {
+      const rendered = Root({ width: 100, height: 100, onImageError: 'throw', children: Image({ src: { url }, width: 100, height: 100 }) })
+      await expect(rendered).rejects.toThrow(new RegExp(`^cannot fetch "${url.replaceAll('.', '\\.')}": .*terminated`))
+      await expect(rendered).rejects.toHaveProperty('cause')
+    } finally {
+      await close()
+    }
+  })
+
+  it("is this renderer's timeout when its deadline passes during the body", async () => {
+    // `AbortSignal.timeout` is the deadline's only clock; this one fires on cue.
+    const ceiling = new AbortController()
+    const clock = vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => ceiling.signal)
+    const { url, close } = await partway(() => {
+      ceiling.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError'))
+    })
+    const detail = 'it took longer than the 60 seconds this renderer waits'
+    try {
+      const canvas = await Root({ width: 100, height: 100, children: Image({ src: { url }, width: 100, height: 100 }) })
+      expect(canvas.warnings).toEqual([{ url, failure: 'transport', detail, nodes: 1 }])
+      canvas.release()
+      await expect(Root({ width: 100, height: 100, onImageError: 'throw', children: Image({ src: { url }, width: 100, height: 100 }) })).rejects.toThrow(
+        `cannot fetch ${JSON.stringify(url)}: ${detail}`,
+      )
+    } finally {
+      clock.mockRestore()
+      await close()
+    }
+  })
+
+  // As at `fetch`: a caller who aborted asked the render to stop, so it
+  // rejects with their reason under every policy rather than drawing a gap.
+  for (const onImageError of ['placeholder', 'ignore', 'throw'] as const) {
+    it(`rejects with the caller's abort under '${onImageError}'`, async () => {
+      const controller = new AbortController()
+      const { url, close } = await partway(() => {
+        controller.abort(new Error('the caller changed their mind'))
+      })
+      try {
+        await expect(
+          Root({
+            width: 100,
+            height: 100,
+            onImageError,
+            httpOptions: { signal: controller.signal },
+            children: Image({ src: { url }, width: 100, height: 100 }),
+          }),
+        ).rejects.toThrow(/the caller changed their mind/)
+      } finally {
+        await close()
+      }
+    })
+  }
 })
 
 describe("the page root's background", () => {

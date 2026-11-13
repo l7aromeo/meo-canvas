@@ -78,6 +78,20 @@ const fn hang_up() -> Response {
     }
 }
 
+/// A head claiming 100 000 bytes, 1000 of them, and a close: a body that stops
+/// partway, far below the limit.
+fn cut_off() -> Response {
+    Response {
+        head: Some(
+            "HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\
+             Connection: close\r\n\r\n"
+                .to_owned(),
+        ),
+        body: vec![0; 1000],
+        delay: Duration::ZERO,
+    }
+}
+
 /// A local origin that counts and records every request.
 struct Origin {
     base: String,
@@ -443,7 +457,11 @@ fn different_headers_are_different_entries() {
 
 #[test]
 fn stale_if_error_serves_the_expired_copy_inside_the_bound() {
-    for failure in [answer("503 Service Unavailable", &[], b""), hang_up()] {
+    for failure in [
+        answer("503 Service Unavailable", &[], b""),
+        hang_up(),
+        cut_off(),
+    ] {
         let mut failure = Some(failure);
         let origin = Origin::new(move |n, _| match n {
             0 => ok(&[
