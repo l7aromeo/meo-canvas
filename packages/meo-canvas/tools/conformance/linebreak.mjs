@@ -1,5 +1,5 @@
 // Where Chrome breaks a line of text with no spaces to break at: ideographs, kana,
-// Latin beside them, punctuation, and Blink's own rules for ASCII. A 0px block
+// Latin beside them, punctuation, and Chrome's own rules for ASCII. A 0px block
 // takes every break opportunity, so its lines are the opportunities themselves;
 // wider blocks test the widths. `chrome_line_break.rs` reads the table.
 
@@ -21,7 +21,7 @@ const CJK = {
   path: resolve(HERE, '../../../../crates/meo-canvas-core/tests/assets/fonts/NotoSansSC-Subset.ttf'),
 }
 
-/** Every printable ASCII character, `!` to `~`: the pairs Blink's own table decides. */
+/** Every printable ASCII character, `!` to `~`: the pairs Chrome's own table decides. */
 const ASCII = Array.from({ length: 94 }, (_, at) => String.fromCharCode(0x21 + at))
 
 /**
