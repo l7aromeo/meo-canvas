@@ -232,12 +232,16 @@ pub struct SceneMeasurer<'resolved> {
     text: TextMeasurer,
     /// Each text node's paragraph, segmented and measured the first time
     /// layout asks about it and wrapped at every width after.
-    prepared: HashMap<NodeId, lines::Prepared<'resolved>>,
+    prepared: HashMap<
+        NodeId,
+        lines::Prepared<'resolved>,
+        foldhash::fast::RandomState,
+    >,
     /// Answers keyed by the question, kept across the two solves of
     /// `compensate_ratio_direction`. Right while a measurement is a pure
     /// function of its key; one reading the tree or a previous pass would go
     /// stale, and only in two-pass renders.
-    answers: HashMap<Question, MeasuredLeaf>,
+    answers: HashMap<Question, MeasuredLeaf, foldhash::fast::RandomState>,
 }
 
 /// One measurement request as a map key. Widths are keyed by their bit
@@ -327,8 +331,8 @@ impl<'resolved> SceneMeasurer<'resolved> {
         Ok(Self {
             resolved,
             text: TextMeasurer::new(),
-            prepared: HashMap::new(),
-            answers: HashMap::new(),
+            prepared: HashMap::default(),
+            answers: HashMap::default(),
         })
     }
 

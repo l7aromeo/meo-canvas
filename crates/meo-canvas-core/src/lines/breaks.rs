@@ -1,5 +1,5 @@
 //! Chrome's break opportunities for `white-space: normal`, `line-break: auto`
-//! and `word-break: normal`: Blink's space rule and ASCII table, then UAX 14
+//! and `word-break: normal`: Chrome's space rule and ASCII table, then UAX 14
 //! 17 at `line-break: normal`. The parent module's documentation has the rules;
 //! `chrome_line_break.rs` measures them.
 
@@ -12,14 +12,14 @@ use icu_segmenter::{
 /// hyphen, and this renderer, which draws none, breaks as `hyphens: none` does.
 const SOFT_HYPHEN: char = '\u{ad}';
 
-/// What Blink's table breaks before after `-`, besides letters; a digit is
+/// What Chrome's table breaks before after `-`, besides letters; a digit is
 /// decided by what precedes the hyphen.
 const AFTER_HYPHEN: &str = "\"#%&'(*+-<=>@[\\^_`{|~";
 
-/// What Blink's table breaks before after `?`, besides letters and digits.
+/// What Chrome's table breaks before after `?`, besides letters and digits.
 const AFTER_QUESTION: &str = "#$%&(*+-<=>@[\\^_`{|~";
 
-/// The opening brackets Blink's table breaks before, after [`CLOSING`].
+/// The opening brackets Chrome's table breaks before, after [`CLOSING`].
 const OPENING: &str = "([{<";
 
 /// What a line may break after when an [`OPENING`] bracket follows: closing
@@ -27,20 +27,20 @@ const OPENING: &str = "([{<";
 /// any of `$'/@^_` and the backtick. `-` and `?` have rows of their own.
 const CLOSING: &str = "!\"#%&)*+,.:;=>\\]|}~";
 
-/// The characters Blink's breaker treats as spaces: a break follows a run of
+/// The characters Chrome's breaker treats as spaces: a break follows a run of
 /// them. Not every `char::is_whitespace`: a no-break space joins what is
 /// either side of it, and an ideographic space breaks as UAX 14 says.
 const fn is_breakable_space(character: char) -> bool {
     matches!(character, ' ' | '\t' | '\n')
 }
 
-/// Whether Blink's table decides the pair `before`, `after`: both printable
+/// Whether Chrome's table decides the pair `before`, `after`: both printable
 /// ASCII, `!` to `~`.
 const fn is_table_pair(before: char, after: char) -> bool {
     matches!(before, '!'..='~') && matches!(after, '!'..='~')
 }
 
-/// Blink's table for a pair of printable ASCII characters: whether a line may
+/// Chrome's table for a pair of printable ASCII characters: whether a line may
 /// break between `before` and `after`. A hyphen before a digit is not decided
 /// here; see [`opportunities`].
 fn table_breaks(before: char, after: char) -> bool {
@@ -83,7 +83,7 @@ pub(crate) fn opportunities(text: &str) -> Vec<usize> {
                 previous != SOFT_HYPHEN && next_unicode.peek() == Some(&at)
             } else {
                 // Two ASCII characters outside the table: a control character
-                // beside anything. Blink keeps them together.
+                // beside anything. Chrome keeps them together.
                 false
             };
             if breaks {

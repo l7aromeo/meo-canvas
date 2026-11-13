@@ -43,14 +43,14 @@
 //! # Where a line breaks
 //!
 //! At Chrome's break opportunities, which are not only spaces, found over the
-//! paragraph's whole text so a segment boundary is never one in itself. Blink's
-//! line breaker takes three rules in order, and so does this module:
+//! paragraph's whole text so a segment boundary is never one in itself. Chrome
+//! takes three rules in order, as measured, and so does this module:
 //!
 //! 1. **After a run of spaces, always**, and never before one, so a space hangs
 //!    at the end of the line it ends. `( a` and `a )` both break at the space,
 //!    where UAX 14 keeps an opening bracket with what follows it and a closing
 //!    one with what precedes it.
-//! 2. **Between two printable ASCII characters, a table of Blink's own**: a
+//! 2. **Between two printable ASCII characters, a table of Chrome's own**: a
 //!    break after `-` and `?`, and before `(`, `<`, `[` and `{` after closing
 //!    and other punctuation. `a/b` and `C++` do not break, where UAX 14 breaks
 //!    both. A hyphen before a digit breaks only after a letter or digit, so
@@ -71,8 +71,37 @@
 //! opportunity and no space between them meet with no gap, and the kerning
 //! between them is kept: in 16px Noto Sans SC, `アイ` is 0.8px narrower than
 //! `ア` and `イ` apart.
+//!
+//! # Narrowed punctuation
+//!
+//! Chrome's default `text-spacing-trim: normal` sets some full-width marks at
+//! half their em, and so does this module, measuring and drawing each with
+//! the face's `halt` as a run of its own ([`RunStyle::trimmed`]):
+//!
+//! 1. **Beside another mark.** Of two marks side by side, an opening bracket or
+//!    quote is narrowed if there is one, and otherwise a closing one or a
+//!    comma, stop or colon before anything but an opening mark: `、。」` sets
+//!    `、` and `。` at 8px in 16px text. A middle dot or an ideographic space
+//!    narrows its neighbour and never itself. A segment boundary does not
+//!    separate two marks; a space between them does.
+//! 2. **At a line end**, a closing bracket or quote loses its half where that
+//!    is what makes the line fit, and the line ends after it. A comma, stop or
+//!    colon never does.
+//! 3. **An opening mark is whole at a line start**, since the mark before it
+//!    that narrowed it is on the line above: `「` after a break. A closing mark
+//!    or dot narrowed by the mark after it stays narrowed there, at the start
+//!    of a paragraph and after a newline or a break at a space.
+//!
+//! A face without `halt`, or a mark its `halt` leaves alone, measures the same
+//! both ways, and nothing in it is narrowed, which is what Chrome does. `lang`
+//! changes none of this in Chrome 158, and the scene has no `lang`.
+//! `chrome_text_spacing_trim.rs` holds every pair of forty marks, lines and
+//! min-content widths against Chrome.
 
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+};
 
 use meo_canvas_scene::style::{
     paint::Color,
@@ -89,6 +118,7 @@ use meo_skia_canvas::{
 use crate::{FINITE_CEILING, layout::LAYOUT_GRID, resolve::ResolvedText};
 
 mod breaks;
+mod trim;
 
 /// The string every face measurement is taken with.
 ///
@@ -125,8 +155,8 @@ const FALLBACK_SPACE: f32 = 0.3;
 /// change a measurement are keyed by their bits.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct FontKey {
-    /// The family name.
-    family: String,
+    /// The family name, shared with the style it came from.
+    family: Arc<str>,
     /// The em size, by its bits, because a size is an `f32`.
     size: u32,
     /// The CSS numeric weight.
@@ -136,6 +166,166 @@ struct FontKey {
     /// The OpenType features asked for, by their wire values, since a
     /// `FontVariant` is not `Hash` and a feature changes the advance.
     variant: Vec<u8>,
+    /// Whether `halt` is asked for, as [`RunStyle::trimmed`] says.
+    trimmed: bool,
+}
+
+/// One question the measurement cache holds: a font, a letter spacing by its
+/// bits, and a string.
+#[derive(Debug, Clone)]
+struct Asked {
+    /// The font.
+    font: FontKey,
+    /// The letter spacing, by its bits.
+    spacing: u32,
+    /// The string.
+    text: String,
+}
+
+/// A measurement question as the cache hashes and compares it, whether held
+/// ([`Asked`]) or being asked ([`Asking`]), so a lookup reads the asker's own
+/// fields and builds no key, which would copy the run's string and features
+/// for every run of every layout; only a measurement builds one.
+trait Question {
+    /// The family name.
+    fn family(&self) -> &str;
+    /// The size, weight and italic, as [`FontKey`] holds them.
+    fn face(&self) -> (u32, u16, bool);
+    /// How many OpenType features are asked for.
+    fn variants(&self) -> usize;
+    /// The wire value of feature `at`.
+    fn variant(&self, at: usize) -> u8;
+    /// Whether `halt` is asked for.
+    fn trimmed(&self) -> bool;
+    /// The letter spacing, by its bits.
+    fn spacing(&self) -> u32;
+    /// The string.
+    fn text(&self) -> &str;
+}
+
+impl core::hash::Hash for dyn Question + '_ {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.family().hash(state);
+        self.face().hash(state);
+        state.write_usize(self.variants());
+        for at in 0..self.variants() {
+            state.write_u8(self.variant(at));
+        }
+        self.trimmed().hash(state);
+        self.spacing().hash(state);
+        self.text().hash(state);
+    }
+}
+
+impl PartialEq for dyn Question + '_ {
+    fn eq(&self, other: &Self) -> bool {
+        self.family() == other.family()
+            && self.face() == other.face()
+            && self.variants() == other.variants()
+            && (0..self.variants())
+                .all(|at| self.variant(at) == other.variant(at))
+            && self.trimmed() == other.trimmed()
+            && self.spacing() == other.spacing()
+            && self.text() == other.text()
+    }
+}
+
+impl Eq for dyn Question + '_ {}
+
+impl Question for Asked {
+    fn family(&self) -> &str {
+        &self.font.family
+    }
+
+    fn face(&self) -> (u32, u16, bool) {
+        (self.font.size, self.font.weight, self.font.italic)
+    }
+
+    fn variants(&self) -> usize {
+        self.font.variant.len()
+    }
+
+    fn variant(&self, at: usize) -> u8 {
+        self.font.variant[at]
+    }
+
+    fn trimmed(&self) -> bool {
+        self.font.trimmed
+    }
+
+    fn spacing(&self) -> u32 {
+        self.spacing
+    }
+
+    fn text(&self) -> &str {
+        &self.text
+    }
+}
+
+impl core::hash::Hash for Asked {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        let question: &dyn Question = self;
+        question.hash(state);
+    }
+}
+
+impl PartialEq for Asked {
+    fn eq(&self, other: &Self) -> bool {
+        let (this, that): (&dyn Question, &dyn Question) = (self, other);
+        this == that
+    }
+}
+
+impl Eq for Asked {}
+
+impl<'a> core::borrow::Borrow<dyn Question + 'a> for Asked {
+    fn borrow(&self) -> &(dyn Question + 'a) {
+        self
+    }
+}
+
+/// A question being asked, borrowing the run's style and string.
+struct Asking<'a> {
+    /// The style asked in.
+    style: &'a RunStyle,
+    /// The letter spacing, by its bits.
+    spacing: u32,
+    /// The string.
+    text: &'a str,
+}
+
+impl Question for Asking<'_> {
+    fn family(&self) -> &str {
+        &self.style.family
+    }
+
+    fn face(&self) -> (u32, u16, bool) {
+        (
+            self.style.size.to_bits(),
+            self.style.weight,
+            self.style.italic,
+        )
+    }
+
+    fn variants(&self) -> usize {
+        self.style.variant.len()
+    }
+
+    fn variant(&self, at: usize) -> u8 {
+        self.style.variant[at].to_wire()
+    }
+
+    fn trimmed(&self) -> bool {
+        self.style.trimmed
+    }
+
+    fn spacing(&self) -> u32 {
+        self.spacing
+    }
+
+    fn text(&self) -> &str {
+        self.text
+    }
 }
 
 /// What one measurement answers.
@@ -179,10 +369,17 @@ struct Answer {
 }
 
 /// One run's style, resolved down to what a measurement needs.
+///
+/// Built by [`RunStyle::of`] or [`RunStyle::base`], whose fields a caller may
+/// then set; `#[non_exhaustive]`, so a field added here is not a break.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct RunStyle {
     /// Family name.
-    pub family: String,
+    ///
+    /// Shared rather than owned: a wrap clones a run's style for every run it
+    /// makes, and a narrowed mark is a run of its own.
+    pub family: Arc<str>,
     /// Em size in pixels.
     pub size: f32,
     /// CSS numeric weight.
@@ -222,6 +419,12 @@ pub struct RunStyle {
     /// [`Metrics::letter_spacing`] still exists: a space between two runs
     /// belongs to neither of them.
     pub letter_spacing: f32,
+    /// Whether this run is one full-width punctuation mark set at half its
+    /// advance, measured and drawn with the face's `halt` feature, as Chrome's
+    /// default `text-spacing-trim: normal` narrows it. The module's
+    /// documentation has the rules. Never set by [`RunStyle::of`] or
+    /// [`RunStyle::base`]: the wrap decides it per mark.
+    pub trimmed: bool,
 }
 
 impl RunStyle {
@@ -230,10 +433,7 @@ impl RunStyle {
     pub fn of(base: &ResolvedText, segment: &TextSegment) -> Self {
         let style = &segment.style;
         Self {
-            family: style
-                .font_family
-                .clone()
-                .unwrap_or_else(|| base.family.clone()),
+            family: style.font_family.as_deref().unwrap_or(&base.family).into(),
             // Through `usable`, as `line_gap` is: an infinite size would reach
             // the measurement and collapse the box around the paragraph, and a
             // `NaN` one, refused at the writer, is neutralised here. `1e30`
@@ -257,6 +457,7 @@ impl RunStyle {
                 // The run's own size, for the reason the field documents.
                 style.font_size.unwrap_or(base.size),
             ),
+            trimmed: false,
         }
     }
 
@@ -265,7 +466,7 @@ impl RunStyle {
     #[must_use]
     pub fn base(base: &ResolvedText) -> Self {
         Self {
-            family: base.family.clone(),
+            family: base.family.as_str().into(),
             size: usable(base.size),
             weight: base.weight.get(),
             italic: matches!(base.style, FontStyle::Italic),
@@ -273,6 +474,26 @@ impl RunStyle {
             color: base.color,
             decoration: base.decoration,
             letter_spacing: spacing_pixels(base.letter_spacing, base.size),
+            trimmed: false,
+        }
+    }
+
+    /// Whether `other` selects the same face, whose ascent, descent and line
+    /// gap a line box is built from. `halt` moves glyphs, not the face's
+    /// metrics, so a narrowed mark is in its neighbour's face.
+    fn same_face(&self, other: &Self) -> bool {
+        self.family == other.family
+            && self.size.to_bits() == other.size.to_bits()
+            && self.weight == other.weight
+            && self.italic == other.italic
+            && self.variant == other.variant
+    }
+
+    /// This style with [`RunStyle::trimmed`] set.
+    fn narrowed(&self) -> Self {
+        Self {
+            trimmed: true,
+            ..self.clone()
         }
     }
 
@@ -280,7 +501,7 @@ impl RunStyle {
     #[must_use]
     pub fn to_font(&self) -> Font {
         Font {
-            families: vec![self.family.as_str().into()],
+            families: vec![(*self.family).into()],
             size: self.size,
             weight: self.weight,
             // 0.16 replaces the boolean with the three slants CSS has. The
@@ -305,6 +526,7 @@ impl RunStyle {
             weight: self.weight,
             italic: self.italic,
             variant: self.variant.iter().map(|v| v.to_wire()).collect(),
+            trimmed: self.trimmed,
         }
     }
 
@@ -314,7 +536,8 @@ impl RunStyle {
     /// CSS spells all of these as `font-variant` keywords; the backend splits
     /// them, because the caps forms select a face's alternate glyphs and the
     /// rest are feature tags. A keyword the backend has no place for is
-    /// dropped rather than approximated.
+    /// dropped rather than approximated. A [`RunStyle::trimmed`] run adds
+    /// `halt`.
     #[must_use]
     pub fn to_variant(&self) -> (FontVariantCaps, Vec<FontFeature>) {
         let mut caps = FontVariantCaps::Normal;
@@ -381,6 +604,9 @@ impl RunStyle {
                 _ => {}
             }
         }
+        if self.trimmed {
+            tag("halt", 1);
+        }
         (caps, features)
     }
 }
@@ -407,11 +633,11 @@ pub struct TextMeasurer {
     /// font library is the thread's, so this sees every face registered on it.
     canvas: Canvas,
     /// Answers, keyed by the font and the string.
-    answers: HashMap<(FontKey, u32, String), Answer>,
+    answers: HashMap<Asked, Answer, foldhash::fast::RandomState>,
     /// Keys in the order they were inserted, so the oldest can be dropped:
     /// first in, first out, which decides only which entry survives a full
     /// cache and not what any of them say.
-    order: VecDeque<(FontKey, u32, String)>,
+    order: VecDeque<Asked>,
 }
 
 impl core::fmt::Debug for TextMeasurer {
@@ -441,7 +667,7 @@ impl TextMeasurer {
         Self {
             canvas: Canvas::with_options(1.0, 1.0, options)
                 .unwrap_or_else(|_| Canvas::new(1.0, 1.0)),
-            answers: HashMap::new(),
+            answers: HashMap::default(),
             order: VecDeque::new(),
         }
     }
@@ -472,10 +698,20 @@ impl TextMeasurer {
         letter_spacing: f32,
         text: &str,
     ) -> Answer {
-        let key = (style.key(), letter_spacing.to_bits(), text.to_owned());
-        if let Some(hit) = self.answers.get(&key) {
+        let asking = Asking {
+            style,
+            spacing: letter_spacing.to_bits(),
+            text,
+        };
+        let question: &dyn Question = &asking;
+        if let Some(hit) = self.answers.get(question) {
             return *hit;
         }
+        let key = Asked {
+            font: style.key(),
+            spacing: asking.spacing,
+            text: text.to_owned(),
+        };
 
         let font = style.to_font();
         let (caps, features) = style.to_variant();
@@ -573,8 +809,10 @@ impl TextMeasurer {
     }
 }
 
-/// One run of text on a line, in one style.
+/// One run of text on a line, in one style, as [`wrap`] and [`layout`] make
+/// it; `#[non_exhaustive]`, so a field added here is not a break.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct Run {
     /// The characters, which for a space run is the whitespace itself.
     pub text: String,
@@ -604,8 +842,11 @@ const fn is_gap(character: char) -> bool {
     matches!(character, ' ' | '\t' | '\r' | '\u{a0}')
 }
 
-/// One line box: its runs, and the three heights that place it.
+/// One line box: its runs, and the three heights that place it, as [`wrap`]
+/// and [`layout`] make it; `#[non_exhaustive]`, so a field added here is not a
+/// break.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct Line {
     /// The runs on the line, in order, spaces included.
     pub runs: Vec<Run>,
@@ -652,8 +893,10 @@ impl Line {
     }
 }
 
-/// Everything one text node's content occupies.
+/// Everything one text node's content occupies, as [`layout`] makes it;
+/// `#[non_exhaustive]`, so a field added here is not a break.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct Block {
     /// The lines, after any `max_lines` limit.
     pub lines: Vec<Line>,
@@ -780,13 +1023,15 @@ enum Piece<'text> {
 }
 
 /// Splits a segment into the pieces the wrap places: newlines, gaps, and
-/// words cut at the paragraph's opportunities `breaks`, `from` being the
-/// segment's offset in the paragraph. Its edges are not opportunities in
-/// themselves: `<b>a</b>b` is one word in two styles.
+/// words cut at the paragraph's opportunities `breaks` and at `cuts`, which
+/// set a punctuation mark apart without letting a line begin there, `from`
+/// being the segment's offset in the paragraph. Its edges are not
+/// opportunities in themselves: `<b>a</b>b` is one word in two styles.
 fn pieces<'text>(
     text: &'text str,
     from: usize,
     breaks: &[usize],
+    cuts: &[usize],
 ) -> Vec<Piece<'text>> {
     let opens = |at: usize| breaks.binary_search(&(from + at)).is_ok();
     let mut out = Vec::new();
@@ -817,13 +1062,17 @@ fn pieces<'text>(
             _ => {
                 let mut cut = start;
                 let stop = start + end;
-                let inside = breaks
+                let mut inside: Vec<usize> = breaks
                     .iter()
+                    .chain(cuts)
                     .filter(|&&offset| {
                         offset > from + start && offset < from + stop
                     })
-                    .map(|offset| offset - from);
-                for at in inside.chain([stop]) {
+                    .map(|offset| offset - from)
+                    .collect();
+                inside.sort_unstable();
+                inside.dedup();
+                for at in inside.into_iter().chain([stop]) {
                     out.push(Piece::Word {
                         text: &text[cut..at],
                         opens: opens(cut),
@@ -860,25 +1109,31 @@ impl Builder {
     /// Adds `items` to the line if `commit`, and returns the width they add
     /// either way. A word directly after one of the same segment joins its run,
     /// at the two widths plus the kerning where they meet, so the run is drawn
-    /// as the text it is.
+    /// as the text it is; a narrowed mark is a run of its own. `narrow_end`
+    /// narrows the closing mark the last word ends in, if a line end may
+    /// narrow it.
     fn extend(
         &mut self,
-        styles: &[RunStyle],
+        prepared: &Prepared<'_>,
         items: &[Item<'_>],
-        gap: f32,
+        narrow_end: bool,
         commit: bool,
     ) -> f32 {
         let mut added = 0.0;
         let mut started = self.started();
         let mut spaced = self.runs.last().is_some_and(Run::is_space);
-        // The segment of the word the line ends with, if it ends with one.
+        // The segment of the word the line ends with, if it ends with one
+        // that a word may join.
         let mut last = self
             .runs
             .last()
-            .filter(|run| !run.is_space())
+            .filter(|run| !run.is_space() && !run.style.trimmed)
             .and_then(|_| self.origins.last().copied());
-        for item in items {
-            let style = &styles[item.segment];
+        let last_word = items
+            .iter()
+            .rposition(|item| matches!(item.piece, Piece::Word { .. }));
+        for (index, item) in items.iter().enumerate() {
+            let style = &prepared.styles[item.segment];
             match item.piece {
                 Piece::Newline => {}
                 Piece::Space(text) => {
@@ -893,27 +1148,65 @@ impl Builder {
                     }
                 }
                 Piece::Word { text, .. } => {
-                    let joins = last == Some(item.segment);
-                    let advance = if spaced {
-                        gap + item.width
-                    } else if joins {
-                        item.width + item.kern
-                    } else {
-                        item.width
-                    };
-                    added += advance;
-                    if commit {
-                        if joins && let Some(run) = self.runs.last_mut() {
-                            run.text.push_str(text);
-                            run.width += advance;
-                        } else {
-                            self.push(text, style, item.width, item.segment);
+                    // Each part: its text, width, whether narrowed, and the
+                    // kerning where it meets what it joins.
+                    let parts = match item.trim {
+                        // An opening mark is narrowed by the mark before it,
+                        // which a line start leaves on the line above.
+                        Trim::Beside { full, after: true } if !started => {
+                            [Some((text, full, false, item.kern)), None]
                         }
-                        self.used += advance;
+                        Trim::Beside { .. } => {
+                            [Some((text, item.width, true, item.kern)), None]
+                        }
+                        // The closing mark a line end narrows is drawn as a
+                        // run of its own after the rest of its piece.
+                        Trim::LineEnd { head, narrow, mark }
+                            if narrow_end && last_word == Some(index) =>
+                        {
+                            let at = text.len() - mark;
+                            [
+                                Some((&text[..at], head, false, item.kern)),
+                                Some((&text[at..], narrow, true, 0.0)),
+                            ]
+                        }
+                        Trim::Never | Trim::LineEnd { .. } => {
+                            [Some((text, item.width, false, item.kern)), None]
+                        }
+                    };
+                    for (part, width, trimmed, kern) in
+                        parts.into_iter().flatten()
+                    {
+                        if part.is_empty() {
+                            continue;
+                        }
+                        let joins = !trimmed && last == Some(item.segment);
+                        let advance = if spaced {
+                            prepared.gap + width
+                        } else if joins {
+                            width + kern
+                        } else {
+                            width
+                        };
+                        added += advance;
+                        if commit {
+                            if joins && let Some(run) = self.runs.last_mut() {
+                                run.text.push_str(part);
+                                run.width += advance;
+                            } else {
+                                let style = if trimmed {
+                                    &prepared.narrowed[item.segment]
+                                } else {
+                                    style
+                                };
+                                self.push(part, style, width, item.segment);
+                            }
+                            self.used += advance;
+                        }
+                        started = true;
+                        spaced = false;
+                        last = (!trimmed).then_some(item.segment);
                     }
-                    started = true;
-                    spaced = false;
-                    last = Some(item.segment);
                 }
             }
         }
@@ -938,13 +1231,10 @@ impl Builder {
 
     /// Closes the line, dropping the trailing space the wrap consumed there,
     /// which CSS does not draw. `hard` records why the line ended: truncation
-    /// pulls text up across a wrap, never across a written newline. Returns
-    /// whether a space was dropped, which is whether the break fell at one.
-    fn finish(&mut self, lines: &mut Vec<Line>, hard: bool) -> bool {
-        let mut dropped = false;
+    /// pulls text up across a wrap, never across a written newline.
+    fn finish(&mut self, lines: &mut Vec<Line>, hard: bool) {
         while self.runs.last().is_some_and(Run::is_space) {
             self.runs.pop();
-            dropped = true;
         }
         lines.push(Line {
             runs: core::mem::take(&mut self.runs),
@@ -955,18 +1245,17 @@ impl Builder {
         });
         self.origins.clear();
         self.used = 0.0;
-        dropped
     }
 }
 
-/// What a wrap produced: the lines, and for each whether the break after it
-/// fell at a space, which a truncation pulling the next line up puts back.
+/// What a wrap produced: the lines, and the piece each begins at, from which
+/// a truncation lays the rest of the paragraph out again as one line.
 #[derive(Debug)]
 struct Wrapped {
     /// The lines, without their heights.
     lines: Vec<Line>,
-    /// Per line, whether the wrap dropped a space where it ended.
-    spaced: Vec<bool>,
+    /// Per line, the index of its first piece in [`Prepared`]'s items.
+    starts: Vec<usize>,
 }
 
 /// Wraps segments into lines that fit `max_width`.
@@ -1002,11 +1291,44 @@ struct Item<'text> {
     segment: usize,
     /// The piece.
     piece: Piece<'text>,
-    /// A word's width set alone; zero for anything else.
+    /// A word's width set alone, narrowed for a [`Trim::Beside`] mark; zero
+    /// for anything else.
     width: f32,
     /// The kerning where a word meets the word before it, when that word is
-    /// of the same segment with nothing between them; zero otherwise.
+    /// of the same segment with nothing between them and the two can join;
+    /// zero otherwise.
     kern: f32,
+    /// What `text-spacing-trim` may do to it.
+    trim: Trim,
+}
+
+/// What `text-spacing-trim: normal` may do to one piece, decided once from
+/// the paragraph's text and the face's `halt`. Only a mark the face narrows
+/// is anything but [`Trim::Never`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Trim {
+    /// Placed at its width wherever it falls.
+    Never,
+    /// A mark a neighbour narrows: its item's width is the narrowed one. One
+    /// narrowed by the mark `after` which it comes, an opening mark, takes
+    /// `full` where it begins a line, with that mark on the line above.
+    Beside {
+        /// Its width set whole.
+        full: f32,
+        /// Whether the mark before it narrows it, rather than the one after.
+        after: bool,
+    },
+    /// A piece ending in a closing bracket or quote, set whole, whose mark
+    /// loses its empty half at the end of a line that fits only that way and
+    /// is then drawn as a run of its own after the rest.
+    LineEnd {
+        /// The width of the piece without its mark.
+        head: f32,
+        /// The mark's width narrowed.
+        narrow: f32,
+        /// The mark's length in bytes, at the end of the piece.
+        mark: usize,
+    },
 }
 
 /// A paragraph made ready to wrap: its pieces, each word's width and the
@@ -1017,6 +1339,8 @@ struct Item<'text> {
 pub(crate) struct Prepared<'text> {
     /// Each segment's run style.
     styles: Vec<RunStyle>,
+    /// Each segment's run style for a narrowed mark.
+    narrowed: Vec<RunStyle>,
     /// The width a space between words adds.
     gap: f32,
     /// The pieces, in order.
@@ -1039,82 +1363,262 @@ impl<'text> Prepared<'text> {
             .map(|segment| segment.text.as_str())
             .collect();
         let opportunities = breaks::opportunities(&paragraph);
+        let beside = trim::adjacent(&paragraph);
         let styles: Vec<RunStyle> = segments
             .iter()
             .map(|segment| RunStyle::of(base, segment))
             .collect();
+        let narrowed: Vec<RunStyle> =
+            styles.iter().map(RunStyle::narrowed).collect();
         let mut items: Vec<Item<'text>> = Vec::new();
         let mut from = 0;
         for (segment, written) in segments.iter().enumerate() {
             let style = &styles[segment];
-            for piece in pieces(&written.text, from, &opportunities) {
-                let (width, kern) = match piece {
-                    Piece::Word { text, .. } => {
-                        let width = measurer.run_width(
-                            style,
-                            style.letter_spacing,
-                            text,
-                        );
-                        let left = match items.last() {
-                            Some(&Item {
-                                segment: before,
-                                piece: Piece::Word { text: previous, .. },
-                                ..
-                            }) if before == segment => {
-                                previous.chars().next_back()
-                            }
-                            _ => None,
-                        };
-                        let kern = left.map_or(0.0, |left| {
-                            measurer.kerning(style, left, text)
-                        });
-                        (width, kern)
-                    }
-                    Piece::Newline | Piece::Space(_) => (0.0, 0.0),
+            let marks = narrowable(
+                measurer,
+                style,
+                &narrowed[segment],
+                &written.text,
+                from,
+                &beside,
+            );
+            // A mark a neighbour narrows is a piece of its own; one only a
+            // line end may narrow stays in its piece, as the text it is.
+            let cuts: Vec<usize> = marks
+                .iter()
+                .filter(|mark| mark.beside)
+                .flat_map(|mark| [mark.at, mark.at + mark.len])
+                .collect();
+            let mut at = from;
+            for piece in pieces(&written.text, from, &opportunities, &cuts) {
+                let start = at;
+                at += match piece {
+                    Piece::Newline => 1,
+                    Piece::Space(text) | Piece::Word { text, .. } => text.len(),
+                };
+                let (width, kern, trim) = match piece {
+                    Piece::Word { text, .. } => word(
+                        measurer, style, text, start, segment, &marks, &items,
+                    ),
+                    Piece::Newline | Piece::Space(_) => (0.0, 0.0, Trim::Never),
                 };
                 items.push(Item {
                     segment,
                     piece,
                     width,
                     kern,
+                    trim,
                 });
             }
             from += written.text.len();
         }
         Self {
             styles,
+            narrowed,
             gap: space + metrics.word_spacing,
             items,
         }
     }
 }
 
-/// Whether `used` fits `max_width` as Blink's line breaker decides: within the
-/// room truncated to a layout unit plus one unit, `AvailableWidthToFit`. That
-/// unit also absorbs the 16.0000305 that Linux's font scaler makes a 16px em
-/// of 1000 units; see `a_line_fits_with_one_layout_unit_to_spare`.
-fn fits(used: f32, max_width: f32) -> bool {
-    used * LAYOUT_GRID <= (max_width * LAYOUT_GRID).floor() + 1.0
+/// What placing one word of `segment` at `start` costs: its width, the
+/// kerning where it joins the word before it, and what `text-spacing-trim`
+/// may do to it, given the `marks` its face narrows and the `items` so far.
+fn word(
+    measurer: &mut TextMeasurer,
+    style: &RunStyle,
+    text: &str,
+    start: usize,
+    segment: usize,
+    marks: &[Narrowable],
+    items: &[Item<'_>],
+) -> (f32, f32, Trim) {
+    let end = start + text.len();
+    let beside = marks
+        .iter()
+        .find(|mark| mark.beside && mark.at == start && mark.len == text.len());
+    let line_end = marks
+        .iter()
+        .find(|mark| !mark.beside && mark.at + mark.len == end);
+    let mut measure =
+        |part: &str| measurer.run_width(style, style.letter_spacing, part);
+    let (width, trim) = match (beside, line_end) {
+        (Some(mark), _) => (
+            mark.narrow,
+            Trim::Beside {
+                full: mark.full,
+                after: mark.after,
+            },
+        ),
+        (None, Some(mark)) => (
+            measure(text),
+            Trim::LineEnd {
+                head: measure(&text[..text.len() - mark.len]),
+                narrow: mark.narrow,
+                mark: mark.len,
+            },
+        ),
+        (None, None) => (measure(text), Trim::Never),
+    };
+    let left = match items {
+        [
+            ..,
+            before,
+            last @ Item {
+                piece:
+                    Piece::Word {
+                        text: previous,
+                        opens,
+                    },
+                ..
+            },
+        ] if last.segment == segment => {
+            joinable(last.trim, *opens, before.piece)
+                .then(|| previous.chars().next_back())
+                .flatten()
+        }
+        [
+            last @ Item {
+                piece: Piece::Word { text: previous, .. },
+                ..
+            },
+        ] if last.segment == segment => {
+            joinable(last.trim, true, Piece::Newline)
+                .then(|| previous.chars().next_back())
+                .flatten()
+        }
+        _ => None,
+    };
+    // A narrowed mark joins nothing, and one set whole
+    // begins its line, with nothing before it to join.
+    let kern = match (trim, left) {
+        (Trim::Beside { .. }, _) | (_, None) => 0.0,
+        (_, Some(left)) => measurer.kerning(style, left, text),
+    };
+    (width, kern, trim)
 }
 
-/// [`wrap`] over a prepared paragraph, with where each break fell.
-fn wrap_marked(prepared: &Prepared<'_>, max_width: f32) -> Wrapped {
-    let (styles, gap) = (prepared.styles.as_slice(), prepared.gap);
-    let mut wrapped = Wrapped {
-        lines: Vec::new(),
-        spaced: Vec::new(),
-    };
-    let mut line = Builder::default();
-    let mut rest = prepared.items.as_slice();
-    while let Some(first) = rest.first() {
-        if first.piece == Piece::Newline {
-            line.finish(&mut wrapped.lines, true);
-            wrapped.spaced.push(false);
-            rest = &rest[1..];
+/// Whether the word after a piece of `trim` can join it: anything but a mark
+/// a neighbour narrows, which is whole, and so joinable, only where it is an
+/// opening mark beginning a line, as one that `opens` or follows a newline.
+fn joinable(trim: Trim, opens: bool, before: Piece<'_>) -> bool {
+    match trim {
+        Trim::Beside { after, .. } => {
+            after && (opens || before == Piece::Newline)
+        }
+        Trim::Never | Trim::LineEnd { .. } => true,
+    }
+}
+
+/// One mark in a segment that the face narrows, and how.
+#[derive(Debug)]
+struct Narrowable {
+    /// Its offset in the paragraph.
+    at: usize,
+    /// Its length in bytes.
+    len: usize,
+    /// Its width set whole.
+    full: f32,
+    /// Its width with the face's `halt`.
+    narrow: f32,
+    /// Whether a neighbour narrows it; otherwise it is a closing mark a line
+    /// end may narrow.
+    beside: bool,
+    /// Whether it is an opening mark, which the mark before it narrows.
+    after: bool,
+}
+
+/// The marks of `text`, at `from` in the paragraph, that a neighbour or a line
+/// end may narrow and whose face narrows them. A face without `halt`, or a
+/// mark its `halt` leaves alone, measures the same both ways and is left out,
+/// which is Chrome: it narrows nothing in such a face.
+fn narrowable(
+    measurer: &mut TextMeasurer,
+    style: &RunStyle,
+    narrowed: &RunStyle,
+    text: &str,
+    from: usize,
+    beside: &[usize],
+) -> Vec<Narrowable> {
+    let mut out = Vec::new();
+    for (offset, character) in text.char_indices() {
+        let at = from + offset;
+        let near = beside.binary_search(&at).is_ok();
+        if !near && trim::mark(character) != Some(trim::Mark::Close) {
             continue;
         }
+        let len = character.len_utf8();
+        let alone = &text[offset..offset + len];
+        let full = measurer.run_width(style, style.letter_spacing, alone);
+        let narrow =
+            measurer.run_width(narrowed, narrowed.letter_spacing, alone);
+        if narrow < full {
+            out.push(Narrowable {
+                at,
+                len,
+                full,
+                narrow,
+                beside: near,
+                after: trim::mark(character) == Some(trim::Mark::Open),
+            });
+        }
+    }
+    out
+}
+
+// [WORKAROUND] meo-skia-canvas measures text on Linux through FreeType's 16.16
+// scale, a 16px em of 1000 units at 16.0000305 where macOS and Windows measure
+// 16, as Chrome on macOS does, so a line Chrome fills to its last spare 64th
+// breaks a character early; the room is widened by that scale's error.
+// `l7aromeo/meo-skia-canvas#695`, tracked as `l7aromeo/meo-canvas#253`; retires
+// when `crates/meo-canvas-core/tests/freetype_scale.rs` fails.
+/// What the room is multiplied by before a width is fitted to it: one, except
+/// where `FreeType` measures. Its error is half a 16.16 step of the scale at
+/// most, under 2^-16 of the scale for a 1000-unit em from 8px up, and a line
+/// that does not fit by more than that, 0.11 of a 64th at 112px, still does
+/// not.
+#[cfg(target_os = "linux")]
+const FREETYPE_SCALE: f32 = 1.0 + 1.0 / 65536.0;
+
+/// What the room is multiplied by before a width is fitted to it: one, where
+/// the platform's scaler measures an em of 1000 units at 16px as 16.
+#[cfg(not(target_os = "linux"))]
+const FREETYPE_SCALE: f32 = 1.0;
+
+/// Whether `used` fits `max_width` as Chrome decides: within the room truncated
+/// to a 64th of a pixel plus one 64th; 96px fits 95.984375 and not 95.984. The
+/// rows are in `a_line_fits_with_one_layout_unit_to_spare`.
+fn fits(used: f32, max_width: f32) -> bool {
+    used * LAYOUT_GRID
+        <= ((max_width * LAYOUT_GRID).floor() + 1.0) * FREETYPE_SCALE
+}
+
+/// [`wrap`] over a prepared paragraph, with the piece each line begins at.
+fn wrap_marked(prepared: &Prepared<'_>, max_width: f32) -> Wrapped {
+    let mut wrapped = Wrapped {
+        lines: Vec::new(),
+        starts: vec![0],
+    };
+    let mut line = Builder::default();
+    let mut index = 0;
+    // Set once a closing bracket has been narrowed to end the line.
+    let mut ended = false;
+    let items = prepared.items.as_slice();
+    while let Some(first) = items.get(index) {
+        if first.piece == Piece::Newline {
+            line.finish(&mut wrapped.lines, true);
+            index += 1;
+            wrapped.starts.push(index);
+            ended = false;
+            continue;
+        }
+        if ended {
+            line.finish(&mut wrapped.lines, false);
+            wrapped.starts.push(index);
+            ended = false;
+        }
         // Up to the next piece a line may begin with, or a newline.
-        let end = rest[1..]
+        let end = items[index + 1..]
             .iter()
             .position(|item| {
                 matches!(
@@ -1122,23 +1626,44 @@ fn wrap_marked(prepared: &Prepared<'_>, max_width: f32) -> Wrapped {
                     Piece::Newline | Piece::Word { opens: true, .. }
                 )
             })
-            .map_or(rest.len(), |at| at + 1);
-        let (unit, after) = rest.split_at(end);
-        rest = after;
+            .map_or(items.len(), |at| index + 1 + at);
+        let unit = &items[index..end];
 
-        let advance = line.extend(styles, unit, gap, false);
-        if line.started() && !fits(line.used + advance, max_width) {
+        loop {
+            let advance = line.extend(prepared, unit, false, false);
+            if fits(line.used + advance, max_width) {
+                line.extend(prepared, unit, false, true);
+                break;
+            }
+            // A closing bracket ending the unit gives up its empty half where
+            // that is what makes the line fit, and the line ends after it.
+            let narrowed = if unit
+                .iter()
+                .any(|item| matches!(item.trim, Trim::LineEnd { .. }))
+            {
+                line.extend(prepared, unit, true, false)
+            } else {
+                advance
+            };
+            if narrowed < advance && fits(line.used + narrowed, max_width) {
+                line.extend(prepared, unit, true, true);
+                ended = true;
+                break;
+            }
             // A unit too wide for the line overflows it on a line of its own,
             // as Chrome does with a 278px word in a 100px box, alone or after
             // a short word. Only `overflow-wrap: break-word` breaks it; see
             // [`break_word`].
-            let dropped = line.finish(&mut wrapped.lines, false);
-            wrapped.spaced.push(dropped);
+            if !line.started() {
+                line.extend(prepared, unit, false, true);
+                break;
+            }
+            line.finish(&mut wrapped.lines, false);
+            wrapped.starts.push(index);
         }
-        line.extend(styles, unit, gap, true);
+        index = end;
     }
     line.finish(&mut wrapped.lines, false);
-    wrapped.spaced.push(false);
     wrapped
 }
 
@@ -1206,12 +1731,21 @@ fn break_word(
 /// Rebuilds the last visible line to fill the room an ellipsis leaves: CSS
 /// takes as many characters as fit, so `Flower of Paradise Lost` in 140px is
 /// `Flower of Par…`, not the wrap's `Flower of…`. Text is pulled up from the
-/// lines after it, never across a newline the caller wrote.
+/// lines after it, never across a newline the caller wrote, laid out again
+/// from the paragraph's pieces as one line, so a mark narrowed or not where a
+/// line began or ended is set as the joined text sets it.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each is a distinct input of the one rebuild; a struct holding \
+              them would be built at both call sites and read once"
+)]
 fn truncate_with(
     measurer: &mut TextMeasurer,
     base: &ResolvedText,
-    all: &Wrapped,
+    prepared: &Prepared<'_>,
+    starts: &[usize],
     from: usize,
+    written: &Line,
     max_width: f32,
     marker: &str,
     metrics: Metrics,
@@ -1222,36 +1756,32 @@ fn truncate_with(
 
     // The ellipsis takes the style of the last thing written before it, which
     // is v9's rule and the one that keeps a bold last word's marker bold.
-    let style = all.lines[from]
+    // Never narrowed: the marker is no punctuation mark.
+    let style = written
         .runs
         .iter()
         .rev()
         .find(|run| !run.is_space())
-        .map_or(base_style, |run| run.style.clone());
+        .map_or(base_style, |run| RunStyle {
+            trimmed: false,
+            ..run.style.clone()
+        });
     let marker_width =
         measurer.run_width(&style, metrics.letter_spacing, marker);
     let budget = max_width - marker_width;
 
-    // This line, then each soft-wrapped continuation, with the space the wrap
-    // consumed put back between them where it consumed one: `漢字` broken
-    // between its ideographs had none.
-    let mut source: Vec<Run> = Vec::new();
-    for (offset, line) in all.lines[from..].iter().enumerate() {
-        if offset > 0
-            && all.spaced[from + offset - 1]
-            && let Some(previous) = source.last()
-        {
-            source.push(Run {
-                text: " ".to_owned(),
-                style: previous.style.clone(),
-                width: 0.0,
-            });
-        }
-        source.extend(line.runs.iter().cloned());
-        if line.hard_break {
-            break;
-        }
-    }
+    // This line and each soft-wrapped continuation, up to the next newline,
+    // as one line: the spaces the wrap consumed are pieces again, and `漢字`
+    // broken between its ideographs had none.
+    let start = starts.get(from).copied().unwrap_or_default();
+    let rest = &prepared.items[start.min(prepared.items.len())..];
+    let end = rest
+        .iter()
+        .position(|item| item.piece == Piece::Newline)
+        .unwrap_or(rest.len());
+    let mut joined = Builder::default();
+    joined.extend(prepared, &rest[..end], false, true);
+    let source = joined.runs;
 
     let mut runs: Vec<Run> = Vec::new();
     let mut used = 0.0_f32;
@@ -1397,10 +1927,16 @@ pub fn measure_lines(
     lines: &mut [Line],
     metrics: Metrics,
 ) {
-    let base_style = RunStyle::base(base);
     for line in lines {
         let mut extent = Extent::default();
+        // A run in the face of the run before it adds nothing: the extent is
+        // a maximum, and a narrowed mark is in its neighbour's face.
+        let mut previous: Option<&RunStyle> = None;
         for run in line.runs.iter().filter(|run| !run.is_space()) {
+            if previous.is_some_and(|face| face.same_face(&run.style)) {
+                continue;
+            }
+            previous = Some(&run.style);
             extent.add(measurer.answer(
                 &run.style,
                 metrics.letter_spacing,
@@ -1410,7 +1946,7 @@ pub fn measure_lines(
         if extent.ascent == 0.0 && extent.descent == 0.0 {
             extent = Extent::default();
             extent.add(measurer.answer(
-                &base_style,
+                &RunStyle::base(base),
                 metrics.letter_spacing,
                 METRICS_STRING,
             ));
@@ -1473,8 +2009,10 @@ pub(crate) fn layout_prepared(
     paragraph: &ParagraphStyle,
     metrics: Metrics,
 ) -> Block {
-    let all = wrap_marked(prepared, max_width);
-    let mut lines = all.lines.clone();
+    // Taken rather than cloned: a truncation reads only the line it rebuilds,
+    // which is still in place when it does.
+    let Wrapped { mut lines, starts } = wrap_marked(prepared, max_width);
+    let wrapped_lines = lines.len();
     let mut truncated = false;
     let marker = paragraph
         .ellipsis
@@ -1488,7 +2026,15 @@ pub(crate) fn layout_prepared(
             && let Some(last) = limit.checked_sub(1)
         {
             lines[last] = truncate_with(
-                measurer, base, &all, last, max_width, marker, metrics,
+                measurer,
+                base,
+                prepared,
+                &starts,
+                last,
+                &lines[last],
+                max_width,
+                marker,
+                metrics,
             );
             truncated = true;
         }
@@ -1506,7 +2052,15 @@ pub(crate) fn layout_prepared(
         && line_width(&lines[last], space, metrics.word_spacing) > max_width
     {
         lines[last] = truncate_with(
-            measurer, base, &all, last, max_width, marker, metrics,
+            measurer,
+            base,
+            prepared,
+            &starts,
+            last,
+            &lines[last],
+            max_width,
+            marker,
+            metrics,
         );
         truncated = true;
     }
@@ -1523,7 +2077,7 @@ pub(crate) fn layout_prepared(
         lines,
         width,
         height: boxes + gaps,
-        wrapped_lines: all.lines.len(),
+        wrapped_lines,
         truncated,
     }
 }
@@ -1837,7 +2391,7 @@ mod tests {
     #[test]
     fn a_newline_is_its_own_piece_and_a_run_of_spaces_is_one() {
         fn at(text: &str) -> Vec<Piece<'_>> {
-            pieces(text, 0, &breaks::opportunities(text))
+            pieces(text, 0, &breaks::opportunities(text), &[])
         }
         assert_eq!(
             at("a  b"),
@@ -1860,7 +2414,7 @@ mod tests {
     fn a_word_is_cut_at_every_opportunity_inside_it() {
         let text = "漢字well-known";
         assert_eq!(
-            pieces(text, 0, &breaks::opportunities(text)),
+            pieces(text, 0, &breaks::opportunities(text), &[]),
             [
                 word("漢", false),
                 word("字", true),
@@ -1876,8 +2430,8 @@ mod tests {
     fn a_segment_edge_opens_only_where_the_paragraph_breaks() {
         let paragraph = "ab漢字";
         let opportunities = breaks::opportunities(paragraph);
-        assert_eq!(pieces("b", 1, &opportunities), [word("b", false)]);
-        assert_eq!(pieces("字", 5, &opportunities), [word("字", true)]);
+        assert_eq!(pieces("b", 1, &opportunities, &[]), [word("b", false)]);
+        assert_eq!(pieces("字", 5, &opportunities, &[]), [word("字", true)]);
     }
 
     #[test]
@@ -1893,6 +2447,34 @@ mod tests {
         // has to be a different entry rather than a hit.
         let _ = measurer.measure(&base, 2.0, METRICS_STRING);
         assert_eq!(measurer.cached(), cached + 1);
+    }
+
+    #[test]
+    fn a_question_is_found_under_every_part_of_its_key() {
+        use meo_canvas_scene::style::text::FontVariant;
+
+        // A lookup reads the run's own style while the cache holds a copy: if
+        // the two hashed or compared a feature or `halt` differently, every
+        // such run would be measured again.
+        let mut measurer = TextMeasurer::new();
+        let mut asked = RunStyle::base(&style());
+        asked.variant =
+            vec![FontVariant::DiagonalFractions, FontVariant::Ordinal];
+        let mut variations = vec![asked; 4];
+        variations[1].trimmed = true;
+        variations[2].variant.pop();
+        variations[3].weight = 700;
+        for style in &variations {
+            let _ = measurer.measure(style, 0.0, "1/2");
+        }
+        let held = measurer.cached();
+        assert_eq!(held, variations.len());
+        for style in &variations {
+            let _ = measurer.measure(style, 0.0, "1/2");
+        }
+        // A miss measures again and queues its key again, which the count
+        // of answers held would not show.
+        assert_eq!((measurer.cached(), measurer.order.len()), (held, held));
     }
 
     #[test]
@@ -1957,9 +2539,16 @@ mod tests {
             // Six ideographs as FreeType advances them, which Chrome on Linux
             // also keeps on one 96px line.
             (6.0 * (16.0 + 2.0 / 65536.0), 96.0, true),
+            // A line a fifth of a 64th over the room and its spare one, which
+            // the FreeType margin must not let through.
+            (112.0 + 0.2 / 64.0, 111.99, false),
         ] {
             assert_eq!(fits(used, room), chrome, "{used} in {room}");
         }
+        // Seven ideographs as FreeType advances them, in a room Chrome fills to
+        // its last spare 64th: 112.0 fits 111.99, and 112.00021 must too.
+        #[cfg(target_os = "linux")]
+        assert!(fits(7.0 * (16.0 + 2.0 / 65536.0), 111.99));
     }
 
     #[test]
@@ -2386,6 +2975,81 @@ mod tests {
         // budget before a character is kept.
         let space = measurer.space_width(&RunStyle::base(&base), 0.0);
         assert!(line_width(&block.lines[0], space, 0.0) <= width);
+    }
+
+    #[test]
+    fn no_kerning_is_measured_where_a_narrowed_mark_cannot_join() {
+        // In `漢「「漢` the second `「` is narrowed and never begins a line,
+        // so neither it nor the `漢` after it joins a run: the pairs `「「`
+        // and `「漢` would be measured for kerning nothing uses.
+        let fonts = test_fonts();
+        fonts
+            .register_path("Trim", "tests/assets/fonts/NotoSansCJKsc-Trim.otf")
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let mut measurer = TextMeasurer::new();
+        let base = ResolvedText {
+            family: "Trim".to_owned(),
+            size: 16.0,
+            ..ResolvedText::initial()
+        };
+        let lines = wrap(
+            &mut measurer,
+            &base,
+            &plain("漢「「漢"),
+            1000.0,
+            Metrics::of(&base),
+        );
+        assert_eq!(
+            lines[0].runs.iter().filter(|run| run.style.trimmed).count(),
+            1
+        );
+        let asked: Vec<&str> = measurer
+            .answers
+            .keys()
+            .map(|asked| asked.text.as_str())
+            .collect();
+        for pair in ["「「", "「漢"] {
+            assert!(!asked.contains(&pair), "{pair} was measured: {asked:?}");
+        }
+    }
+
+    #[test]
+    fn a_truncation_sets_marks_as_the_joined_line_sets_them() {
+        // At 48px `漢」「漢…` wraps after `」`, and the `「` that begins the
+        // next line is whole. Pulled up behind `」` it is narrowed, so a
+        // rebuild from the wrapped runs keeps no `「` where one from
+        // the pieces does.
+        let fonts = test_fonts();
+        fonts
+            .register_path("Trim", "tests/assets/fonts/NotoSansCJKsc-Trim.otf")
+            .unwrap_or_else(|error| unreachable!("{error}"));
+        let mut measurer = TextMeasurer::new();
+        let base = ResolvedText {
+            family: "Trim".to_owned(),
+            size: 16.0,
+            ..ResolvedText::initial()
+        };
+        let metrics = Metrics::of(&base);
+        let text = plain("漢」「漢字漢字");
+        let wrapped = wrap(&mut measurer, &base, &text, 48.0, metrics);
+        assert_eq!(read(&wrapped[0]), "漢」");
+        let block = layout(
+            &mut measurer,
+            &base,
+            &text,
+            48.0,
+            &ParagraphStyle {
+                max_lines: Some(1),
+                ellipsis: Some(".".to_owned()),
+            },
+            metrics,
+        );
+        let runs: Vec<(&str, bool)> = block.lines[0]
+            .runs
+            .iter()
+            .map(|run| (run.text.as_str(), run.style.trimmed))
+            .collect();
+        assert_eq!(runs, [("漢」", false), ("「", true), (".", false)]);
     }
 
     #[test]

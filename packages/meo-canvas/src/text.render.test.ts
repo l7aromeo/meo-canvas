@@ -188,3 +188,49 @@ describe('text with no spaces to break at', () => {
     expect(raw.length / (200 * 4)).toBe(height)
   })
 })
+
+describe('full-width punctuation beside another mark', () => {
+  // `chrome_text_spacing_trim.rs` pins every pair and line against Chrome 158; this
+  // proves the npm surface narrows the same. The second `「` and a line-ending `」`
+  // lose half their em in the face with `halt`, and nothing does without it.
+  const font = (name: string) => fileURLToPath(new URL(`../../../crates/meo-canvas-core/tests/assets/fonts/${name}`, import.meta.url))
+  const FONTS = [
+    { family: 'Trim', paths: [font('NotoSansCJKsc-Trim.otf')] },
+    { family: 'NoHalt', paths: [font('NotoSansCJKsc-NoHalt.otf')] },
+  ]
+  const draw = async (text: string, width: number, family: string) => {
+    const canvas = await Root({
+      width,
+      display: 'block',
+      backgroundColor: '#ffffff',
+      fonts: FONTS,
+      children: Text(text, { fontFamily: family, fontSize: 16, lineHeight: '20px', color: '#000000' }),
+    })
+    const raw = canvas.toBufferSync('raw')
+    canvas.release()
+    return raw
+  }
+
+  it.each([
+    ['漢「「漢', 56, 'Trim', 20],
+    ['漢字漢字漢字」', 104, 'Trim', 20],
+    ['漢「「漢', 56, 'NoHalt', 40],
+    ['漢字漢字漢字」', 104, 'NoHalt', 40],
+  ])('lays %s out at %ipx in %s on lines %i tall in all', async (text, width, family, height) => {
+    const raw = await draw(text, width, family)
+    // The canvas is as tall as its content, so its height is the lines'.
+    expect(raw.length / (width * 4)).toBe(height)
+  })
+
+  it('draws a narrowed opening bracket in the half it keeps', async () => {
+    // `漢「「漢` on one 56px line: the second `「` holds 32 to 40, its ink in the
+    // right half of an em until `halt` moves it left. Drawn without `halt`, that
+    // ink would start at 42 and leave 33 to 39 blank.
+    const raw = await draw('漢「「漢', 56, 'Trim')
+    let inked = 0
+    for (let y = 0; y < 20; y += 1) {
+      for (let x = 33; x < 40; x += 1) if ((raw[(y * 56 + x) * 4] as number) < 128) inked += 1
+    }
+    expect(inked).toBeGreaterThan(0)
+  })
+})

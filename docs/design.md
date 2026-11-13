@@ -594,6 +594,7 @@ by construction, and the crate ships them together.
 | `clap`            | 4.6    | CLI.                                                     |
 | `thiserror`       | 2.0    | Error types.                                             |
 | `icu_segmenter`   | 2.4    | Line break opportunities, UAX 14 17. See `Cargo.toml`.   |
+| `foldhash`        | 0.2    | The text caches' hasher. See `Cargo.toml`.               |
 | `ureq`            | 3.5.1  | Remote images, behind the optional `net` feature.        |
 | `rustls-webpki`   | 0.103  | A floor, not a use -- see `Cargo.toml`. Under `net`.     |
 | `sha2`            | 0.11   | The disk image cache's names and checksums. Under `net`. |
