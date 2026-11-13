@@ -56,7 +56,7 @@ use meo_skia_canvas::{
 use crate::{
     Error,
     layout::{LayoutResult, is_containing_block, used_border},
-    lines::{Line, Metrics, Run, RunStyle, line_width},
+    lines::{Line, Metrics, Run, RunStyle, TextMeasurer, justify, line_width},
     measure::SceneMeasurer,
     resolve::{DecodedImage, DroppedFilters, Resolved, ResolvedText},
 };
@@ -1212,12 +1212,13 @@ fn draw_text(
     let mut draw = |context: &mut Context2D| {
         for (index, line) in block.lines.iter().enumerate() {
             let width = line_width(line, space, metrics.word_spacing);
-            // **Justification skips the last line**, which is CSS's rule:
-            // stretching a line that ends a paragraph spaces out a few words
-            // across the whole measure.
+            // **Justification skips the last line and one a newline ends**,
+            // which is CSS's rule and Chrome's: stretching a line that ends a
+            // paragraph spaces out a few words across the whole measure.
             let justify =
                 matches!(physical(style.align, direction), TextAlign::Justify)
                     && index != last
+                    && !line.hard_break
                     && width < content.size.width;
             let mut x = content.origin.x
                 + match physical(style.align, direction) {
@@ -1230,17 +1231,23 @@ fn draw_text(
                     }
                 }
                 .max(0.0);
-            let gap = if justify {
-                let gaps = gap_count(line);
-                if gaps > 0 {
-                    gap + (content.size.width - width) / gaps as f32
-                } else {
-                    gap
-                }
-            } else {
-                gap
-            };
             let baseline = top + line.baseline_from_top();
+
+            if justify {
+                let slack = content.size.width - width;
+                draw_justified(
+                    context,
+                    measurer.text_mut(),
+                    node,
+                    &style,
+                    line,
+                    (x, baseline),
+                    gap,
+                    slack,
+                );
+                top += line.height + metrics.line_gap;
+                continue;
+            }
 
             // The gap belongs to a space run that is actually there. Two
             // runs can meet with nothing between them -- `<b>a</b><b>b</b>`
@@ -1269,6 +1276,50 @@ fn draw_text(
 
     context.restore();
     result
+}
+
+/// Draws a justified `line` from `origin`, its left edge and baseline, with
+/// `slack` shared equally between the gaps its space runs stand for, each
+/// `gap` wide set alone, and the cuts beside its CJK characters
+/// (`lines::justify`).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each is a distinct input of the one draw, and the caller has \
+              them apart already"
+)]
+fn draw_justified(
+    context: &mut Context2D,
+    measurer: &mut TextMeasurer,
+    node: &Node,
+    style: &ResolvedText,
+    line: &Line,
+    origin: (f32, f32),
+    gap: f32,
+    slack: f32,
+) {
+    let (x, baseline) = origin;
+    let cuts = justify::cuts(line);
+    let gaps = gap_count(line);
+    let points = gaps + cuts.iter().map(Vec::len).sum::<usize>();
+    let share = if points > 0 {
+        slack / points as f32
+    } else {
+        0.0
+    };
+    let gap = gap + if gaps > 0 { share } else { 0.0 };
+    for piece in justify::place(measurer, line, &cuts, gap, share) {
+        let run = &line.runs[piece.run];
+        if piece.range == (0..run.text.len()) && piece.spacing == 0.0 {
+            draw_run(context, node, style, run, x + piece.x, baseline);
+        } else {
+            // A spaced piece is drawn with the share as letter-spacing, which
+            // the canvas adds after each character as a cut would.
+            let mut part = run.clone();
+            run.text[piece.range].clone_into(&mut part.text);
+            part.style.letter_spacing += piece.spacing;
+            draw_run(context, node, style, &part, x + piece.x, baseline);
+        }
+    }
 }
 
 /// Draws one run: its shadows, each a full pass over the run, then the glyphs,
@@ -1349,7 +1400,8 @@ fn paint_run(
     context.restore();
 }
 
-/// How many inter-word gaps a line has to spread justification across.
+/// How many inter-word gaps a line has, each taking one share of a
+/// justification beside those `lines::justify::cuts` finds.
 ///
 /// A gap for each space run that separates two words, which is not the same as
 /// one per pair of runs: two runs can meet with nothing between them.

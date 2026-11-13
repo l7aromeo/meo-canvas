@@ -234,3 +234,45 @@ describe('full-width punctuation beside another mark', () => {
     expect(inked).toBeGreaterThan(0)
   })
 })
+
+describe('justified Chinese', () => {
+  // `chrome_justify.rs` and the core's table test pin every row against Chrome 158;
+  // this proves the npm surface spreads a line written without spaces, and leaves a
+  // line a newline ends as set left.
+  const FONTS = [
+    { family: 'Trim', paths: [fileURLToPath(new URL('../../../crates/meo-canvas-core/tests/assets/fonts/NotoSansCJKsc-Trim.otf', import.meta.url))] },
+  ]
+  const draw = async (text: string, textAlign: 'justify' | 'left') => {
+    const canvas = await Root({
+      width: 120,
+      display: 'block',
+      backgroundColor: '#ffffff',
+      fonts: FONTS,
+      children: Text(text, { fontFamily: 'Trim', fontSize: 16, lineHeight: '20px', color: '#000000', width: 120, textAlign }),
+    })
+    const raw = canvas.toBufferSync('raw')
+    canvas.release()
+    return raw
+  }
+  /** The first line's rows, and its last column of ink. */
+  const firstLine = (raw: Buffer) => {
+    const rows = raw.subarray(0, 20 * 120 * 4)
+    let right = -1
+    for (let y = 0; y < 20; y += 1) {
+      for (let x = 0; x < 120; x += 1) if ((rows[(y * 120 + x) * 4] as number) < 128) right = Math.max(right, x)
+    }
+    return { rows, right }
+  }
+
+  it('spreads seven ideographs across a 120px line', async () => {
+    // Set left they end at 112, their ink at 111; spread, the seventh ends at 120.
+    const { right } = firstLine(await draw('漢字漢字漢字漢字漢字', 'justify'))
+    expect(right).toBeGreaterThanOrEqual(117)
+  })
+
+  it('leaves a line a newline ends as set left', async () => {
+    const justified = firstLine(await draw('漢字漢字漢字漢\n漢字', 'justify'))
+    const left = firstLine(await draw('漢字漢字漢字漢\n漢字', 'left'))
+    expect(justified.rows.equals(left.rows)).toBe(true)
+  })
+})

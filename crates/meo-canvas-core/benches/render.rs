@@ -14,7 +14,7 @@ use meo_canvas_scene::{
         Dimension, Length,
         layout::{Align, Display, FlexDirection, LayoutStyle},
         paint::{Color, ObjectFit, PaintStyle},
-        text::TextStyle,
+        text::{TextAlign, TextStyle},
     },
 };
 
@@ -22,6 +22,22 @@ use meo_canvas_scene::{
 ///
 /// A scene naming a platform face would measure this machine's font stack.
 const FAMILY: &str = "Bench";
+
+/// The CJK face the bench registers beside it, the cut of Noto Sans CJK SC the
+/// text-spacing-trim table uses, with `halt` and printable ASCII.
+const CJK_FAMILY: &str = "BenchCJK";
+
+/// A paragraph of words to justify: a dozen lines in 200px.
+const LATIN: &str = "The quick brown fox jumps over the lazy dog while a well-known \
+     state-of-the-art engine sets each line of this paragraph flush with both \
+     edges of its box, sharing what is left of every line between the gaps \
+     its spaces stand for, as a browser does for a block justified on both sides.";
+
+/// The same for CJK written without spaces, with the punctuation that is
+/// narrowed and spread: a dozen lines in 200px.
+const CJK: &str = "漢字かなカナ、漢字。「漢字」かな漢字カナ漢字、かなカナ漢字かな。\
+     漢字（カナ）漢字かな、漢字カナ「かな」漢字。漢字かなカナ漢字、かな漢字カナ。\
+     「漢字」かなカナ漢字、漢字かな。漢字カナ漢字かな、カナ漢字「漢字」かな。";
 
 /// How many rows the tree has: twelve of eight children, a little over four
 /// hundred nodes, the order a real page reaches -- enough for a per-node cost
@@ -53,6 +69,13 @@ fn renderer() -> Renderer {
     renderer.set_gpu(false);
     renderer
         .register_font(FAMILY, font_path())
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    renderer
+        .register_font(
+            CJK_FAMILY,
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/assets/fonts/NotoSansCJKsc-Trim.otf"),
+        )
         .unwrap_or_else(|error| unreachable!("{error}"));
     renderer
 }
@@ -136,6 +159,29 @@ fn realistic_scene() -> Scene {
 
 /// A tree the size a large page reaches, for the per-node passes, so a per-node
 /// claim is extrapolated from two points rather than one.
+/// One justified paragraph of `text` in `family`, 200px wide at 16px.
+fn justified(family: &str, text: &str) -> Scene {
+    let mut scene = Scene::new(Size::new(240.0, 400.0));
+    scene.nodes[0].layout = LayoutStyle {
+        display: Display::Flex,
+        flex_direction: FlexDirection::Column,
+        ..LayoutStyle::default()
+    };
+    scene.nodes[0].text = TextStyle {
+        font_family: Some(family.to_owned()),
+        font_size: Some(16.0),
+        text_align: Some(TextAlign::Justify),
+        ..TextStyle::default()
+    };
+    let id = scene
+        .push(NodeId::ROOT, Node::text(text.to_owned()))
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    if let Some(node) = scene.get_mut(id) {
+        node.layout.size = (Dimension::Points(200.0), Dimension::Auto);
+    }
+    scene
+}
+
 fn large_scene() -> Scene {
     let mut scene = realistic_scene();
     let rows: Vec<NodeId> = scene.nodes[0].children.clone();
@@ -196,6 +242,23 @@ fn benches(c: &mut Criterion) {
             )
         });
     });
+
+    // A paragraph justified at its spaces, and one in CJK justified between
+    // its characters, which take the path a left-aligned line does not.
+    for (name, scene) in [
+        ("draw/justified-latin-200px", justified(FAMILY, LATIN)),
+        ("draw/justified-cjk-200px", justified(CJK_FAMILY, CJK)),
+    ] {
+        group.bench_function(name, |b| {
+            b.iter(|| {
+                black_box(
+                    renderer
+                        .render(black_box(&scene))
+                        .unwrap_or_else(|error| unreachable!("{error}")),
+                )
+            });
+        });
+    }
 
     // A second encode of an already-painted surface: what the render/encode
     // split buys, and the floor any allocation fix is measured against.
