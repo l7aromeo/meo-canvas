@@ -336,6 +336,16 @@ describe('renderNotices', () => {
     expect(() => renderNotices({ ...base, suffix: 'linux-x64-gnu', native: native('image:freetype'), imageLicences: noYear })).toThrow(/credit-year/)
   })
 
+  it("states that the software is based in part on the IJG's work wherever libjpeg-turbo is linked", () => {
+    const statement = 'This software is based in part on the work of the Independent JPEG Group.'
+    const text = renderNotices({ ...base, suffix: 'darwin-arm64', native: native('skia', 'libjpeg-turbo') })
+    const head = text.slice(0, text.indexOf('C and C++ libraries'))
+    expect(head.split('\n')).toContain(statement)
+    // The licence quotes the sentence wrapped across two lines; that is not the statement.
+    expect(committed('skia/third_party/externals/libjpeg-turbo/LICENSE.md').split('\n')).not.toContain(statement)
+    expect(renderNotices({ ...base, suffix: 'darwin-arm64', native: native('skia') })).not.toContain(statement)
+  })
+
   it('refuses licences an image kept for a version the script no longer builds', () => {
     const stale = join(scratch, 'stale')
     put(join(stale, 'fontconfig-2.14.0', 'COPYING'), 'old\n')
@@ -504,6 +514,13 @@ describe("meo-skia-canvas's notices for the Skia archive", () => {
     expect(text).toContain('Source: the asset')
     expect(text).toContain('## FreeType')
     expect(() => renderNotices({ ...input, archive: { text: 'FreeType, uncredited', source: 'the asset' } })).toThrow(/no FTL credit line/)
+    const ijg = 'This software is based in part on the work of the Independent JPEG Group.'
+    const jpeg = `${FIXTURE}\n## libjpeg-turbo\n\nthe Independent JPEG Group's licence\n`
+    expect(() => renderNotices({ ...input, archive: { text: jpeg, source: 'the asset' } })).toThrow(
+      /carries the IJG's licence but not the statement it requires/,
+    )
+    const stated = renderNotices({ ...input, archive: { text: `${jpeg}\n${ijg}\n`, source: 'the asset' } })
+    expect(stated.slice(0, stated.indexOf('C and C++ libraries')).split('\n')).toContain(ijg)
     expect(() => renderNotices(input)).toThrow(/were not given/)
   })
 })

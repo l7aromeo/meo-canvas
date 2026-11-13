@@ -313,6 +313,13 @@ const HTTP_NOT_FOUND = 404
 /** The FTL's credit line, which it asks for wherever FreeType is used. */
 const FREETYPE_CREDIT = /Portions of this software are copyright \u00a9 \d{4} The FreeType Project \(www\.freetype\.org\)\. {1,2}All rights reserved\./g
 
+/**
+ * The statement the IJG's licence, which libjpeg-turbo carries, requires in the
+ * documentation of a binary that links it. Its licence quotes it wrapped, so a
+ * line holding it whole is the statement itself.
+ */
+const IJG_STATEMENT = 'This software is based in part on the work of the Independent JPEG Group.'
+
 /** Fails with a message naming what could not be placed. */
 class NoticeError extends Error {}
 const refuse = message => {
@@ -656,11 +663,14 @@ export function renderNotices({ suffix, triple, features, about, native, dirs, w
     const libs = [...native.get(id)].sort().join(', ')
     if (id === SKIA_ARCHIVE) {
       if (archive === undefined) refuse("the Skia archives were taken as one component, but meo-skia-canvas's notices for them were not given")
-      // The credit leads the file wherever FreeType is in it, so it is lifted
-      // from meo-skia-canvas's text rather than trusted to be read there.
+      // The FTL's credit and the IJG's statement lead the file wherever their
+      // projects are in it, so they are lifted rather than trusted to be read there.
       const lifted = archive.text.match(FREETYPE_CREDIT) ?? []
       if (/FreeType/.test(archive.text) && lifted.length === 0) refuse(`${archive.source} names FreeType but carries no FTL credit line`)
       credits.push(...lifted.map(line => line.replace(/ {2}/, ' ')))
+      const stated = archive.text.split(/\r?\n/).some(line => line.trim() === IJG_STATEMENT)
+      if (/Independent JPEG Group/.test(archive.text) && !stated) refuse(`${archive.source} carries the IJG's licence but not the statement it requires`)
+      if (stated) credits.push(IJG_STATEMENT)
       sections.push(
         `Skia and the libraries its archives link\nSource: ${archive.source}\nLinked through: ${libs}\n\n${archive.text.replace(/\r\n/g, '\n').trimEnd()}\n`,
       )
@@ -684,6 +694,7 @@ export function renderNotices({ suffix, triple, features, about, native, dirs, w
         return block(`${component.pkg}: ${file}`, readFileSync(path, 'utf8'))
       })
     if (id === 'freetype') credits.push(freetypeCredit(override?.creditYear ?? SKIA_SOURCE.freetypeCreditYear))
+    if (id === 'libjpeg-turbo') credits.push(IJG_STATEMENT)
     const note = id === 'freetype' ? `${FTL_CHOICE}\n` : ''
     sections.push(`${component.name}\nSource: ${origin}\nLinked through: ${libs}\n${note}\n${texts.join('\n')}`)
   }
