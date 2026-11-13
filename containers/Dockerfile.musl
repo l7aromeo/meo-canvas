@@ -9,55 +9,14 @@
 ARG BASE=quay.io/pypa/musllinux_1_2_x86_64
 FROM ${BASE}
 
-# apk rather than dnf, with Alpine's package names. `nasm` is x86-only as in the
-# glibc image, and the same `ARG` keeps an aarch64 target from forking this
-# file.
+# Alpine's names for what the glibc image gets from dnf; `nasm` is x86-only, an
+# `ARG` so aarch64 shares this file. libaom's cmake stops without `perl`, which
+# autoconf brings anyway; without `fortify-headers` gcc's `_FORTIFY_SOURCE` has
+# no musl wrappers, and fontconfig builds without overflow checks, silently.
 ARG ASSEMBLER=nasm
 RUN apk add --no-cache \
       ${ASSEMBLER} gperf ninja-build meson bash curl tar xz \
-      linux-headers musl-dev python3 perl \
-      gn clang clang-dev llvm llvm-dev \
-      git
-
-# For a Skia compile, which `patched-skia` refuses: skia-bindings' own `gn` is a
-# glibc x86_64 binary that cannot run on musl and panics in `config.rs` naming
-# neither, so `gn` comes from Alpine. `meo-skia-canvas` does the same.
-ENV GN_EXE=gn \
-    SKIA_GN_COMMAND=/usr/bin/gn \
-    SKIA_NINJA_COMMAND=/usr/bin/ninja
-
-# bindgen needs `libclang.so`, which Alpine ships in `clang-dev`, not `clang`,
-# and a Skia compile without it panics "Unable to find libclang"; `git` is for
-# Skia's `git-sync-deps`. A download needs neither: the archive carries the
-# bindings, here as on glibc.
-ENV LIBCLANG_PATH=/usr/lib/llvm20/lib
-
-# clang finds GCC by the target triple, and `libaom-sys` passes the Rust one,
-# `<arch>-unknown-linux-musl`; Alpine's GCC is under `<arch>-alpine-linux-musl`,
-# so C fails on `crtbeginS.o` and C++ on `cstdint`. The config names the GCC
-# directory holding both, chosen by contents, not version.
-
-# The config goes beside the clang binary, since this clang does not read
-# `/etc/clang`. The two compiles at the end fail the image build here, rather
-# than thirty minutes into Skia on a missing header.
-RUN ARCH="$(uname -m)" && TRIPLE="${ARCH}-alpine-linux-musl" && \
-    GCC_DIR="" && \
-    for dir in /usr/lib/gcc/"$TRIPLE"/*/; do \
-      version="$(basename "$dir")"; \
-      if [ -f "${dir}crtbeginS.o" ] && [ -d "/usr/include/c++/${version}/${TRIPLE}" ]; then \
-        GCC_DIR="${dir%/}"; \
-      fi; \
-    done && \
-    test -n "$GCC_DIR" && \
-    CLANG_DIR="$(dirname "$(readlink -f "$(which clang)")")" && \
-    printf -- '--gcc-install-dir=%s\n' "$GCC_DIR" \
-      | tee "$CLANG_DIR/clang++.cfg" > "$CLANG_DIR/clang.cfg" && \
-    printf 'int main(){ return 0; }\n' > /tmp/t.c && \
-    printf '#include <cstdint>\n#include <vector>\nint main(){ std::vector<int> v; return (int)v.size(); }\n' > /tmp/t.cc && \
-    clang --target="${ARCH}-unknown-linux-musl" /tmp/t.c -o /tmp/t && \
-    clang++ --target="${ARCH}-unknown-linux-musl" /tmp/t.cc -o /tmp/txx && \
-    rm -f /tmp/t.c /tmp/t.cc /tmp/t /tmp/txx && \
-    echo "clang compiles and links C and C++ under the rust triple: ok"
+      linux-headers musl-dev perl fortify-headers
 
 # Identical to the glibc image apart from `LIBDIR=lib`. The static font
 # libraries matter more here: an Alpine image is even less likely than slim

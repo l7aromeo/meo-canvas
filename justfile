@@ -387,8 +387,8 @@ addon-release:
 
 # A Linux artefact is a property of its build base: built on `ubuntu-latest` it
 # needed glibc 2.35 and loaded on one of six images, in the release container
-# 2.28 and all six. No `--target`, which keeps `RUSTFLAGS` off build scripts and
-# broke musl; `vulkan` is written, not inherited.
+# 2.28 and all six. No `--target`, so the build is the one releases have used
+# (`docs/releasing.md` says what one changes); `vulkan` is written, not inherited.
 [doc("Build a Linux addon inside its release container.")]
 addon-container suffix:
     #!/usr/bin/env bash

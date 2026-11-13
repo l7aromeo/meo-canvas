@@ -73,11 +73,15 @@ five of the six images the package claims; built in
 artefacts in the containers.
 
 The musl image is its own piece of work rather than a variant: Rust's musl
-targets default to `crt-static`, which cannot produce a `cdylib`; and an
-explicit `--target` must **not** be passed, because cargo then builds build
-scripts and proc-macros without `RUSTFLAGS`, so without the image's
-`-crt-static`. Skia itself is downloaded from meo-skia-canvas's musl archives,
-as on glibc, since `patched-skia` refuses to compile it.
+targets default to `crt-static`, which cannot produce a `cdylib`, so the image's
+`RUSTFLAGS` turn it off. `addon-container` passes no `--target`, which keeps the
+build the one every release so far has used. With an explicit `--target` cargo
+builds build scripts and proc-macros without `RUSTFLAGS`; on `linux-arm64-musl`
+that still builds an addon that loads, with the same C code and the same
+imports, and different Rust symbols, since cargo hashes the triple into each
+crate's metadata. `linux-x64-musl` has not been tried with one. Skia itself is
+downloaded from meo-skia-canvas's musl archives, as on glibc, since
+`patched-skia` refuses to compile it.
 
 **Two instruments, and they are not substitutes.** `just abi-floor` reads the
 built `.node`'s undefined symbols, fails if it demands more than `TARGETS`
