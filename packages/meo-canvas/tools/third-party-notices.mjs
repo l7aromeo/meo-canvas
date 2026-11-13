@@ -310,8 +310,20 @@ export const ARCHIVE_NOTICES = 'THIRD-PARTY-NOTICES.md'
 /** What a GitHub release download answers for an asset the release does not have. */
 const HTTP_NOT_FOUND = 404
 
-/** The FTL's credit line, which it asks for wherever FreeType is used. */
-const FREETYPE_CREDIT = /Portions of this software are copyright \u00a9 \d{4} The FreeType Project \(www\.freetype\.org\)\. {1,2}All rights reserved\./g
+/** The FTL's credit line, whichever URL the FreeType's FTL.TXT gives it. */
+const FREETYPE_CREDIT = /Portions of this software are copyright \u00a9 \d{4} The FreeType Project \([^)\s]+\)\. {1,2}All rights reserved\./g
+
+/** The credit FTL.TXT asks for, wrapped over two lines, with `<year>` for its year. */
+const FTL_TEMPLATE = /Portions of this software are copyright \u00a9 <year> The FreeType\s+Project \(([^)\s]+)\)\.\s+All rights reserved\./
+
+/**
+ * The credit line in the words of the FTL.TXT shipped beside it, which name
+ * a URL that changed between FreeType releases.
+ */
+function freetypeCredit(year, ftl) {
+  const found = ftl.match(FTL_TEMPLATE) ?? refuse('FTL.TXT holds no credit line to follow')
+  return `Portions of this software are copyright \u00a9 ${year} The FreeType Project (${found[1]}). All rights reserved.`
+}
 
 /**
  * The statement the IJG's licence, which libjpeg-turbo carries, requires in the
@@ -555,6 +567,9 @@ function packageDirs(triple) {
 /** The committed licence texts, by their path under this directory. */
 const NOTICES_DIR = join(HERE, 'notices')
 
+/** The committed FTL.TXT, which the Linux archives' FreeType 2.14.1 ships byte for byte too. */
+const FTL_FILE = COMPONENTS.freetype.committed.find(file => file.endsWith('/FTL.TXT'))
+
 /**
  * Crates whose licence text is a committed file, not what cargo-about finds in
  * their source. skia-bindings ships none, and a Skia compile downloads Skia's
@@ -676,7 +691,6 @@ export function renderNotices({ suffix, triple, features, about, native, dirs, w
 
   const sections = []
   const credits = []
-  const freetypeCredit = year => `Portions of this software are copyright © ${year} The FreeType Project (www.freetype.org). All rights reserved.`
   for (const id of [...native.keys()].sort()) {
     const libs = [...native.get(id)].sort().join(', ')
     if (id === SKIA_ARCHIVE) {
@@ -695,8 +709,8 @@ export function renderNotices({ suffix, triple, features, about, native, dirs, w
       continue
     }
     if (id.startsWith(IMAGE)) {
-      const { name, texts, year } = imageComponent(imageLicences, id.slice(IMAGE.length))
-      if (year !== undefined) credits.push(freetypeCredit(year))
+      const { name, texts, year, ftl } = imageComponent(imageLicences, id.slice(IMAGE.length))
+      if (year !== undefined) credits.push(freetypeCredit(year, ftl))
       const note = year === undefined ? '' : `${FTL_CHOICE}\n`
       sections.push(`${name}\nSource: built from its release tarball by containers/install-fontlibs.sh\nLinked through: ${libs}\n${note}\n${texts.join('\n')}`)
       continue
@@ -711,7 +725,8 @@ export function renderNotices({ suffix, triple, features, about, native, dirs, w
         if (!existsSync(path)) refuse(`${component.name}'s licence is expected at ${path}, which does not exist`)
         return block(`${component.pkg}: ${file}`, readFileSync(path, 'utf8'))
       })
-    if (id === 'freetype') credits.push(freetypeCredit(override?.creditYear ?? SKIA_SOURCE.freetypeCreditYear))
+    if (id === 'freetype')
+      credits.push(freetypeCredit(override?.creditYear ?? SKIA_SOURCE.freetypeCreditYear, readFileSync(join(NOTICES_DIR, FTL_FILE), 'utf8')))
     if (id === 'libjpeg-turbo') credits.push(IJG_STATEMENT)
     const note = id === 'freetype' ? `${FTL_CHOICE}\n` : ''
     sections.push(`${component.name}\nSource: ${origin}\nLinked through: ${libs}\n${note}\n${texts.join('\n')}`)
@@ -761,12 +776,15 @@ function imageComponent(root, name, versions = imageVersions()) {
   if (files.length === 0) refuse(`${dir} holds no licence text`)
   const texts = files.map(file => block(`${dirs[0]}: ${file}`, readFileSync(join(dir, file), 'utf8')))
   let year
+  let ftl
   if (name === 'freetype') {
     const path = join(dir, CREDIT_YEAR)
     year = existsSync(path) ? Number(readFileSync(path, 'utf8').trim()) : NaN
     if (!Number.isInteger(year)) refuse(`${path} must hold the year of FreeType's copyright line, for the FTL's credit`)
+    if (!files.includes('FTL.TXT')) refuse(`${dir} holds no FTL.TXT, whose credit line the notices follow`)
+    ftl = readFileSync(join(dir, 'FTL.TXT'), 'utf8')
   }
-  return { name: dirs[0], texts, year }
+  return { name: dirs[0], texts, year, ftl }
 }
 
 /**

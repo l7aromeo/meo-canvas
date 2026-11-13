@@ -246,7 +246,11 @@ describe('renderNotices', () => {
   const committed = (path: string) => readFileSync(resolve(HERE, '../tools/notices', path), 'utf8').trimEnd()
   const image = join(scratch, 'image')
   const pinned = imageVersions()
-  put(join(image, pinned.freetype ?? '', 'FTL.TXT'), 'image FTL\n')
+  // FreeType 2.13.3's FTL.TXT asks for its credit with the URL of its day.
+  put(
+    join(image, pinned.freetype ?? '', 'FTL.TXT'),
+    '    Portions of this software are copyright \u00a9 <year> The FreeType\n    Project (www.freetype.org).  All rights reserved.\n',
+  )
   put(join(image, pinned.freetype ?? '', 'credit-year'), '2024\n')
   put(join(image, pinned.fontconfig ?? '', 'COPYING'), 'fontconfig COPYING\n')
 
@@ -288,7 +292,10 @@ describe('renderNotices', () => {
     }
     expect(text).toContain(`Skia\nSource: ${SKIA_SOURCE.origin}\n`)
     expect(text).toContain('Source: https://chromium.googlesource.com/chromium/src/third_party/zlib at 456ae730017b9b4bd3371927abc82627fd51feef\n')
-    expect(text).toContain(`Portions of this software are copyright © ${SKIA_SOURCE.freetypeCreditYear} The FreeType Project`)
+    // Worded as the FTL.TXT committed beside it asks.
+    expect(text.split('\n')).toContain(
+      `Portions of this software are copyright \u00a9 ${SKIA_SOURCE.freetypeCreditYear} The FreeType Project (https://freetype.org). All rights reserved.`,
+    )
     expect(text.split('Used under the FreeType License (FTL)').length - 1).toBe(1)
     expect(text).toContain('Used by: a 2.0.0, b 1.0.0\n\nMIT text\n')
     expect(text).not.toContain('meo-canvas-node 1.0.0')
@@ -297,7 +304,7 @@ describe('renderNotices', () => {
 
   it('carries no credit line without FreeType', () => {
     const text = renderNotices({ ...base, suffix: 'darwin-arm64', native: native('skia', 'zlib') })
-    expect(text).not.toContain('FreeType Project (www.freetype.org)')
+    expect(text).not.toContain('The FreeType Project (')
     expect(text).not.toContain('Used under the FreeType License')
   })
 
@@ -312,8 +319,11 @@ describe('renderNotices', () => {
     expect(text).toContain(committed('chromium-zlib.LICENSE'))
     expect(text).not.toContain('--- skia/third_party/externals/zlib/LICENSE')
     expect(text).toContain('phyrondev/chromium-zlib at 646b7f56')
-    expect(text).toContain('Portions of this software are copyright © 2025 The FreeType Project')
-    expect(text).toContain('Portions of this software are copyright © 2024 The FreeType Project')
+    // Each FreeType is credited in its own FTL.TXT's words: 2.14.1 names
+    // https://freetype.org, the image's 2.13.3 www.freetype.org.
+    const lines = text.split('\n')
+    expect(lines).toContain('Portions of this software are copyright \u00a9 2025 The FreeType Project (https://freetype.org). All rights reserved.')
+    expect(lines).toContain('Portions of this software are copyright \u00a9 2024 The FreeType Project (www.freetype.org). All rights reserved.')
     expect(text).not.toContain(`copyright © ${SKIA_SOURCE.freetypeCreditYear} The FreeType Project`)
     expect(text).toContain('fontconfig COPYING')
     // Once for the archive's FreeType and once for the image's.
@@ -358,6 +368,12 @@ describe('renderNotices', () => {
     const noYear = join(scratch, 'no-year')
     put(join(noYear, pinned.freetype ?? '', 'FTL.TXT'), 'x\n')
     expect(() => renderNotices({ ...base, suffix: 'linux-x64-gnu', native: native('image:freetype'), imageLicences: noYear })).toThrow(/credit-year/)
+    const noCredit = join(scratch, 'no-credit')
+    put(join(noCredit, pinned.freetype ?? '', 'FTL.TXT'), 'an FTL with no credit to follow\n')
+    put(join(noCredit, pinned.freetype ?? '', 'credit-year'), '2024\n')
+    expect(() => renderNotices({ ...base, suffix: 'linux-x64-gnu', native: native('image:freetype'), imageLicences: noCredit })).toThrow(
+      /FTL\.TXT holds no credit line/,
+    )
   })
 
   it("states that the software is based in part on the IJG's work wherever libjpeg-turbo is linked", () => {
@@ -538,6 +554,10 @@ describe("meo-skia-canvas's notices for the Skia archive", () => {
     expect(text).toContain('Source: the asset')
     expect(text).toContain('## FreeType')
     expect(() => renderNotices({ ...input, archive: { text: 'FreeType, uncredited', source: 'the asset' } })).toThrow(/no FTL credit line/)
+    // FreeType 2.14.1's FTL.TXT names https://freetype.org, as meo-skia-canvas's Linux notices do.
+    const current = 'Portions of this software are copyright \u00a9 2025 The FreeType Project (https://freetype.org). All rights reserved.'
+    const lifted = renderNotices({ ...input, archive: { text: `# Third-party notices\n\n${current}\n\n## FreeType\n`, source: 'the asset' } })
+    expect(lifted.slice(0, lifted.indexOf('C and C++ libraries')).split('\n')).toContain(current)
     const ijg = 'This software is based in part on the work of the Independent JPEG Group.'
     const jpeg = `${FIXTURE}\n## libjpeg-turbo\n\nthe Independent JPEG Group's licence\n`
     expect(() => renderNotices({ ...input, archive: { text: jpeg, source: 'the asset' } })).toThrow(
