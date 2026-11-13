@@ -448,13 +448,17 @@ describe('crates whose licence text is committed', () => {
     execFileSync('cargo', ['generate-lockfile', '--offline', '--manifest-path', manifest], { stdio: ['ignore', 'ignore', 'pipe'] })
     const textsOf = (about: AboutReport) => about.licenses.filter(l => l.used_by.some(use => use.crate.name === 'skia-bindings')).map(l => l.text)
 
-    // The control: without the clarification cargo-about reads the tree.
-    const plain = JSON.parse(
-      execFileSync('cargo', ['about', 'generate', '--locked', '--offline', '-c', resolve(HERE, '../../../about.toml'), '-m', manifest, '--format', 'json'], {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }),
-    ) as AboutReport
+    // The control: without the clarification cargo-about reads the tree. To a
+    // file, as the tool writes it, since a PowerShell ancestor refuses stdout.
+    const report = join(root, 'about.json')
+    execFileSync(
+      'cargo',
+      ['about', 'generate', '--locked', '--offline', '-c', resolve(HERE, '../../../about.toml'), '-m', manifest, '--format', 'json', '-o', report],
+      {
+        stdio: ['ignore', 'ignore', 'pipe'],
+      },
+    )
+    const plain = JSON.parse(readFileSync(report, 'utf8')) as AboutReport
     expect(textsOf(plain)).toContain(downloaded)
 
     expect(textsOf(cargoAbout(manifest, []))).toEqual([text])

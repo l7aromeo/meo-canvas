@@ -626,14 +626,17 @@ export function checkClarified(about) {
  * cargo-about's report for a manifest, held to `about.toml` and `CLARIFIED`.
  * `--offline` keeps it to the license files in the crates themselves: without
  * it cargo-about also asks clearlydefined.io, whose answer can change between
- * two runs of one lockfile.
+ * two runs of one lockfile. Written to a file: under a PowerShell ancestor
+ * cargo-about refuses to write it to standard output.
  */
 export function cargoAbout(manifest, args) {
   const dir = mkdtempSync(join(tmpdir(), 'meo-canvas-about-'))
   try {
     const config = join(dir, 'about.toml')
     writeFileSync(config, aboutConfig())
-    const about = JSON.parse(run('cargo', ['about', 'generate', '--locked', '--offline', '--fail', '-c', config, '-m', manifest, ...args, '--format', 'json']))
+    const report = join(dir, 'about.json')
+    run('cargo', ['about', 'generate', '--locked', '--offline', '--fail', '-c', config, '-m', manifest, ...args, '--format', 'json', '-o', report])
+    const about = JSON.parse(readFileSync(report, 'utf8'))
     checkClarified(about)
     return about
   } finally {
