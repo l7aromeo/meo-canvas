@@ -2855,25 +2855,33 @@ const fn drop_indefinite_percentages(
     }
 }
 
-// [WORKAROUND] taffy 0.15.1 transfers a maximum height through the ratio into
-// a maximum width under a declared one: 90x60 for 200 wide under a maximum of
-// 60 at 3:2, anywhere but a replaced block. `l7aromeo/meo-canvas#193`, probed
-// by `crates/meo-canvas-core/tests/taffy_ratio_max_transfer.rs`.
-/// Gives a ratio box with a declared width, a maximum height and no maximum
-/// width the largest maximum width, which leaves taffy nothing to transfer, as
-/// CSS transfers into an automatic width alone. Not the declared width, which
+// [WORKAROUND] taffy 0.15.1 carries a maximum through the ratio onto a declared
+// other axis: 90x60 for 200 wide under `max-height: 60` at 3:2, and 50x33 for
+// 60 tall under `max-width: 50`. `l7aromeo/meo-canvas#193` and
+// `l7aromeo/meo-canvas#129`; probed in `taffy_ratio_max_transfer.rs`.
+/// Gives a ratio box's declared axis with no maximum of its own the largest one
+/// when the other axis has a maximum, which leaves taffy nothing to transfer,
+/// as CSS transfers into an automatic size alone. Not the declared size, which
 /// would hold a growing flex item at it, `flex grow w100 max60`.
-fn unbound_declared_width(
+fn unbound_declared_sizes(
     style: &mut taffy::Style,
     source: &meo_canvas_scene::node::Node,
 ) {
-    if style.aspect_ratio.is_some()
-        && !matches!(sized(source.layout.size.0), Dimension::Auto)
-        && matches!(sized(source.layout.max_size.0), Dimension::Auto)
-        && !style.max_size.height.is_auto()
-    {
-        style.max_size.width =
-            taffy::LengthPercentageAuto::length(FINITE_CEILING);
+    if style.aspect_ratio.is_none() {
+        return;
+    }
+    // The height's size and maximum are read after a percentage of an
+    // indefinite parent has become `auto`, which CSS makes it.
+    let width = !matches!(sized(source.layout.size.0), Dimension::Auto);
+    let height = !style.size.height.is_auto();
+    let max_width = !matches!(sized(source.layout.max_size.0), Dimension::Auto);
+    let max_height = !style.max_size.height.is_auto();
+    let ceiling = taffy::LengthPercentageAuto::length(FINITE_CEILING);
+    if width && !max_width && max_height {
+        style.max_size.width = ceiling;
+    }
+    if height && !max_height && max_width {
+        style.max_size.height = ceiling;
     }
 }
 
@@ -3045,7 +3053,7 @@ where
         );
     }
     drop_indefinite_percentages(&mut style, source, above.heights.parent);
-    unbound_declared_width(&mut style, source);
+    unbound_declared_sizes(&mut style, source);
     style
 }
 
