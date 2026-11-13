@@ -5,13 +5,18 @@
 /** A third-party library a build can link, and where its licence text is read. */
 export interface Component {
   readonly name: string
-  /** Its key under `third_party/externals/` in Skia's `DEPS`, which gives its revision. */
-  readonly deps?: string
-  /** The package whose source holds the licence files. */
-  readonly pkg: string
+  /** Where the committed texts were read: a repository and the revision. */
+  readonly origin?: string
+  /** The licence files committed under the tool's `notices/`, relative to it. */
+  readonly committed?: readonly string[]
+  /** The package whose source holds the licence files, when they are not committed. */
+  readonly pkg?: string
   /** The licence files, relative to that package's root. */
-  readonly files: readonly string[]
+  readonly files?: readonly string[]
 }
+
+/** The Skia that skia-bindings builds, at which the committed Skia texts were read. */
+export declare const SKIA_SOURCE: { readonly tag: string; readonly origin: string; readonly freetypeCreditYear: number }
 
 /** Every C or C++ library a build can link. */
 export declare const COMPONENTS: Readonly<Record<string, Component>>
@@ -98,7 +103,7 @@ export interface AboutReport {
     readonly text: string
     readonly used_by: readonly { readonly crate: { readonly id: string; readonly name: string; readonly version: string } }[]
   }[]
-  readonly crates: readonly { readonly package: { readonly id: string } }[]
+  readonly crates: readonly { readonly package: { readonly id: string; readonly name: string; readonly version: string } }[]
 }
 
 /** The notices for one target. */
@@ -114,3 +119,26 @@ export declare function renderNotices(input: {
   imageLicences?: string
   archive?: ArchiveNotices
 }): string
+
+/** A crate whose licence text is a committed file rather than what its source holds. */
+export interface Clarified {
+  readonly version: string
+  readonly license: string
+  /** The committed file, under the tool's `notices/`. */
+  readonly file: string
+  /** That file's SHA-256, which cargo-about checks before using it. */
+  readonly checksum: string
+  readonly origin: string
+}
+
+/** The crates whose licence text is committed, by name. */
+export declare const CLARIFIED: Readonly<Record<string, Clarified>>
+
+/** `about.toml`, or `base`, with a clarification for each of `CLARIFIED`. */
+export declare function aboutConfig(base?: string): string
+
+/** Refuses a report in which a clarified crate stands under any text but its committed one. */
+export declare function checkClarified(about: AboutReport): void
+
+/** cargo-about's report for a manifest, with `args` passed to `cargo about generate`. */
+export declare function cargoAbout(manifest: string, args: readonly string[]): AboutReport

@@ -3,6 +3,8 @@
 // them, and package sources laid out in a temporary directory. The tool's run
 // over a real build is `just notices-check` and `just pack`.
 
+import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -14,15 +16,20 @@ import { afterAll, describe, expect, it } from 'vitest'
 
 import {
   ARCHIVE_NOTICES,
+  CLARIFIED,
   COMPONENTS,
   EXTERNALS,
   GN_TARGETS,
   IMAGE_LIBS,
   LINUX_ARCHIVE_RELEASE,
   NATIVE_LIBS,
+  SKIA_SOURCE,
   SYSTEM_LIBS,
+  aboutConfig,
   archiveMembers,
   archiveNotices,
+  cargoAbout,
+  checkClarified,
   fetchText,
   imageVersions,
   linkedLibraries,
@@ -207,17 +214,12 @@ describe('nativeComponents', () => {
 })
 
 describe('renderNotices', () => {
+  // skia-bindings as crates.io ships it: build.rs, build_support, src and a
+  // Cargo.toml, and no `skia/` tree, which only a Skia compile downloads.
   const skia = join(scratch, 'registry', 'skia-bindings-0.156.0')
-  const externals = join(skia, 'skia', 'third_party', 'externals')
-  put(
-    join(skia, 'skia', 'DEPS'),
-    '  "third_party/externals/zlib"   : "https://example.test/zlib@456ae730",\n  "third_party/externals/freetype" : "https://example.test/freetype@891f904e",\n',
-  )
-  put(join(skia, 'skia', 'LICENSE'), 'Skia licence text\n')
-  put(join(externals, 'zlib', 'LICENSE'), 'zlib text from skia-bindings\n')
-  put(join(externals, 'freetype', 'LICENSE.TXT'), 'FreeType LICENSE.TXT\n')
-  put(join(externals, 'freetype', 'docs', 'FTL.TXT'), 'The FreeType Project LICENSE\n')
-  put(join(externals, 'freetype', 'include', 'freetype', 'freetype.h'), ' * Copyright (C) 1996-2024 by\n')
+  const manifest = (tag: string) => `[package]\nname = "skia-bindings"\nversion = "0.156.0"\n\n[package.metadata]\nskia = "${tag}"\n\n[features]\n`
+  put(join(skia, 'Cargo.toml'), manifest(SKIA_SOURCE.tag))
+  const committed = (path: string) => readFileSync(resolve(HERE, '../tools/notices', path), 'utf8').trimEnd()
   const image = join(scratch, 'image')
   const pinned = imageVersions()
   put(join(image, pinned.freetype ?? '', 'FTL.TXT'), 'image FTL\n')
@@ -252,17 +254,27 @@ describe('renderNotices', () => {
   }
   const native = (...ids: string[]) => new Map(ids.map(id => [id, new Set(['skia'])]))
 
-  it("reads skia-bindings' texts off Linux, with no credit line without FreeType", () => {
-    const text = renderNotices({ ...base, features: ['default', 'metal'], suffix: 'darwin-arm64', native: native('skia', 'zlib') })
+  it('reads every component of Skia from the committed texts, naming the revision each was read at', () => {
+    const fromSkia = Object.keys(COMPONENTS).filter(id => COMPONENTS[id]?.committed !== undefined)
+    expect(fromSkia).toHaveLength(13)
+    const text = renderNotices({ ...base, features: ['default', 'metal'], suffix: 'darwin-arm64', native: native(...fromSkia) })
     expect(text).toContain('for darwin-arm64 (x, features metal).')
-    expect(text).toContain('zlib text from skia-bindings')
-    expect(text).toContain('Source: https://example.test/zlib at 456ae730')
-    expect(text).toContain('Skia licence text')
-    expect(text).not.toContain('FreeType Project (www.freetype.org)')
-    expect(text).not.toContain('Used under the FreeType License')
+    for (const id of fromSkia) {
+      for (const file of COMPONENTS[id]?.committed ?? []) expect(text).toContain(`--- ${file}\n\n${committed(file)}\n`)
+    }
+    expect(text).toContain(`Skia\nSource: ${SKIA_SOURCE.origin}\n`)
+    expect(text).toContain('Source: https://chromium.googlesource.com/chromium/src/third_party/zlib at 456ae730017b9b4bd3371927abc82627fd51feef\n')
+    expect(text).toContain(`Portions of this software are copyright © ${SKIA_SOURCE.freetypeCreditYear} The FreeType Project`)
+    expect(text.split('Used under the FreeType License (FTL)').length - 1).toBe(1)
     expect(text).toContain('Used by: a 2.0.0, b 1.0.0\n\nMIT text\n')
     expect(text).not.toContain('meo-canvas-node 1.0.0')
     expect(text).not.toContain('not listed')
+  })
+
+  it('carries no credit line without FreeType', () => {
+    const text = renderNotices({ ...base, suffix: 'darwin-arm64', native: native('skia', 'zlib') })
+    expect(text).not.toContain('FreeType Project (www.freetype.org)')
+    expect(text).not.toContain('Used under the FreeType License')
   })
 
   it("reads Linux's zlib from the committed text and credits each FreeType by its own year", () => {
@@ -272,20 +284,17 @@ describe('renderNotices', () => {
       native: native('freetype', 'zlib', 'image:freetype', 'image:fontconfig'),
       imageLicences: image,
     })
-    expect(text).toContain(readFileSync(resolve(HERE, '../tools/notices/chromium-zlib.LICENSE'), 'utf8').trimEnd())
-    expect(text).not.toContain('zlib text from skia-bindings')
+    expect(committed('chromium-zlib.LICENSE')).not.toBe(committed('skia/third_party/externals/zlib/LICENSE'))
+    expect(text).toContain(committed('chromium-zlib.LICENSE'))
+    expect(text).not.toContain('--- skia/third_party/externals/zlib/LICENSE')
     expect(text).toContain('phyrondev/chromium-zlib at 646b7f56')
     expect(text).toContain('Portions of this software are copyright © 2025 The FreeType Project')
     expect(text).toContain('Portions of this software are copyright © 2024 The FreeType Project')
+    expect(text).not.toContain(`copyright © ${SKIA_SOURCE.freetypeCreditYear} The FreeType Project`)
     expect(text).toContain('fontconfig COPYING')
     // Once for the archive's FreeType and once for the image's.
     expect(text.split('Used under the FreeType License (FTL)').length - 1).toBe(2)
     expect(text).not.toContain('credit-year')
-  })
-
-  it("takes skia-bindings' FreeType year where nothing overrides it", () => {
-    const text = renderNotices({ ...base, suffix: 'win32-x64', native: native('freetype') })
-    expect(text).toContain('Portions of this software are copyright © 2024 The FreeType Project')
   })
 
   it('refuses a Linux build against a binaries release the overrides were not read for', () => {
@@ -294,9 +303,30 @@ describe('renderNotices', () => {
     expect(() => renderNotices({ ...base, suffix: 'linux-x64-gnu', skiaRelease: 'skia-binaries-9.9.9-0', native: native('skia') })).not.toThrow()
   })
 
-  it("refuses a licence file that is not there, and an image's missing licences or credit year", () => {
-    expect(() => renderNotices({ ...base, suffix: 'darwin-arm64', native: native('skcms') })).toThrow(/does not exist/)
-    expect(() => renderNotices({ ...base, suffix: 'darwin-arm64', native: native('libpng') })).toThrow(/DEPS pins no third_party\/externals\/libpng/)
+  it('refuses a skia-bindings that builds another Skia than the committed texts were read at', () => {
+    const other = join(scratch, 'registry', 'skia-bindings-0.157.0')
+    put(join(other, 'Cargo.toml'), manifest('m157.0'))
+    const dirs = new Map([[skiaId, other]])
+    expect(() => renderNotices({ ...base, dirs, suffix: 'darwin-arm64', native: native('skcms') })).toThrow(/builds Skia m157\.0, but .* read at m156\.5/)
+    // A crate's own texts do not depend on the Skia it builds.
+    const libaom = 'registry+https://github.com/rust-lang/crates.io-index#libaom-sys@0.17.2'
+    put(join(scratch, 'libaom-sys', 'vendor', 'LICENSE'), 'aom\n')
+    put(join(scratch, 'libaom-sys', 'vendor', 'PATENTS'), 'aom patents\n')
+    expect(() =>
+      renderNotices({ ...base, dirs: new Map([...dirs, [libaom, join(scratch, 'libaom-sys')]]), suffix: 'darwin-arm64', native: native('libaom') }),
+    ).not.toThrow()
+    const unnamed = join(scratch, 'registry', 'skia-bindings-unnamed')
+    put(join(unnamed, 'Cargo.toml'), '[package]\nname = "skia-bindings"\n\n[features]\nskia = "m156.5"\n')
+    expect(() => renderNotices({ ...base, dirs: new Map([[skiaId, unnamed]]), suffix: 'darwin-arm64', native: native('skia') })).toThrow(
+      /names no `skia` under \[package\.metadata\]/,
+    )
+  })
+
+  it("refuses a crate's licence file that is not there, and an image's missing licences or credit year", () => {
+    const libaom = 'registry+https://github.com/rust-lang/crates.io-index#libaom-sys@0.17.2'
+    expect(() => renderNotices({ ...base, dirs: new Map([[libaom, join(scratch, 'empty')]]), suffix: 'darwin-arm64', native: native('libaom') })).toThrow(
+      /does not exist/,
+    )
     expect(() => renderNotices({ ...base, suffix: 'linux-x64-gnu', native: native('image:expat'), imageLicences: image })).toThrow(
       /expected one expat-<version>/,
     )
@@ -318,6 +348,77 @@ describe('renderNotices', () => {
     expect(imageVersions()).toEqual({ fontconfig: 'fontconfig-2.15.0', freetype: 'freetype-2.13.3', expat: 'expat-2.6.4' })
     expect(() => imageVersions('EXPAT=expat-2.6.4\nFREETYPE=freetype-2.13.3\n')).toThrow(/pins no FONTCONFIG=/)
   })
+})
+
+describe('crates whose licence text is committed', () => {
+  const notices = resolve(HERE, '../tools/notices')
+  const clarified = CLARIFIED['skia-bindings']
+  const text = readFileSync(join(notices, clarified?.file ?? ''), 'utf8')
+  const report = (version: string, texts: string[]): AboutReport => ({
+    crates: [{ package: { id: `registry+x#skia-bindings@${version}`, name: 'skia-bindings', version } }],
+    licenses: texts.map(t => ({
+      name: 'MIT License',
+      id: 'MIT',
+      text: t,
+      used_by: [{ crate: { id: `registry+x#skia-bindings@${version}`, name: 'skia-bindings', version } }],
+    })),
+  })
+
+  it('clarifies skia-bindings with the committed file, whose checksum is the one recorded', () => {
+    const config = aboutConfig('accepted = ["MIT"]\n')
+    expect(config).toContain(`[skia-bindings.clarify]\nlicense = "MIT"\n\n[[skia-bindings.clarify.files]]\npath = '${join(notices, 'rust-skia.LICENSE')}'\n`)
+    expect(createHash('sha256').update(text).digest('hex')).toBe(clarified?.checksum)
+    expect(config).toContain(`checksum = "${clarified?.checksum}"`)
+  })
+
+  it('refuses a report where the clarification did not apply, or another version is in the graph', () => {
+    expect(() => checkClarified(report('0.156.0', [text]))).not.toThrow()
+    expect(() => checkClarified({ crates: [], licenses: [] })).not.toThrow()
+    expect(() => checkClarified(report('0.156.0', [text, 'MIT text from a downloaded tree']))).toThrow(
+      /2 licence texts rather than notices\/rust-skia\.LICENSE/,
+    )
+    expect(() => checkClarified(report('0.156.0', ['MIT License\n']))).toThrow(/did not apply/)
+    expect(() => checkClarified(report('0.157.0', [text]))).toThrow(/skia-bindings 0\.157\.0 is in the graph, but .* read for 0\.156\.0/)
+  })
+
+  // cargo-about over a crate named skia-bindings whose directory holds a
+  // downloaded tree, as a registry copy does after a Skia compile.
+  it('credits skia-bindings with the committed text whatever its directory holds', () => {
+    const root = join(scratch, 'about-fixture')
+    put(
+      join(root, 'Cargo.toml'),
+      '[package]\nname = "app"\nversion = "0.1.0"\nedition = "2024"\nlicense = "MIT"\n\n[dependencies]\nskia-bindings = { path = "skia-bindings" }\n',
+    )
+    put(join(root, 'src', 'lib.rs'), '')
+    put(join(root, 'skia-bindings', 'Cargo.toml'), '[package]\nname = "skia-bindings"\nversion = "0.156.0"\nedition = "2024"\nlicense = "MIT"\n')
+    put(join(root, 'skia-bindings', 'src', 'lib.rs'), '')
+    const downloaded = text.replace('2019 LongYinan & Armin Sander', '2024 A Downloaded External')
+    put(join(root, 'skia-bindings', 'skia', 'third_party', 'externals', 'x', 'LICENSE'), downloaded)
+    const manifest = join(root, 'Cargo.toml')
+    execFileSync('cargo', ['generate-lockfile', '--offline', '--manifest-path', manifest], { stdio: 'ignore' })
+    const textsOf = (about: AboutReport) => about.licenses.filter(l => l.used_by.some(use => use.crate.name === 'skia-bindings')).map(l => l.text)
+
+    // The control: without the clarification cargo-about reads the tree.
+    const plain = JSON.parse(
+      execFileSync('cargo', ['about', 'generate', '--locked', '--offline', '-c', resolve(HERE, '../../../about.toml'), '-m', manifest, '--format', 'json'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }),
+    ) as AboutReport
+    expect(textsOf(plain)).toContain(downloaded)
+
+    expect(textsOf(cargoAbout(manifest, []))).toEqual([text])
+
+    // A checksum that does not match makes cargo-about warn and scan instead.
+    const entry = CLARIFIED['skia-bindings'] as { checksum: string }
+    const checksum = entry.checksum
+    entry.checksum = '0'.repeat(64)
+    try {
+      expect(() => cargoAbout(manifest, [])).toThrow(/did not apply/)
+    } finally {
+      entry.checksum = checksum
+    }
+  }, 120_000)
 })
 
 describe("meo-skia-canvas's notices for the Skia archive", () => {

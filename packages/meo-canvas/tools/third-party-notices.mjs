@@ -4,7 +4,8 @@
 // place fails the run; `docs/releasing.md` has the design.
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -24,40 +25,91 @@ const fromPackage = (pkg, ...files) => ({ pkg, files })
 const committed = (...files) => ({ committed: files })
 
 /**
+ * The Skia skia-bindings builds from, which its `Cargo.toml` names under
+ * `[package.metadata]`. The published crate holds no Skia source, so the texts
+ * of Skia and its externals are committed under `notices/skia/`, read from
+ * rust-skia/skia at this tag and each external at the revision its `DEPS` pins.
+ */
+export const SKIA_SOURCE = {
+  tag: 'm156.5',
+  origin: 'https://github.com/rust-skia/skia at 0746a1afaf750159e1a6aef29992980f4e293585 (m156.5)',
+  /** The year in that FreeType's `freetype.h` copyright line, for the FTL's credit. */
+  freetypeCreditYear: 2026,
+}
+
+/** A component of Skia's source, read at `origin`, its texts under `notices/skia/`. */
+const fromSkia = (origin, ...files) => ({ origin, ...committed(...files.map(file => `skia/${file}`)) })
+
+/** An external Skia's `DEPS` pins, as `<url> at <revision>`. */
+const external = (url, revision, ...files) => fromSkia(`${url} at ${revision}`, ...files.map(file => `third_party/externals/${file}`))
+
+/**
  * Every C or C++ library a build can link, and where its licence text is read.
- * `deps` is its key in Skia's `DEPS`, which gives the revision the notice
- * names. The FreeType text is the FTL, the licence of the two it offers that
- * this project takes, and with it the credit line the FTL asks for.
+ * The FreeType text is the FTL, the licence of the two it offers that this
+ * project takes, and with it the credit line the FTL asks for.
  */
 export const COMPONENTS = {
-  skia: { name: 'Skia', ...fromPackage('skia-bindings', 'skia/LICENSE') },
-  skcms: { name: 'skcms', ...fromPackage('skia-bindings', 'skia/modules/skcms/LICENSE') },
-  expat: { name: 'Expat', deps: 'expat', ...fromPackage('skia-bindings', 'skia/third_party/externals/expat/expat/COPYING') },
-  harfbuzz: { name: 'HarfBuzz', deps: 'harfbuzz', ...fromPackage('skia-bindings', 'skia/third_party/externals/harfbuzz/COPYING') },
-  icu: { name: 'ICU', deps: 'icu', ...fromPackage('skia-bindings', 'skia/third_party/externals/icu/LICENSE') },
+  skia: { name: 'Skia', ...fromSkia(SKIA_SOURCE.origin, 'LICENSE') },
+  skcms: { name: 'skcms', ...fromSkia(SKIA_SOURCE.origin, 'modules/skcms/LICENSE') },
+  expat: {
+    name: 'Expat',
+    ...external(
+      'https://chromium.googlesource.com/external/github.com/libexpat/libexpat.git',
+      'a76b1174c1ea52abb639a4c69d52b630a8a106a2',
+      'expat/expat/COPYING',
+    ),
+  },
+  harfbuzz: {
+    name: 'HarfBuzz',
+    ...external('https://chromium.googlesource.com/external/github.com/harfbuzz/harfbuzz.git', 'f5efbbef3841bdcdc6427bde7c2971f62ac8c8f1', 'harfbuzz/COPYING'),
+  },
+  icu: { name: 'ICU', ...external('https://chromium.googlesource.com/chromium/deps/icu.git', '2a51536dfb3b448bdf3dae70c782ea2879c90904', 'icu/LICENSE') },
   'libjpeg-turbo': {
     name: 'libjpeg-turbo',
-    deps: 'libjpeg-turbo',
-    ...fromPackage('skia-bindings', 'skia/third_party/externals/libjpeg-turbo/LICENSE.md', 'skia/third_party/externals/libjpeg-turbo/README.ijg'),
+    ...external(
+      'https://chromium.googlesource.com/chromium/deps/libjpeg_turbo.git',
+      '640f254ad0fa03f6b1f29f89b7dd9366f2f6e533',
+      'libjpeg-turbo/LICENSE.md',
+      'libjpeg-turbo/README.ijg',
+    ),
   },
-  libpng: { name: 'libpng', deps: 'libpng', ...fromPackage('skia-bindings', 'skia/third_party/externals/libpng/LICENSE') },
+  libpng: { name: 'libpng', ...external('https://skia.googlesource.com/third_party/libpng.git', '3061454d980de7d53608f594194cfac722721d2a', 'libpng/LICENSE') },
   libwebp: {
     name: 'libwebp',
-    deps: 'libwebp',
-    ...fromPackage('skia-bindings', 'skia/third_party/externals/libwebp/COPYING', 'skia/third_party/externals/libwebp/PATENTS'),
+    ...external('https://chromium.googlesource.com/webm/libwebp.git', 'b43b2caa710c0c997c066cb32c7fea1391fad70a', 'libwebp/COPYING', 'libwebp/PATENTS'),
   },
-  wuffs: { name: 'Wuffs', deps: 'wuffs', ...fromPackage('skia-bindings', 'skia/third_party/externals/wuffs/LICENSE') },
-  zlib: { name: 'zlib (Chromium)', deps: 'zlib', ...fromPackage('skia-bindings', 'skia/third_party/externals/zlib/LICENSE') },
+  wuffs: {
+    name: 'Wuffs',
+    ...external(
+      'https://skia.googlesource.com/external/github.com/google/wuffs-mirror-release-c.git',
+      '7411f488fe2e2c205c3d3b3d28638b7356522930',
+      'wuffs/LICENSE',
+    ),
+  },
+  zlib: {
+    name: 'zlib (Chromium)',
+    ...external('https://chromium.googlesource.com/chromium/src/third_party/zlib', '456ae730017b9b4bd3371927abc82627fd51feef', 'zlib/LICENSE'),
+  },
   freetype: {
     name: 'FreeType',
-    deps: 'freetype',
-    ...fromPackage('skia-bindings', 'skia/third_party/externals/freetype/LICENSE.TXT', 'skia/third_party/externals/freetype/docs/FTL.TXT'),
+    ...external(
+      'https://chromium.googlesource.com/chromium/src/third_party/freetype2.git',
+      '891f904e2e7b4289f615598cd4b69832f87d2f3a',
+      'freetype/LICENSE.TXT',
+      'freetype/docs/FTL.TXT',
+    ),
   },
-  brotli: { name: 'Brotli', deps: 'brotli', ...fromPackage('skia-bindings', 'skia/third_party/externals/brotli/LICENSE') },
+  brotli: {
+    name: 'Brotli',
+    ...external('https://skia.googlesource.com/external/github.com/google/brotli.git', 'cfa184a997ac19454d5a3ae97f6d600aac2445a6', 'brotli/LICENSE'),
+  },
   vulkanmemoryallocator: {
     name: 'Vulkan Memory Allocator',
-    deps: 'vulkanmemoryallocator',
-    ...fromPackage('skia-bindings', 'skia/third_party/externals/vulkanmemoryallocator/LICENSE.txt'),
+    ...external(
+      'https://chromium.googlesource.com/external/github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator',
+      'eb744ea7a2b17040121b4bbb4d6f9e8a77e3cae7',
+      'vulkanmemoryallocator/LICENSE.txt',
+    ),
   },
   libaom: { name: 'libaom', ...fromPackage('libaom-sys', 'vendor/LICENSE', 'vendor/PATENTS') },
   'zlib-libz-sys': { name: 'zlib', ...fromPackage('libz-sys', 'src/zlib/LICENSE') },
@@ -67,16 +119,16 @@ export const COMPONENTS = {
 /**
  * The release the Linux overrides below were read for. meo-skia-canvas's
  * `skia-binaries.yml` builds its Linux archives over its own `vendor/freetype`
- * and `vendor/zlib` submodules rather than Skia's, so neither text can be read
- * from skia-bindings. A different release is refused until they are read again.
+ * and `vendor/zlib` submodules rather than the revisions Skia's `DEPS` pins. A
+ * different release is refused until they are read again.
  */
 export const LINUX_ARCHIVE_RELEASE = 'skia-binaries-0.156.0-3f566dd7198c'
 
 /**
  * The Linux archives' FreeType and zlib, at the submodule commits that release
- * was built from (meo-skia-canvas 61d9536f). FreeType's three licence files
- * there are byte-identical to skia-bindings' copies; chromium-zlib's LICENSE
- * is not, so it is committed. The year is FreeType 2.14.1's, from `freetype.h`.
+ * was built from (meo-skia-canvas 61d9536f). FreeType's LICENSE.TXT and FTL.TXT
+ * there are byte-identical to the committed copies; chromium-zlib's LICENSE is
+ * not, so it is committed too. The year is FreeType 2.14.1's, from `freetype.h`.
  */
 const LINUX_OVERRIDES = {
   freetype: {
@@ -85,7 +137,7 @@ const LINUX_OVERRIDES = {
   },
   zlib: {
     origin: 'https://github.com/phyrondev/chromium-zlib at 646b7f569718921d7d4b5b8e22572ff6c76f2596',
-    ...committed('notices/chromium-zlib.LICENSE'),
+    ...committed('chromium-zlib.LICENSE'),
   },
 }
 
@@ -475,38 +527,93 @@ function packageDirs(triple) {
   }
 }
 
+/** The committed licence texts, by their path under this directory. */
+const NOTICES_DIR = join(HERE, 'notices')
+
 /**
- * cargo-about's report for one target, held to `about.toml`. `--offline` keeps
- * it to the license files in the crates themselves: without it cargo-about also
- * asks clearlydefined.io, whose answer can change between two runs of one lockfile.
+ * Crates whose licence text is a committed file, not what cargo-about finds in
+ * their source. skia-bindings ships none, and a Skia compile downloads Skia's
+ * licence files into its registry copy; its text is rust-skia's LICENSE at the
+ * commit `.cargo_vcs_info.json` names for that version.
  */
+export const CLARIFIED = {
+  'skia-bindings': {
+    version: '0.156.0',
+    license: 'MIT',
+    file: 'rust-skia.LICENSE',
+    checksum: '4b33ed5b329a3a79eb1243fd91373c68b0ae0b9df7503bfc50d0c5253adf1b9a',
+    origin: 'https://github.com/rust-skia/rust-skia at ce6727ef251518df37bcfdde4865b71f7e3a4352',
+  },
+}
+
+/**
+ * `about.toml` with a clarification for each of `CLARIFIED`. The path is
+ * absolute, which cargo-about joins onto the crate's directory unchanged, so
+ * it is written per run rather than committed.
+ */
+export function aboutConfig(base = readFileSync(ABOUT_CONFIG, 'utf8')) {
+  const clarifications = Object.entries(CLARIFIED).map(
+    ([name, { license, file, checksum }]) =>
+      `[${name}.clarify]\nlicense = "${license}"\n\n[[${name}.clarify.files]]\npath = '${join(NOTICES_DIR, file)}'\nchecksum = "${checksum}"\n`,
+  )
+  return [base.trimEnd(), ...clarifications].join('\n\n')
+}
+
+/**
+ * Refuses a report in which a clarified crate stands under any text but its
+ * committed one: cargo-about only warns when a clarification fails to apply,
+ * and then reads the crate's directory instead.
+ */
+export function checkClarified(about) {
+  for (const [name, { version, file }] of Object.entries(CLARIFIED)) {
+    const present = about.crates.filter(c => c.package.name === name)
+    if (present.length === 0) continue
+    const other = present.find(c => c.package.version !== version)
+    if (other !== undefined) {
+      refuse(
+        `${name} ${other.package.version} is in the graph, but notices/${file} was read for ${version}; read its licence at the commit that version was published from`,
+      )
+    }
+    const text = readFileSync(join(NOTICES_DIR, file), 'utf8')
+    const texts = about.licenses.filter(l => l.used_by.some(use => use.crate.name === name)).map(l => l.text)
+    if (texts.length !== 1 || texts[0] !== text) {
+      refuse(`cargo-about gave ${name} ${texts.length} licence texts rather than notices/${file}, so its clarification did not apply`)
+    }
+  }
+}
+
+/**
+ * cargo-about's report for a manifest, held to `about.toml` and `CLARIFIED`.
+ * `--offline` keeps it to the license files in the crates themselves: without
+ * it cargo-about also asks clearlydefined.io, whose answer can change between
+ * two runs of one lockfile.
+ */
+export function cargoAbout(manifest, args) {
+  const dir = mkdtempSync(join(tmpdir(), 'meo-canvas-about-'))
+  try {
+    const config = join(dir, 'about.toml')
+    writeFileSync(config, aboutConfig())
+    const about = JSON.parse(run('cargo', ['about', 'generate', '--locked', '--offline', '--fail', '-c', config, '-m', manifest, ...args, '--format', 'json']))
+    checkClarified(about)
+    return about
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+/** cargo-about's report for the addon on one target. */
 export function rustLicences(triple, features) {
   run('cargo', ['fetch', '--locked', '--target', triple, '--manifest-path', NODE_CRATE])
   const featureArgs = features === 'all' ? ['--all-features'] : features.length === 0 ? [] : ['--features', features.join(' ')]
-  const args = [
-    'about',
-    'generate',
-    '--locked',
-    '--offline',
-    '--fail',
-    '-c',
-    ABOUT_CONFIG,
-    '-m',
-    NODE_CRATE,
-    '--target',
-    triple,
-    ...featureArgs,
-    '--format',
-    'json',
-  ]
-  return JSON.parse(run('cargo', args))
+  return cargoAbout(NODE_CRATE, ['--target', triple, ...featureArgs])
 }
 
-/** `DEPS`' pinned source for an external, as `<url> at <revision>`. */
-function depsOrigin(skiaDir, dir) {
-  const deps = readFileSync(join(skiaDir, 'skia', 'DEPS'), 'utf8')
-  const line = deps.match(new RegExp(`"third_party/externals/${dir}"\\s*:\\s*"([^"@]+)@([0-9a-f]+)"`))
-  return line ? `${line[1]} at ${line[2]}` : refuse(`skia-bindings' skia/DEPS pins no third_party/externals/${dir}`)
+/** The Skia tag skia-bindings' `Cargo.toml` names under `[package.metadata]`. */
+function skiaTagOf(bindingsDir) {
+  const manifest = readFileSync(join(bindingsDir, 'Cargo.toml'), 'utf8')
+  const section = manifest.split(/^(?=\[)/m).find(part => part.startsWith('[package.metadata]\n'))
+  const found = section?.match(/^skia = "([^"]+)"$/m)
+  return found ? found[1] : refuse(`${bindingsDir}/Cargo.toml names no \`skia\` under [package.metadata]`)
 }
 
 /** The width of the rules between sections. */
@@ -531,6 +638,15 @@ export function renderNotices({ suffix, triple, features, about, native, dirs, w
     const matches = [...dirs.entries()].filter(([id]) => packageNameOf(id) === name)
     if (matches.length !== 1) refuse(`expected one ${name} in the build graph for ${triple}, found ${matches.length}`)
     return matches[0][1]
+  }
+  if ([...native.keys()].some(id => COMPONENTS[id]?.committed?.some(file => file.startsWith('skia/')))) {
+    const tag = skiaTagOf(dirOf('skia-bindings'))
+    if (tag !== SKIA_SOURCE.tag) {
+      refuse(
+        `skia-bindings builds Skia ${tag}, but the committed texts under notices/skia/ were read at ${SKIA_SOURCE.tag}; ` +
+          'read them again from rust-skia/skia at that tag and each external at its DEPS revision, then update SKIA_SOURCE and COMPONENTS',
+      )
+    }
   }
 
   const sections = []
@@ -559,18 +675,15 @@ export function renderNotices({ suffix, triple, features, about, native, dirs, w
     }
     const component = COMPONENTS[id]
     const override = linux ? LINUX_OVERRIDES[id] : undefined
-    const origin =
-      override?.origin ??
-      (component.deps !== undefined ? depsOrigin(dirOf('skia-bindings'), component.deps) : `the ${dirOf(component.pkg).split(/[\\/]/).pop()} crate`)
+    const origin = override?.origin ?? component.origin ?? `the ${dirOf(component.pkg).split(/[\\/]/).pop()} crate`
     const texts =
-      override?.committed !== undefined
-        ? override.committed.map(file => block(file, readFileSync(join(HERE, file), 'utf8')))
-        : component.files.map(file => {
-            const path = join(dirOf(component.pkg), file)
-            if (!existsSync(path)) refuse(`${component.name}'s licence is expected at ${path}, which does not exist`)
-            return block(`${component.pkg}: ${file}`, readFileSync(path, 'utf8'))
-          })
-    if (id === 'freetype') credits.push(freetypeCredit(override?.creditYear ?? freetypeYear(dirOf('skia-bindings'))))
+      (override?.committed ?? component.committed)?.map(file => block(file, readFileSync(join(NOTICES_DIR, file), 'utf8'))) ??
+      component.files.map(file => {
+        const path = join(dirOf(component.pkg), file)
+        if (!existsSync(path)) refuse(`${component.name}'s licence is expected at ${path}, which does not exist`)
+        return block(`${component.pkg}: ${file}`, readFileSync(path, 'utf8'))
+      })
+    if (id === 'freetype') credits.push(freetypeCredit(override?.creditYear ?? SKIA_SOURCE.freetypeCreditYear))
     const note = id === 'freetype' ? `${FTL_CHOICE}\n` : ''
     sections.push(`${component.name}\nSource: ${origin}\nLinked through: ${libs}\n${note}\n${texts.join('\n')}`)
   }
@@ -635,13 +748,6 @@ const FTL_CHOICE = 'Used under the FreeType License (FTL), one of the two licenc
 
 /** The file beside FreeType's licences holding the year its credit line names. */
 const CREDIT_YEAR = 'credit-year'
-
-/** The year in FreeType's own copyright line, for a FreeType read from skia-bindings. */
-function freetypeYear(skiaDir) {
-  const header = readFileSync(join(skiaDir, 'skia/third_party/externals/freetype/include/freetype/freetype.h'), 'utf8')
-  const found = header.match(/Copyright \(C\) \d{4}-(\d{4}) by/)
-  return found ? Number(found[1]) : refuse("no `Copyright (C) YYYY-YYYY by` line in skia-bindings' freetype.h")
-}
 
 /** The release tag in `SKIA_BINARIES_URL`, which every recipe exports from the justfile. */
 function skiaReleaseOf(url) {

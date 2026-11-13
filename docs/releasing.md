@@ -119,15 +119,22 @@ target. Where meo-skia-canvas publishes notices for the Skia archive itself --
 `.tar.gz` replaced by `.notices.md` -- those describe the archive instead, and
 the members are not read. The Rust crates come from cargo-about over the lockfile filtered to the
 target and the build's features, held to `about.toml`'s allowlist, and a crate
-it lists that the build did not compile fails the run.
+it lists that the build did not compile fails the run. skia-bindings ships no
+licence file, and a Skia compile downloads Skia's source into its registry copy,
+so cargo-about is told to take rust-skia's LICENSE, committed beside the tool,
+rather than read that directory; the notices are the same on any machine.
 
 Anything it cannot place fails rather than shipping a notice with a gap: an
 archive member, a static library or a library linked by name that its tables do
-not map, a licence off the allowlist, a licence file that moved. Two sources are
-not crates, both read only when meo-skia-canvas's notices are absent. The Linux Skia archives are built over meo-skia-canvas's own
-FreeType and zlib submodules, recorded in the tool for the release
-`SKIA_BINARIES_URL` names; a different release fails until they are read again.
-And the Linux release images link the static fontconfig, FreeType and expat
+not map, a licence off the allowlist, a licence file that moved. Three sources
+are not crates. The skia-bindings crate holds no Skia source, so the texts of
+Skia and the externals it builds are committed under `tools/notices/skia/`, read
+at the Skia tag skia-bindings' `Cargo.toml` names and at each external's `DEPS`
+revision; a skia-bindings naming another tag fails until they are read again.
+The Linux Skia archives are built over meo-skia-canvas's own FreeType and zlib
+submodules, recorded in the tool for the release `SKIA_BINARIES_URL` names; a
+different release fails until they are read again. Both of these are read only
+when meo-skia-canvas's notices are absent. And the Linux release images link the static fontconfig, FreeType and expat
 `containers/install-fontlibs.sh` builds, whose licence files the image keeps and
 `addon-container` copies out beside the build. cargo-about is a prerequisite of
 `just pack`; `just setup` installs it.

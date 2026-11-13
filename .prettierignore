@@ -21,3 +21,7 @@ crates/*/tests/assets
 
 # Local scratch output, gitignored and never shipped.
 .tmp
+
+# Third-party licence texts, committed byte for byte as their projects publish
+# them; the notices quote them, and a reformat would misquote them.
+packages/*/tools/notices

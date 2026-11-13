@@ -92,7 +92,8 @@
 # texts it reads from no package are committed beside it, and `about.toml` is
 # the licence allowlist it holds the crates to.
 !/packages/*/THIRD_PARTY_NOTICES
-!/packages/*/tools/notices/*.LICENSE
+!/packages/*/tools/notices/
+!/packages/*/tools/notices/**
 !/about.toml
 !/packages/**/*.ts
 !/packages/**/*.js

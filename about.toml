@@ -19,3 +19,6 @@ accepted = [
 # build machine, and dev-dependencies build only the tests.
 ignore-build-dependencies = true
 ignore-dev-dependencies = true
+
+# Clarifications are added per run by the tool's `CLARIFIED`, since each names
+# a committed licence file by absolute path.
