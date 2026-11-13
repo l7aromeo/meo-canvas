@@ -65,9 +65,9 @@
 //! its byte layout is a compatibility promise. A derive would make that promise
 //! a side effect of field declaration order.
 
-// No source in this workspace writes `unsafe`, and this makes adding one a
-// deliberate decision rather than a line that passes review. Integration tests
-// are separate crates and not covered; their one `unsafe` is the
+// This crate writes no `unsafe`, and this makes adding one a deliberate
+// decision rather than a line that passes review. The workspace's others are
+// the addon's Windows module pin and, in the integration tests, the
 // `GlobalAlloc` that measures `codec::decode`'s reservation.
 #![forbid(unsafe_code)]
 // `unreachable_pub` is a workspace lint, and `clippy::redundant_pub_crate` is

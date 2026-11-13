@@ -3,10 +3,10 @@
 //! the core. Exit codes: 0 written, 2 bad command line, 3 file I/O, 4 not a
 //! scene this revision reads, 5 font, 6 source unobtainable, 7 render.
 
-// No source in this workspace writes `unsafe`, and this makes adding one a
-// deliberate decision rather than a line that passes review. Integration tests
-// are separate crates and not covered; their one `unsafe` is the `GlobalAlloc`
-// that measures `codec::decode`'s reservation.
+// This crate writes no `unsafe`, and this makes adding one a deliberate
+// decision rather than a line that passes review. The workspace's others are
+// the addon's Windows module pin and, in the integration tests, the
+// `GlobalAlloc` that measures `codec::decode`'s reservation.
 #![forbid(unsafe_code)]
 // The CLI's whole output contract is stdout and stderr: the rendered bytes go
 // to a file or to stdout, and progress goes to stderr. `print_stdout` is a

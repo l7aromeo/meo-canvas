@@ -53,10 +53,10 @@
 //! parallelism happens between renders: each render builds, uses and drops its
 //! own tree on one thread.
 
-// Nothing in this workspace writes `unsafe`, and this keeps it so: in a crate
-// reaching C++ through two binding layers one would look reasonable.
-// Integration tests are separate crates; the only `unsafe` in the repository is
-// the allocator in `meo-canvas-scene/tests/codec_reservation.rs`.
+// This crate writes no `unsafe`, and this keeps it so: in a crate reaching C++
+// through two binding layers one would look reasonable. The workspace's others
+// are the addon's Windows module pin and the allocator in
+// `meo-canvas-scene/tests/codec_reservation.rs`.
 #![forbid(unsafe_code)]
 // `unreachable_pub` is a workspace lint, and `clippy::redundant_pub_crate` is
 // its opposite: one asks for `pub(crate)` on an item a private module exports,
