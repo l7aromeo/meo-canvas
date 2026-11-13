@@ -1566,12 +1566,31 @@ fn narrowable(
     out
 }
 
+// [WORKAROUND] meo-skia-canvas measures text on Linux through FreeType's 16.16
+// scale, a 16px em of 1000 units at 16.0000305 where macOS and Windows measure
+// 16, as Chrome on macOS does, so a line Chrome fills to its last spare 64th
+// breaks a character early; the room is widened by that scale's error.
+// `l7aromeo/meo-skia-canvas#695`, tracked as `l7aromeo/meo-canvas#253`; retires
+// when `crates/meo-canvas-core/tests/freetype_scale.rs` fails.
+/// What the room is multiplied by before a width is fitted to it: one, except
+/// where `FreeType` measures. Its error is half a 16.16 step of the scale at
+/// most, under 2^-16 of the scale for a 1000-unit em from 8px up, and a line
+/// that does not fit by more than that, 0.11 of a 64th at 112px, still does
+/// not.
+#[cfg(target_os = "linux")]
+const FREETYPE_SCALE: f32 = 1.0 + 1.0 / 65536.0;
+
+/// What the room is multiplied by before a width is fitted to it: one, where
+/// the platform's scaler measures an em of 1000 units at 16px as 16.
+#[cfg(not(target_os = "linux"))]
+const FREETYPE_SCALE: f32 = 1.0;
+
 /// Whether `used` fits `max_width` as Chrome decides: within the room truncated
 /// to a 64th of a pixel plus one 64th; 96px fits 95.984375 and not 95.984. The
-/// 64th also absorbs Linux's 16.0000305px em for 1000 units; the rows are in
-/// `a_line_fits_with_one_layout_unit_to_spare`.
+/// rows are in `a_line_fits_with_one_layout_unit_to_spare`.
 fn fits(used: f32, max_width: f32) -> bool {
-    used * LAYOUT_GRID <= (max_width * LAYOUT_GRID).floor() + 1.0
+    used * LAYOUT_GRID
+        <= ((max_width * LAYOUT_GRID).floor() + 1.0) * FREETYPE_SCALE
 }
 
 /// [`wrap`] over a prepared paragraph, with the piece each line begins at.
@@ -2520,9 +2539,16 @@ mod tests {
             // Six ideographs as FreeType advances them, which Chrome on Linux
             // also keeps on one 96px line.
             (6.0 * (16.0 + 2.0 / 65536.0), 96.0, true),
+            // A line a fifth of a 64th over the room and its spare one, which
+            // the FreeType margin must not let through.
+            (112.0 + 0.2 / 64.0, 111.99, false),
         ] {
             assert_eq!(fits(used, room), chrome, "{used} in {room}");
         }
+        // Seven ideographs as FreeType advances them, in a room Chrome fills to
+        // its last spare 64th: 112.0 fits 111.99, and 112.00021 must too.
+        #[cfg(target_os = "linux")]
+        assert!(fits(7.0 * (16.0 + 2.0 / 65536.0), 111.99));
     }
 
     #[test]
