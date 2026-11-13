@@ -18,6 +18,8 @@
 #
 # A maximum height whose ratio width is narrower than a declared width
 # leaves that width too, and a growing flex item grows past it.
+# Transposed, a maximum width whose ratio height is shorter than a declared
+# height leaves that height, and a growing flex item grows past it too.
 #
 # With neither size declared, a minimum or a maximum acts on both axes
 # through the ratio, as CSS 2.2 §10.4’s table gives it: the `block w auto`
@@ -141,6 +143,21 @@ flex w200 max60 min80	0.00	0.00	200.00	80.00	flex/auto	static 200px auto min-hei
 flex grow w100 max60	0.00	0.00	200.00	60.00	flex/auto	static 100px auto max-height:60px;flex-grow:1	a growing item is not held at its declared width
 block ratio div w200 max60	0.00	0.00	200.00	60.00	block/auto	static 200px auto aspect-ratio:1.5;max-height:60px	a box with the ratio keeps it in block flow
 flex ratio div w200 max60	0.00	0.00	200.00	60.00	flex/auto	static 200px auto aspect-ratio:1.5;max-height:60px	and as a flex item
+block ratio div h60 max-width50	0.00	0.00	50.00	60.00	block/auto	static auto 60px aspect-ratio:1.5;max-width:50px	a maximum width does not shorten a declared height
+flex ratio div h60 max-width50	0.00	0.00	50.00	60.00	flex/auto	static auto 60px aspect-ratio:1.5;max-width:50px	and as a flex item
+column ratio div h60 max-width50	0.00	0.00	50.00	60.00	flex;flex-direction:column/auto	static auto 60px aspect-ratio:1.5;max-width:50px	in a column, where the maximum is on the cross axis
+grid ratio div h60 max-width50	0.00	0.00	50.00	60.00	grid/auto	static auto 60px aspect-ratio:1.5;max-width:50px	as a grid item
+column grow h60 max-width50	0.00	0.00	50.00	100.00	flex;flex-direction:column/100px	static auto 60px aspect-ratio:1.5;max-width:50px;flex-grow:1	a growing item is not held at its declared height
+abs block ratio div h60 max-width50	0.00	0.00	50.00	60.00	block/auto	absolute auto 60px aspect-ratio:1.5;max-width:50px	and out of flow
+block ratio div w100 h120 max-width60	0.00	0.00	60.00	120.00	block/auto	static 100px 120px aspect-ratio:1.5;max-width:60px	both sizes declared: the ratio has no effect, and the height stays
+column ratio div w100 h120 max-width60	0.00	0.00	60.00	120.00	flex;flex-direction:column/auto	static 100px 120px aspect-ratio:1.5;max-width:60px	and in a column
+block h60 max-width50	0.00	0.00	50.00	60.00	block/auto	static auto 60px max-width:50px	an image keeps a declared height too
+flex h60 max-width50	0.00	0.00	50.00	60.00	flex/auto	static auto 60px max-width:50px	and as a flex item
+block ratio div h60	0.00	0.00	90.00	60.00	block/auto	static auto 60px aspect-ratio:1.5	control: no maximum, the width from the ratio
+block ratio div h60 max-width150	0.00	0.00	90.00	60.00	block/auto	static auto 60px aspect-ratio:1.5;max-width:150px	control: a maximum the width does not reach
+block ratio div h60 max-width50 max-height100	0.00	0.00	50.00	60.00	block/auto	static auto 60px aspect-ratio:1.5;max-width:50px;max-height:100px	control: a declared maximum height of its own
+block ratio div h60 max-width50 max-height40	0.00	0.00	50.00	40.00	block/auto	static auto 60px aspect-ratio:1.5;max-width:50px;max-height:40px	control: and one below the declared height still clamps it
+block ratio div h auto max-width50	0.00	0.00	50.00	33.33	block/auto	static auto auto aspect-ratio:1.5;max-width:50px	control: an auto height does take the width through the ratio
 flex start w auto max20	0.00	0.00	30.00	20.00	flex;align-items:flex-start/auto	static auto auto max-height:20px	control: an auto width does take the maximum through the ratio
 abs block w auto max20	0.00	0.00	30.00	20.00	block/auto	absolute auto auto max-height:20px	control: and out of flow
 flex w auto max60	0.00	0.00	60.00	40.00	flex/auto	static auto auto max-height:60px	a stretched item: a maximum above the natural height does nothing

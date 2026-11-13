@@ -544,6 +544,122 @@ fn a_maximum_height_does_not_narrow_a_declared_width() {
     }
 }
 
+/// An element with a declared height of 60, which is 90 wide through the
+/// ratio, under a maximum width of 50.
+const fn width_capped(kind: Kind, display: Display) -> Case {
+    Case {
+        width_clamp: (Dimension::Auto, Dimension::Points(50.0)),
+        kind,
+        ..replaced(
+            display,
+            Dimension::Auto,
+            Dimension::Auto,
+            Dimension::Points(60.0),
+        )
+    }
+}
+
+#[test]
+fn a_maximum_width_does_not_shorten_a_declared_height() {
+    // `l7aromeo/meo-canvas#129`: the maximum width, carried through the ratio,
+    // was a maximum height too, and cut the declared one.
+    for (key, kind, display) in [
+        (
+            "block ratio div h60 max-width50",
+            Kind::Ratio,
+            Display::Block,
+        ),
+        ("flex ratio div h60 max-width50", Kind::Ratio, Display::Flex),
+        ("grid ratio div h60 max-width50", Kind::Ratio, Display::Grid),
+        ("block h60 max-width50", Kind::Replaced, Display::Block),
+        ("flex h60 max-width50", Kind::Replaced, Display::Flex),
+    ] {
+        agrees(key, &width_capped(kind, display));
+    }
+    agrees(
+        "column ratio div h60 max-width50",
+        &Case {
+            flow: (FlexDirection::Column, None),
+            ..width_capped(Kind::Ratio, Display::Flex)
+        },
+    );
+    // Grown past its declared height: no maximum height holds it there.
+    agrees(
+        "column grow h60 max-width50",
+        &Case {
+            tall: Dimension::Points(100.0),
+            grow: 1.0,
+            flow: (FlexDirection::Column, None),
+            ..width_capped(Kind::Ratio, Display::Flex)
+        },
+    );
+    agrees(
+        "abs block ratio div h60 max-width50",
+        &Case {
+            absolute: true,
+            ..width_capped(Kind::Ratio, Display::Block)
+        },
+    );
+    // Both sizes declared, so the ratio has no effect at all.
+    for (key, flow) in [
+        ("block ratio div w100 h120 max-width60", None),
+        (
+            "column ratio div w100 h120 max-width60",
+            Some(FlexDirection::Column),
+        ),
+    ] {
+        agrees(
+            key,
+            &Case {
+                width: Dimension::Points(100.0),
+                height: Dimension::Points(120.0),
+                width_clamp: (Dimension::Auto, Dimension::Points(60.0)),
+                flow: (flow.unwrap_or(FlexDirection::Row), None),
+                ..width_capped(
+                    Kind::Ratio,
+                    if flow.is_some() {
+                        Display::Flex
+                    } else {
+                        Display::Block
+                    },
+                )
+            },
+        );
+    }
+}
+
+#[test]
+fn a_maximum_width_leaves_what_it_did() {
+    // No maximum and a slack one leave the ratio's 90; a declared maximum
+    // height of its own changes nothing; an auto height takes the width.
+    let mut free = width_capped(Kind::Ratio, Display::Block);
+    free.width_clamp = (Dimension::Auto, Dimension::Auto);
+    agrees("block ratio div h60", &free);
+    free.width_clamp = (Dimension::Auto, Dimension::Points(150.0));
+    agrees("block ratio div h60 max-width150", &free);
+    agrees(
+        "block ratio div h60 max-width50 max-height100",
+        &Case {
+            clamp: (Dimension::Auto, Dimension::Points(100.0)),
+            ..width_capped(Kind::Ratio, Display::Block)
+        },
+    );
+    agrees(
+        "block ratio div h60 max-width50 max-height40",
+        &Case {
+            clamp: (Dimension::Auto, Dimension::Points(40.0)),
+            ..width_capped(Kind::Ratio, Display::Block)
+        },
+    );
+    agrees(
+        "block ratio div h auto max-width50",
+        &Case {
+            height: Dimension::Auto,
+            ..width_capped(Kind::Ratio, Display::Block)
+        },
+    );
+}
+
 #[test]
 fn a_maximum_height_leaves_what_it_did() {
     // An auto width takes the maximum through the ratio, a declared maximum
