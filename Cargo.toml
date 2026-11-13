@@ -55,6 +55,11 @@ icu_segmenter = { version = "~2.4.0", default-features = false, features = [
     "unstable",
 ] }
 
+# The hasher of the text measurement and layout caches, which hash a key per
+# run per layout: with std's SipHash that hashing is 8% of a short CJK page's
+# render. Already in the graph through `meo-skia-canvas`.
+foldhash = "0.2"
+
 # Decodes a `data:` image source. `ureq` already brings it under `net`; naming
 # it gives a build without `net` the same decoder rather than a hand-written one.
 base64 = "0.23"

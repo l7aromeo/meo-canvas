@@ -98,7 +98,10 @@
 //! `chrome_text_spacing_trim.rs` holds every pair of forty marks, lines and
 //! min-content widths against Chrome.
 
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+};
 
 use meo_canvas_scene::style::{
     paint::Color,
@@ -152,8 +155,8 @@ const FALLBACK_SPACE: f32 = 0.3;
 /// change a measurement are keyed by their bits.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct FontKey {
-    /// The family name.
-    family: String,
+    /// The family name, shared with the style it came from.
+    family: Arc<str>,
     /// The em size, by its bits, because a size is an `f32`.
     size: u32,
     /// The CSS numeric weight.
@@ -165,6 +168,164 @@ struct FontKey {
     variant: Vec<u8>,
     /// Whether `halt` is asked for, as [`RunStyle::trimmed`] says.
     trimmed: bool,
+}
+
+/// One question the measurement cache holds: a font, a letter spacing by its
+/// bits, and a string.
+#[derive(Debug, Clone)]
+struct Asked {
+    /// The font.
+    font: FontKey,
+    /// The letter spacing, by its bits.
+    spacing: u32,
+    /// The string.
+    text: String,
+}
+
+/// A measurement question as the cache hashes and compares it, whether held
+/// ([`Asked`]) or being asked ([`Asking`]), so a lookup reads the asker's own
+/// fields and builds no key, which would copy the run's string and features
+/// for every run of every layout; only a measurement builds one.
+trait Question {
+    /// The family name.
+    fn family(&self) -> &str;
+    /// The size, weight and italic, as [`FontKey`] holds them.
+    fn face(&self) -> (u32, u16, bool);
+    /// How many OpenType features are asked for.
+    fn variants(&self) -> usize;
+    /// The wire value of feature `at`.
+    fn variant(&self, at: usize) -> u8;
+    /// Whether `halt` is asked for.
+    fn trimmed(&self) -> bool;
+    /// The letter spacing, by its bits.
+    fn spacing(&self) -> u32;
+    /// The string.
+    fn text(&self) -> &str;
+}
+
+impl core::hash::Hash for dyn Question + '_ {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.family().hash(state);
+        self.face().hash(state);
+        state.write_usize(self.variants());
+        for at in 0..self.variants() {
+            state.write_u8(self.variant(at));
+        }
+        self.trimmed().hash(state);
+        self.spacing().hash(state);
+        self.text().hash(state);
+    }
+}
+
+impl PartialEq for dyn Question + '_ {
+    fn eq(&self, other: &Self) -> bool {
+        self.family() == other.family()
+            && self.face() == other.face()
+            && self.variants() == other.variants()
+            && (0..self.variants())
+                .all(|at| self.variant(at) == other.variant(at))
+            && self.trimmed() == other.trimmed()
+            && self.spacing() == other.spacing()
+            && self.text() == other.text()
+    }
+}
+
+impl Eq for dyn Question + '_ {}
+
+impl Question for Asked {
+    fn family(&self) -> &str {
+        &self.font.family
+    }
+
+    fn face(&self) -> (u32, u16, bool) {
+        (self.font.size, self.font.weight, self.font.italic)
+    }
+
+    fn variants(&self) -> usize {
+        self.font.variant.len()
+    }
+
+    fn variant(&self, at: usize) -> u8 {
+        self.font.variant[at]
+    }
+
+    fn trimmed(&self) -> bool {
+        self.font.trimmed
+    }
+
+    fn spacing(&self) -> u32 {
+        self.spacing
+    }
+
+    fn text(&self) -> &str {
+        &self.text
+    }
+}
+
+impl core::hash::Hash for Asked {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        let question: &dyn Question = self;
+        question.hash(state);
+    }
+}
+
+impl PartialEq for Asked {
+    fn eq(&self, other: &Self) -> bool {
+        let (this, that): (&dyn Question, &dyn Question) = (self, other);
+        this == that
+    }
+}
+
+impl Eq for Asked {}
+
+impl<'a> core::borrow::Borrow<dyn Question + 'a> for Asked {
+    fn borrow(&self) -> &(dyn Question + 'a) {
+        self
+    }
+}
+
+/// A question being asked, borrowing the run's style and string.
+struct Asking<'a> {
+    /// The style asked in.
+    style: &'a RunStyle,
+    /// The letter spacing, by its bits.
+    spacing: u32,
+    /// The string.
+    text: &'a str,
+}
+
+impl Question for Asking<'_> {
+    fn family(&self) -> &str {
+        &self.style.family
+    }
+
+    fn face(&self) -> (u32, u16, bool) {
+        (
+            self.style.size.to_bits(),
+            self.style.weight,
+            self.style.italic,
+        )
+    }
+
+    fn variants(&self) -> usize {
+        self.style.variant.len()
+    }
+
+    fn variant(&self, at: usize) -> u8 {
+        self.style.variant[at].to_wire()
+    }
+
+    fn trimmed(&self) -> bool {
+        self.style.trimmed
+    }
+
+    fn spacing(&self) -> u32 {
+        self.spacing
+    }
+
+    fn text(&self) -> &str {
+        self.text
+    }
 }
 
 /// What one measurement answers.
@@ -215,7 +376,10 @@ struct Answer {
 #[non_exhaustive]
 pub struct RunStyle {
     /// Family name.
-    pub family: String,
+    ///
+    /// Shared rather than owned: a wrap clones a run's style for every run it
+    /// makes, and a narrowed mark is a run of its own.
+    pub family: Arc<str>,
     /// Em size in pixels.
     pub size: f32,
     /// CSS numeric weight.
@@ -269,10 +433,7 @@ impl RunStyle {
     pub fn of(base: &ResolvedText, segment: &TextSegment) -> Self {
         let style = &segment.style;
         Self {
-            family: style
-                .font_family
-                .clone()
-                .unwrap_or_else(|| base.family.clone()),
+            family: style.font_family.as_deref().unwrap_or(&base.family).into(),
             // Through `usable`, as `line_gap` is: an infinite size would reach
             // the measurement and collapse the box around the paragraph, and a
             // `NaN` one, refused at the writer, is neutralised here. `1e30`
@@ -305,7 +466,7 @@ impl RunStyle {
     #[must_use]
     pub fn base(base: &ResolvedText) -> Self {
         Self {
-            family: base.family.clone(),
+            family: base.family.as_str().into(),
             size: usable(base.size),
             weight: base.weight.get(),
             italic: matches!(base.style, FontStyle::Italic),
@@ -315,6 +476,17 @@ impl RunStyle {
             letter_spacing: spacing_pixels(base.letter_spacing, base.size),
             trimmed: false,
         }
+    }
+
+    /// Whether `other` selects the same face, whose ascent, descent and line
+    /// gap a line box is built from. `halt` moves glyphs, not the face's
+    /// metrics, so a narrowed mark is in its neighbour's face.
+    fn same_face(&self, other: &Self) -> bool {
+        self.family == other.family
+            && self.size.to_bits() == other.size.to_bits()
+            && self.weight == other.weight
+            && self.italic == other.italic
+            && self.variant == other.variant
     }
 
     /// This style with [`RunStyle::trimmed`] set.
@@ -329,7 +501,7 @@ impl RunStyle {
     #[must_use]
     pub fn to_font(&self) -> Font {
         Font {
-            families: vec![self.family.as_str().into()],
+            families: vec![(*self.family).into()],
             size: self.size,
             weight: self.weight,
             // 0.16 replaces the boolean with the three slants CSS has. The
@@ -461,11 +633,11 @@ pub struct TextMeasurer {
     /// font library is the thread's, so this sees every face registered on it.
     canvas: Canvas,
     /// Answers, keyed by the font and the string.
-    answers: HashMap<(FontKey, u32, String), Answer>,
+    answers: HashMap<Asked, Answer, foldhash::fast::RandomState>,
     /// Keys in the order they were inserted, so the oldest can be dropped:
     /// first in, first out, which decides only which entry survives a full
     /// cache and not what any of them say.
-    order: VecDeque<(FontKey, u32, String)>,
+    order: VecDeque<Asked>,
 }
 
 impl core::fmt::Debug for TextMeasurer {
@@ -495,7 +667,7 @@ impl TextMeasurer {
         Self {
             canvas: Canvas::with_options(1.0, 1.0, options)
                 .unwrap_or_else(|_| Canvas::new(1.0, 1.0)),
-            answers: HashMap::new(),
+            answers: HashMap::default(),
             order: VecDeque::new(),
         }
     }
@@ -526,10 +698,20 @@ impl TextMeasurer {
         letter_spacing: f32,
         text: &str,
     ) -> Answer {
-        let key = (style.key(), letter_spacing.to_bits(), text.to_owned());
-        if let Some(hit) = self.answers.get(&key) {
+        let asking = Asking {
+            style,
+            spacing: letter_spacing.to_bits(),
+            text,
+        };
+        let question: &dyn Question = &asking;
+        if let Some(hit) = self.answers.get(question) {
             return *hit;
         }
+        let key = Asked {
+            font: style.key(),
+            spacing: asking.spacing,
+            text: text.to_owned(),
+        };
 
         let font = style.to_font();
         let (caps, features) = style.to_variant();
@@ -1436,7 +1618,14 @@ fn wrap_marked(prepared: &Prepared<'_>, max_width: f32) -> Wrapped {
             }
             // A closing bracket ending the unit gives up its empty half where
             // that is what makes the line fit, and the line ends after it.
-            let narrowed = line.extend(prepared, unit, true, false);
+            let narrowed = if unit
+                .iter()
+                .any(|item| matches!(item.trim, Trim::LineEnd { .. }))
+            {
+                line.extend(prepared, unit, true, false)
+            } else {
+                advance
+            };
             if narrowed < advance && fits(line.used + narrowed, max_width) {
                 line.extend(prepared, unit, true, true);
                 ended = true;
@@ -1535,8 +1724,9 @@ fn truncate_with(
     measurer: &mut TextMeasurer,
     base: &ResolvedText,
     prepared: &Prepared<'_>,
-    all: &Wrapped,
+    starts: &[usize],
     from: usize,
+    written: &Line,
     max_width: f32,
     marker: &str,
     metrics: Metrics,
@@ -1548,7 +1738,7 @@ fn truncate_with(
     // The ellipsis takes the style of the last thing written before it, which
     // is v9's rule and the one that keeps a bold last word's marker bold.
     // Never narrowed: the marker is no punctuation mark.
-    let style = all.lines[from]
+    let style = written
         .runs
         .iter()
         .rev()
@@ -1564,7 +1754,7 @@ fn truncate_with(
     // This line and each soft-wrapped continuation, up to the next newline,
     // as one line: the spaces the wrap consumed are pieces again, and `漢字`
     // broken between its ideographs had none.
-    let start = all.starts.get(from).copied().unwrap_or_default();
+    let start = starts.get(from).copied().unwrap_or_default();
     let rest = &prepared.items[start.min(prepared.items.len())..];
     let end = rest
         .iter()
@@ -1718,10 +1908,16 @@ pub fn measure_lines(
     lines: &mut [Line],
     metrics: Metrics,
 ) {
-    let base_style = RunStyle::base(base);
     for line in lines {
         let mut extent = Extent::default();
+        // A run in the face of the run before it adds nothing: the extent is
+        // a maximum, and a narrowed mark is in its neighbour's face.
+        let mut previous: Option<&RunStyle> = None;
         for run in line.runs.iter().filter(|run| !run.is_space()) {
+            if previous.is_some_and(|face| face.same_face(&run.style)) {
+                continue;
+            }
+            previous = Some(&run.style);
             extent.add(measurer.answer(
                 &run.style,
                 metrics.letter_spacing,
@@ -1731,7 +1927,7 @@ pub fn measure_lines(
         if extent.ascent == 0.0 && extent.descent == 0.0 {
             extent = Extent::default();
             extent.add(measurer.answer(
-                &base_style,
+                &RunStyle::base(base),
                 metrics.letter_spacing,
                 METRICS_STRING,
             ));
@@ -1794,8 +1990,10 @@ pub(crate) fn layout_prepared(
     paragraph: &ParagraphStyle,
     metrics: Metrics,
 ) -> Block {
-    let all = wrap_marked(prepared, max_width);
-    let mut lines = all.lines.clone();
+    // Taken rather than cloned: a truncation reads only the line it rebuilds,
+    // which is still in place when it does.
+    let Wrapped { mut lines, starts } = wrap_marked(prepared, max_width);
+    let wrapped_lines = lines.len();
     let mut truncated = false;
     let marker = paragraph
         .ellipsis
@@ -1809,7 +2007,14 @@ pub(crate) fn layout_prepared(
             && let Some(last) = limit.checked_sub(1)
         {
             lines[last] = truncate_with(
-                measurer, base, prepared, &all, last, max_width, marker,
+                measurer,
+                base,
+                prepared,
+                &starts,
+                last,
+                &lines[last],
+                max_width,
+                marker,
                 metrics,
             );
             truncated = true;
@@ -1828,7 +2033,15 @@ pub(crate) fn layout_prepared(
         && line_width(&lines[last], space, metrics.word_spacing) > max_width
     {
         lines[last] = truncate_with(
-            measurer, base, prepared, &all, last, max_width, marker, metrics,
+            measurer,
+            base,
+            prepared,
+            &starts,
+            last,
+            &lines[last],
+            max_width,
+            marker,
+            metrics,
         );
         truncated = true;
     }
@@ -1845,7 +2058,7 @@ pub(crate) fn layout_prepared(
         lines,
         width,
         height: boxes + gaps,
-        wrapped_lines: all.lines.len(),
+        wrapped_lines,
         truncated,
     }
 }
@@ -2215,6 +2428,34 @@ mod tests {
         // has to be a different entry rather than a hit.
         let _ = measurer.measure(&base, 2.0, METRICS_STRING);
         assert_eq!(measurer.cached(), cached + 1);
+    }
+
+    #[test]
+    fn a_question_is_found_under_every_part_of_its_key() {
+        use meo_canvas_scene::style::text::FontVariant;
+
+        // A lookup reads the run's own style while the cache holds a copy: if
+        // the two hashed or compared a feature or `halt` differently, every
+        // such run would be measured again.
+        let mut measurer = TextMeasurer::new();
+        let mut asked = RunStyle::base(&style());
+        asked.variant =
+            vec![FontVariant::DiagonalFractions, FontVariant::Ordinal];
+        let mut variations = vec![asked; 4];
+        variations[1].trimmed = true;
+        variations[2].variant.pop();
+        variations[3].weight = 700;
+        for style in &variations {
+            let _ = measurer.measure(style, 0.0, "1/2");
+        }
+        let held = measurer.cached();
+        assert_eq!(held, variations.len());
+        for style in &variations {
+            let _ = measurer.measure(style, 0.0, "1/2");
+        }
+        // A miss measures again and queues its key again, which the count
+        // of answers held would not show.
+        assert_eq!((measurer.cached(), measurer.order.len()), (held, held));
     }
 
     #[test]
@@ -2739,7 +2980,7 @@ mod tests {
         let asked: Vec<&str> = measurer
             .answers
             .keys()
-            .map(|(_, _, text)| text.as_str())
+            .map(|asked| asked.text.as_str())
             .collect();
         for pair in ["「「", "「漢"] {
             assert!(!asked.contains(&pair), "{pair} was measured: {asked:?}");
