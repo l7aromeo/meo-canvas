@@ -281,3 +281,58 @@ fn a_fetched_body_that_will_not_decode_softens_as_a_404_does() {
         "{refused:?}"
     );
 }
+
+/// Answers every request with a head claiming 100 000 bytes, sends 1000 of
+/// them and closes: a body that stops partway, far below the limit.
+fn cutting_off() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .unwrap_or_else(|error| unreachable!("{error}"));
+    let port = listener
+        .local_addr()
+        .unwrap_or_else(|error| unreachable!("{error}"))
+        .port();
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().map_while(Result::ok) {
+            drain_request(&stream);
+            let head = "HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\
+                        Content-Type: image/png\r\n\r\n";
+            let _ = stream.write_all(head.as_bytes());
+            let _ = stream.write_all(&[0_u8; 1000]);
+            let _ = stream.flush();
+        }
+    });
+    format!("http://127.0.0.1:{port}/cut.png")
+}
+
+/// The reference the npm surface's `a body that fails partway` in
+/// `root.test.ts` matches: a body read that fails is `Transport`, under every
+/// policy, and `TooLarge` stays the limit's alone.
+#[test]
+fn a_body_cut_off_partway_is_transport_not_too_large() {
+    let url = cutting_off();
+    for policy in [OnImageError::Placeholder, OnImageError::Ignore] {
+        let mut scene = scene_naming(url.clone());
+        scene.on_image_error = policy;
+        let canvas = Renderer::new()
+            .render(&scene)
+            .unwrap_or_else(|error| unreachable!("{policy:?}: {error}"));
+        let [warning] = canvas.warnings() else {
+            unreachable!("{policy:?}: {:?}", canvas.warnings());
+        };
+        assert_eq!(warning.url, url);
+        assert_eq!(warning.failure, FetchFailure::Transport, "{policy:?}");
+        assert_eq!(warning.nodes, 1);
+    }
+
+    let refused = Renderer::new().render(&scene_naming(url.clone()));
+    let Err(Error::SourceFetch {
+        url: named,
+        failure,
+        ..
+    }) = refused
+    else {
+        unreachable!("a cut-off body was not refused as a fetch failure");
+    };
+    assert_eq!(named, url);
+    assert_eq!(failure, FetchFailure::Transport);
+}

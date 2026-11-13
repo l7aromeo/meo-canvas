@@ -63,19 +63,19 @@ export function fetchFailure(error: unknown): 'host-not-found' | 'transport' {
 }
 
 /**
- * The response body, refused once it passes {@link MAX_IMAGE_BYTES}. Counted while
- * reading, since `content-length` may be absent or false and `arrayBuffer()` has
- * allocated the whole body by the time it returns.
+ * The response body, or `undefined` once it passes {@link MAX_IMAGE_BYTES}. Counted
+ * while reading, since `content-length` may be absent or false and `arrayBuffer()`
+ * has allocated the whole body by the time it returns. A read that fails rejects
+ * with what the stream reported, for {@link request} to classify.
  */
-async function bounded(url: string, response: Response): Promise<Uint8Array> {
+async function bounded(response: Response): Promise<Uint8Array | undefined> {
   const reader = response.body?.getReader()
   // A body with no stream — an empty response, or a `fetch` a test replaced
   // with something simpler. Nothing to read incrementally, so the check is the
   // same one against what arrived.
   if (reader === undefined) {
     const whole = new Uint8Array(await response.arrayBuffer())
-    if (whole.byteLength > MAX_IMAGE_BYTES) throw tooLarge(url)
-    return whole
+    return whole.byteLength > MAX_IMAGE_BYTES ? undefined : whole
   }
 
   const chunks: Uint8Array[] = []
@@ -86,9 +86,11 @@ async function bounded(url: string, response: Response): Promise<Uint8Array> {
     total += value.byteLength
     if (total > MAX_IMAGE_BYTES) {
       // Stop the transfer rather than draining it: the point of counting while
-      // reading is that the bytes past the limit are never taken.
-      await reader.cancel()
-      throw tooLarge(url)
+      // reading is that the bytes past the limit are never taken. The limit has
+      // decided the outcome, so a connection that also fails while stopping
+      // does not change it.
+      await reader.cancel().catch(() => undefined)
+      return undefined
     }
     chunks.push(value)
   }
@@ -100,11 +102,6 @@ async function bounded(url: string, response: Response): Promise<Uint8Array> {
     at += chunk.byteLength
   }
   return bytes
-}
-
-/** The refusal, worded as the crate words its own. */
-function tooLarge(url: string): TypeError {
-  return new TypeError(`cannot fetch ${JSON.stringify(url)}: the image is larger than the ${MAX_IMAGE_BYTES / (1024 * 1024)} MiB this renderer fetches`)
 }
 
 /**
@@ -122,17 +119,10 @@ async function request(url: string, init: RequestInit | undefined, extra: readon
   const { ceiling, signal } = fetchDeadline(caller)
   const cannot = (detail: string, cause?: unknown): TypeError =>
     new TypeError(`cannot fetch ${JSON.stringify(url)}: ${detail}`, cause === undefined ? undefined : { cause })
-
-  let response: Response
-  try {
-    if (extra.length === 0) {
-      response = await fetch(url, { ...init, signal })
-    } else {
-      const headers = new Headers(init?.headers)
-      for (const [name, value] of extra) headers.set(name, value)
-      response = await fetch(url, { ...init, headers, signal })
-    }
-  } catch (cause) {
+  // A request that stopped, in `fetch` or partway through the body: one event
+  // wherever it lands, so one classification, as the crate's `fetch` gives a
+  // failed body read the class of a failed connection.
+  const stopped = (cause: unknown): Fetched => {
     // Ours or theirs is worth distinguishing: one is a limit this renderer
     // chose and the other is the caller's own abort, and a reader who cannot
     // tell them apart looks in the wrong place.
@@ -148,17 +138,36 @@ async function request(url: string, init: RequestInit | undefined, extra: readon
     if (caller?.aborted ?? false) return { kind: 'aborted', error: cannot(String(cause), cause) }
     return { kind: 'failed', attempt: { url, failure: fetchFailure(cause), detail: String(cause) }, error: cannot(String(cause), cause) }
   }
+
+  let response: Response
+  try {
+    if (extra.length === 0) {
+      response = await fetch(url, { ...init, signal })
+    } else {
+      const headers = new Headers(init?.headers)
+      for (const [name, value] of extra) headers.set(name, value)
+      response = await fetch(url, { ...init, headers, signal })
+    }
+  } catch (cause) {
+    return stopped(cause)
+  }
   const detail = `${response.status} ${response.statusText}`
   const failure = { url, failure: 'status', status: response.status, detail } as const
   if (!response.ok) return { kind: 'response', status: response.status, headers: response.headers, bytes: new Uint8Array(), failure, error: cannot(detail) }
+  let bytes: Uint8Array | undefined
   try {
-    return { kind: 'response', status: response.status, headers: response.headers, bytes: await bounded(url, response), failure, error: cannot(detail) }
+    bytes = await bounded(response)
   } catch (cause) {
-    // `bounded` refuses a body past the limit, which is this renderer's
-    // number rather than the server's — a different event from a slow host
-    // and one a caller answers differently.
-    return { kind: 'failed', attempt: { url, failure: 'too-large', detail: String(cause) }, error: cause as TypeError }
+    return stopped(cause)
   }
+  if (bytes === undefined) {
+    // The limit is this renderer's number rather than the server's — a
+    // different event from a slow host and one a caller answers differently —
+    // and only the limit is `'too-large'`. Worded as the crate words its own.
+    const refusal = `the image is larger than the ${MAX_IMAGE_BYTES / (1024 * 1024)} MiB this renderer fetches`
+    return { kind: 'failed', attempt: { url, failure: 'too-large', detail: refusal }, error: cannot(refusal) }
+  }
+  return { kind: 'response', status: response.status, headers: response.headers, bytes, failure, error: cannot(detail) }
 }
 
 /**

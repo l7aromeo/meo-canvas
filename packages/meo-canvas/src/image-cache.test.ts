@@ -4,7 +4,7 @@
 // `tests/image_cache.rs` holds the same cases.
 
 import { createServer, type IncomingHttpHeaders } from 'node:http'
-import type { AddressInfo } from 'node:net'
+import type { AddressInfo, Socket } from 'node:net'
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -29,6 +29,8 @@ interface Reply {
   readonly body?: Uint8Array
   readonly delay?: number
   readonly hangUp?: boolean
+  /** Send the head and part of the body, then hold the socket for {@link Origin.cut}. */
+  readonly partial?: boolean
 }
 
 const ok = (headers: Record<string, string>): Reply => ({ status: 200, headers, body: DOT })
@@ -38,6 +40,8 @@ interface Origin {
   url(path: string): string
   readonly requests: number
   readonly heads: readonly IncomingHttpHeaders[]
+  /** Drops every socket a `partial` reply holds. */
+  cut(): void
 }
 
 const closing: (() => Promise<void>)[] = []
@@ -47,6 +51,7 @@ afterEach(async () => {
 
 async function origin(reply: (n: number) => Reply): Promise<Origin> {
   const heads: IncomingHttpHeaders[] = []
+  const held: Socket[] = []
   let requests = 0
   const server = createServer((request, response) => {
     const n = requests
@@ -56,6 +61,12 @@ async function origin(reply: (n: number) => Reply): Promise<Origin> {
     setTimeout(() => {
       if (answer.hangUp === true) {
         request.socket.destroy()
+        return
+      }
+      if (answer.partial === true) {
+        held.push(request.socket)
+        response.writeHead(answer.status ?? 200, { 'content-length': '100000', ...answer.headers })
+        response.write(new Uint8Array(1000))
         return
       }
       const body = answer.body ?? new Uint8Array()
@@ -78,6 +89,9 @@ async function origin(reply: (n: number) => Reply): Promise<Origin> {
       return requests
     },
     heads,
+    cut: () => {
+      for (const socket of held.splice(0)) socket.destroy()
+    },
   }
 }
 
@@ -246,12 +260,23 @@ describe('an image cache through Root', () => {
   it.each([
     ['a 503', { status: 503 }],
     ['a hang-up', { hangUp: true }],
+    ['a body cut off partway', { partial: true }],
   ] as const)('serves the expired copy under stale-if-error after %s', async (_, failure: Reply) => {
     const server = await origin(n => (n === 0 ? ok({ 'cache-control': 'max-age=0, stale-if-error=600', etag: '"v1"' }) : failure))
     const cache = memory()
     const url = server.url('/a.png')
     await render(url, cache)
-    const found = await render(url, cache)
+    // Cut once the head has arrived, so a partial reply fails the body read and
+    // never `fetch` itself; for the other replies there is nothing to cut.
+    const real = globalThis.fetch
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await real(input, init)
+      server.cut()
+      return response
+    }
+    const found = await render(url, cache).finally(() => {
+      globalThis.fetch = real
+    })
     expect(found.warnings).toEqual([])
     expect(found.diagnostics).toHaveLength(1)
     expect(found.diagnostics[0]).toMatch(
