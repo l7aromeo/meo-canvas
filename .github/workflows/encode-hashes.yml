@@ -141,8 +141,12 @@ jobs:
       - run: bun install --frozen-lockfile
 
       # The addon, because the JavaScript half renders through it. This is the
-      # hour.
+      # hour. pwsh on Windows for the exit status, as `ci.yml`'s `defaults` says.
       - run: just addon
+        if: runner.os != 'Windows'
+      - run: just addon
+        if: runner.os == 'Windows'
+        shell: pwsh
 
       # Both surfaces: Rust asserts and names the formats that moved, TypeScript
       # with `UPDATE_ENCODE_HASHES=1` prints the rows and writes nothing.

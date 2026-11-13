@@ -33,6 +33,11 @@ env:
 # PowerShell, and `Read the pinned toolchains` below is `grep | cut` -- which is
 # exactly how `release.yml` failed its Windows job every run since it was
 # written. Declared before the Windows row was added rather than after it failed.
+#
+# Except a step that runs `just` on Windows, which is pwsh. Git Bash keeps the
+# low 8 bits of a native exit status, and a crashing recipe makes `just` exit a
+# multiple of 256: an access violation became msys signal 11, 2816, read as 0
+# (`l7aromeo/meo-canvas#254`). Elsewhere a status is 8 bits, so bash stays.
 defaults:
   run:
     shell: bash
@@ -261,6 +266,10 @@ jobs:
       # skips the lock `ci` takes as well, which guards one checkout against two
       # concurrent gates and has nothing to guard on a fresh runner.
       - run: just native
+        if: runner.os != 'Windows'
+      - run: just native
+        if: runner.os == 'Windows'
+        shell: pwsh
 
       # Advisories, once rather than three times: the lockfile is the same on
       # every runner, so this asks Linux and nobody else. Installed here rather
@@ -283,6 +292,7 @@ jobs:
       # An ordinary addon under vitest's threads pool. See `just threads-probe`.
       - name: Does an ordinary addon survive worker threads?
         if: runner.os == 'Windows'
+        shell: pwsh
         run: just threads-probe
 
       # What a failing fixture wrote, `actual.png` and `diff.png` beside each,

@@ -173,7 +173,12 @@ jobs:
       # package for this host and packs both tarballs. The same recipe a person
       # runs locally, so a release cannot take a path nobody has walked.
       - name: Build and pack
-        if: runner.os != 'Linux'
+        if: runner.os == 'macOS'
+        run: just pack
+      # pwsh on Windows for the exit status, as `ci.yml`'s `defaults` says.
+      - name: Build and pack
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: just pack
 
       # Linux builds in a container: on `ubuntu-latest` the addon needs glibc
@@ -243,7 +248,11 @@ jobs:
       # over the container's binary. Skipped for musl, which cannot load on this
       # glibc runner; acceptance covers it on Alpine.
       - name: Install the tarballs somewhere else and render
-        if: ${{ !contains(matrix.suffix, 'musl') }}
+        if: ${{ !contains(matrix.suffix, 'musl') && runner.os != 'Windows' }}
+        run: just verify-packed
+      - name: Install the tarballs somewhere else and render
+        if: ${{ !contains(matrix.suffix, 'musl') && runner.os == 'Windows' }}
+        shell: pwsh
         run: just verify-packed
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
