@@ -76,6 +76,10 @@ ureq = "3.5.1"
 # the version. Retires when `rustls` requires the fixed version.
 rustls-webpki = { version = "^0.103.16", default-features = false }
 thiserror = "2.0"
+# The disk image cache's file names and checksums, which the npm surface
+# computes with `node:crypto`'s SHA-256; already in the graph through
+# `meo-skia-canvas`.
+sha2 = "0.11"
 # Benchmarks are an instrument, not a gate, so none is in the `ci` chain: a
 # number that varies with the machine cannot fail a build honestly.
 criterion = { version = "0.8", default-features = false, features = [

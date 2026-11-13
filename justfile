@@ -172,9 +172,10 @@ test:
 audit:
     cargo audit --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
 
-# How many of the core's test files compile only under `net`: `fetch_policy` and
-# `image_soft_fail`. A floor, so adding one needs no edit and losing one fails.
-net_only_core_tests := "2"
+# How many of the core's test files compile only under `net`: `fetch_policy`,
+# `image_soft_fail` and `image_cache`. A floor, so adding one needs no edit and
+# losing one fails.
+net_only_core_tests := "3"
 
 # Compiles and tests `net`, which no other recipe and no local `just ci` builds,
 # once on Linux. `net` adds 14 crates to the core's tree, `ureq` and `rustls` with
@@ -198,6 +199,8 @@ net-check:
     fi
     cargo test -p meo-canvas --features net --test net_feature
     cargo test -p meo-canvas-cli --features net --test cli
+    # The image cache's examples exist only under `net`, which `test` omits.
+    cargo test -p meo-canvas-core -p meo-canvas --features net --doc
 # Not in `ci`: it regenerates four images rather than checking, so it sits with
 # `conformance`. Wants `dist` and the addon built first.
 [doc("Redraw the README banners with the library itself.")]
@@ -785,7 +788,7 @@ example: build-js addon
 
 # The conformance tools in measuring order, written out: `browser.mjs` and
 # `png.mjs` share the directory and measure nothing.
-conformance_tools := "ellipsis colormix colorstrings currentcolor gradients gradientalpha flex borders dotted blend boxshadow shadowextent objectfit objectfit-overflow grid mincontent replacedinsets replacedratio overflowposition abspositioned aspectratio textaligndirection boxsizing paintorder flexratiocross flexbasiscollapse ratiostretchmain transformorder directioninherit flexcolumntext wrapwidth texttruth justifyitems justifybaseline failedimage viewbox backgroundtile filterstacking lineheightnormal linebreak"
+conformance_tools := "ellipsis colormix colorstrings currentcolor gradients gradientalpha flex borders dotted blend boxshadow shadowextent objectfit objectfit-overflow grid mincontent replacedinsets replacedratio overflowposition abspositioned aspectratio textaligndirection boxsizing paintorder flexratiocross flexbasiscollapse ratiostretchmain transformorder directioninherit flexcolumntext wrapwidth texttruth justifyitems justifybaseline failedimage viewbox backgroundtile filterstacking lineheightnormal linebreak httpcache"
 
 # Not in `ci`: a re-measurement is a diff someone reads, not a suite going red
 # on whichever machine updated Chrome first. Named, one tool rewrites one table.

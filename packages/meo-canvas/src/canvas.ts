@@ -167,12 +167,17 @@ export class Canvas {
   /** Whether {@link Canvas.release} has already run. */
   #released = false
 
+  /** What the image cache reported while this render fetched, after the renderer's own. */
+  readonly #cacheDiagnostics: readonly Diagnostic[]
+
   /**
    * Wraps a native surface. This is the one injection point: a test, or a host
-   * without `node:fs`, substitutes a {@link NativeCanvas}.
+   * without `node:fs`, substitutes a {@link NativeCanvas}. `cacheDiagnostics`
+   * are what `Root`'s image cache reported, appended to the surface's own.
    */
-  constructor(native: NativeCanvas) {
+  constructor(native: NativeCanvas, cacheDiagnostics: readonly Diagnostic[] = []) {
     this.#native = native
+    this.#cacheDiagnostics = cacheDiagnostics
   }
 
   /**
@@ -430,10 +435,14 @@ export class Canvas {
    * and a caller who truncated `#ff0000` sees blank text either way. Nothing
    * in the picture can tell them apart.
    *
+   * An image cache's store that failed, and an expired image drawn because
+   * revalidating it failed, are reported here too, after the rest, with the
+   * URL as the `path`: see `ImageCache`.
+   *
    * **Always an array**, as `warnings` is.
    */
   get diagnostics(): readonly Diagnostic[] {
-    return this.#native.diagnostics
+    return this.#cacheDiagnostics.length === 0 ? this.#native.diagnostics : [...this.#native.diagnostics, ...this.#cacheDiagnostics]
   }
 
   /** Refuses a call on a surface that has been freed. */

@@ -107,7 +107,9 @@ and names what it has not measured.
 `Renderer` owns everything a render needs that is not the scene: registered
 fonts and whatever caches the passes keep. **Nothing in this crate is
 process-wide.** Two `Renderer`s on two threads share no state and cannot
-contend. The registry that outlives a `Renderer` is outside this crate:
+contend, unless the caller hands both one `ImageCache`, which is the one state
+built to be shared: an `Arc` the caller owns, its map behind one lock, and one
+fetch in flight per key. The registry that outlives a `Renderer` is outside this crate:
 `meo-skia-canvas` keeps one per thread, and this crate adds no second.
 
 `Renderer::render` returns a `RenderedCanvas`, and encoding is a separate call
@@ -135,6 +137,26 @@ it there. What a request carries beyond the URL, `HttpOptions`, belongs to each
 `ImageSource::Url` rather than to the scene: two sources naming one URL with
 different headers are two sources, and a scene's own options merge into each
 source a header at a time. No async runtime, ever.
+
+**Fetched bytes can outlive the render** through an image cache the caller
+creates and passes in: `Renderer::render_with_cache` under `net`, and
+`RootProps.imageCache` on npm, which fetches in TypeScript before it encodes.
+It is an HTTP cache by RFC 9111 as Chrome applies it, with RFC 5861's
+stale-if-error, keyed by the URL with its request headers, so a key is the
+request a fetch sends and `Vary` needs no handling. Each surface writes the
+rules beside its own fetch, `image_cache` in the core and `image-cache.ts` on
+npm, and both read the shared tables in
+`crates/meo-canvas-core/tests/assets/image-cache`: the freshness of each
+response, the key and file of each request, and one entry file both write byte
+for byte, which is what lets a Rust process and a Node process share one disk
+store. `http-cache.tsv` measures Chrome's own HTTP cache, and both suites
+replay all of its rows through the image cache and agree on each. That is why
+dates are read as Chrome reads them on each surface, more leniently than RFC
+9110 asks and held to `dates.tsv`, and why an entry keeps the response's `Cache-Control`,
+`Expires`, `Pragma`, `Date` and `Age`: a 304 replaces the stored headers it
+sends and keeps the rest, as Chrome merges them. Absent, nothing changes:
+every render fetches. Decoding stays per render; the cache holds responses,
+not pixels.
 
 **measure** shapes each text node and breaks it into lines, in `crate::lines`.
 Skia's `Paragraph` is not on this path; `measure.rs`'s `build_paragraph` is
@@ -467,10 +489,13 @@ and a diagnostic means a scene with something in it the caller wrote and did
 not get. `Element::into_scene` carries the same pair; on the JavaScript side it
 is `canvas.diagnostics`, a `readonly Diagnostic[]`.
 
-**Two places raise one.** The markup parser, while a scene is built, and
+**Three places raise one.** The markup parser, while a scene is built;
 `resolve`, for a `filter` or `backdrop_filter` chain `meo-skia-canvas` refuses:
 the chain is dropped, as Chrome drops an invalid declaration, and the node is
-drawn as though it were not set, stacking context included. `resolve` is the
+drawn as though it were not set, stacking context included; and the image
+cache, for a store that failed or an expired image drawn under stale-if-error,
+with the URL as the path, after the others on both surfaces. A failing store
+never fails a render. `resolve` is the
 one stage every door passes, so a scene read from disk by the CLI is treated as
 one built in Rust or JavaScript. `RenderedCanvas::diagnostics` carries those,
 `Canvas::diagnostics` and `canvas.diagnostics` carry both kinds, and the CLI
@@ -557,6 +582,7 @@ by construction, and the crate ships them together.
 | `icu_segmenter`   | 2.4    | Line break opportunities, UAX 14 17. See `Cargo.toml`.   |
 | `ureq`            | 3.5.1  | Remote images, behind the optional `net` feature.        |
 | `rustls-webpki`   | 0.103  | A floor, not a use -- see `Cargo.toml`. Under `net`.     |
+| `sha2`            | 0.11   | The disk image cache's names and checksums. Under `net`. |
 | `rayon`           | 1.11   | The addon's asynchronous encode. Not an async runtime.   |
 
 **`patched-skia` is always on.** With it, `meo-skia-canvas` links the patched

@@ -9,3 +9,7 @@
 *.png  binary
 *.ttf  binary
 *.otf  binary
+
+# The image cache's entry file: a binary format whose header holds a checksum
+# of the bytes after it, and whose key contains line feeds.
+*.entry binary

@@ -75,23 +75,27 @@ impl NodeId {
 /// # The encoded form is canonical
 ///
 /// [`HttpOptions::canonical`] is what reaches the wire, not this list as the
-/// caller wrote it: names are ASCII-lower-cased, repeats of one name are
-/// combined into a single comma-joined value in the order they were written,
-/// and the result is sorted by name. The reason is cross-surface byte
-/// equality. The npm surface builds its headers through the platform's
-/// `Headers`, which does all three itself -- measured, not assumed:
+/// caller wrote it: names are ASCII-lower-cased, values lose leading and
+/// trailing whitespace, repeats of one name are combined into a single
+/// comma-joined value in the order they were written, and the result is sorted
+/// by name. The reason is cross-surface byte equality, of the scene and of the
+/// image cache's keys. The npm surface builds its headers through the
+/// platform's `Headers`, which does all four itself -- measured, not assumed:
 ///
 /// ```text
 /// new Headers([["X-Zeta","1"],["Authorization","B"],["x-zeta","2"]])
 ///   -> [["authorization","B"],["x-zeta","1, 2"]]
+/// new Headers([["X-A"," v1 "],["x-a","v2\t"]])
+///   -> [["x-a","v1, v2"]]
 /// ```
 ///
 /// so a scene built the same way on the two surfaces has to encode to the same
 /// bytes or the fixture comparison between them reads as a codec defect. All
-/// three are lossless as HTTP: field names are case-insensitive, the order of
-/// *different* names is not significant, and a repeated name is defined as the
-/// comma-joined list. `Set-Cookie` is the one field that is not, and it is a
-/// response header that cannot appear on a request.
+/// four are lossless as HTTP: field names are case-insensitive, a field value
+/// excludes surrounding whitespace, the order of *different* names is not
+/// significant, and a repeated name is defined as the comma-joined list.
+/// `Set-Cookie` is the one field that is not, and it is a response header that
+/// cannot appear on a request.
 ///
 /// **At the wire rather than in the constructor**, because `headers` is public
 /// and a struct literal bypasses anything a constructor maintains.
@@ -135,8 +139,8 @@ impl HttpOptions {
 
     /// The headers as the wire carries them.
     ///
-    /// Lower-cased, repeats combined, then sorted -- see the type's own doc
-    /// for why each of the three, and why here rather than in
+    /// Lower-cased, trimmed, repeats combined, then sorted -- see the type's
+    /// own doc for why each of the four, and why here rather than in
     /// [`HttpOptions::header`].
     ///
     /// **Combining runs before sorting**, so a repeated name's values join in
@@ -154,13 +158,16 @@ impl HttpOptions {
         let mut combined: Vec<(String, String)> = Vec::new();
         for (name, value) in &self.headers {
             let name = name.to_ascii_lowercase();
+            // HTTP whitespace as the Fetch standard defines it, which is what
+            // `Headers` strips; `str::trim` would also strip Unicode spaces.
+            let value = value.trim_matches(['\t', '\n', '\r', ' ']);
             if let Some((_, held)) =
                 combined.iter_mut().find(|(held, _)| *held == name)
             {
                 held.push_str(", ");
                 held.push_str(value);
             } else {
-                combined.push((name, value.clone()));
+                combined.push((name, value.to_owned()));
             }
         }
         combined.sort_by(|(left, _), (right, _)| left.cmp(right));
@@ -641,7 +648,7 @@ mod tests {
             &'static [(&'static str, &'static str)],
         );
 
-        let rows: [Row; 5] = [
+        let rows: [Row; 7] = [
             // Sorting alone.
             (
                 &[("x-zeta", "1"), ("accept", "2")],
@@ -665,6 +672,14 @@ mod tests {
             // bytes the other surface cannot produce, since `Headers` folds
             // ASCII alone.
             (&[("\u{130}-name", "1")], &[("\u{130}-name", "1")]),
+            // Surrounding whitespace goes, before combining; inner stays.
+            (&[("X-A", " v1 "), ("x-a", "v2\t")], &[("x-a", "v1, v2")]),
+            // HTTP whitespace only: a no-break space is part of the value,
+            // as `Headers` keeps it.
+            (
+                &[("x-b", "\u{a0}a  b\u{a0}")],
+                &[("x-b", "\u{a0}a  b\u{a0}")],
+            ),
         ];
 
         for (written, want) in rows {

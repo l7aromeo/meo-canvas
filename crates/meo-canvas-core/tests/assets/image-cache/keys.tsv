@@ -1,0 +1,14 @@
+# The cache key and the entry file a request maps to, read by both test suites.
+# `headers` are `name: value` items in the order the caller wrote them,
+# joined by ` | `; each value is everything after the first `: `, and `\t`
+# in it stands for a tab. In `key`, `\n` stands for a line feed. `file` is
+# the disk store's name for the entry: the key's SHA-256 in hex.
+case	url	headers	key	file
+bare-url	https://img.example/a.png	-	https://img.example/a.png	7c047e185f1a66c24dd06620b3294e5171f06a45664ea905eecd507b51d361fe.entry
+one-header	https://img.example/a.png	Authorization: Bearer t	https://img.example/a.png\nauthorization: Bearer t	e3f1fa34447873909a4dccc4ff70e4cb68b5649cdb1ea89c7287db1cd1976aab.entry
+sorted-by-name	https://img.example/a.png	X-Zeta: 1 | Accept: image/png	https://img.example/a.png\naccept: image/png\nx-zeta: 1	8ddc2e342c022fb65d10506fdd64498df7447b0d95c5919bec0f18057c1e9e9d.entry
+repeats-combined-in-order	https://img.example/a.png	X-Zeta: 1 | Authorization: B | x-zeta: 2	https://img.example/a.png\nauthorization: B\nx-zeta: 1, 2	cd12c9a52ea1d871d47cf7fc2369e5fbb4b053b762d4dea7b1e63fb53ad5041f.entry
+values-trimmed	https://img.example/a.png	X-A:  v1\t | x-a: v2 	https://img.example/a.png\nx-a: v1, v2	acc9c151ce7afa61db9f85df0d9c6236b952755031997691ff2a810554fa5bbe.entry
+inner-space-kept	https://img.example/a.png	X-A: a  b	https://img.example/a.png\nx-a: a  b	476fdae7e9221a4d2ba6dd8ab0bd9784a55416b728a31f94ebbdbc3cafe96652.entry
+empty-value	https://img.example/a.png	X-Empty: 	https://img.example/a.png\nx-empty: 	9ebebb3d14f58939351aed930177a282e0bf5067e1e170369c5ccdfd2292a904.entry
+non-ascii-url	https://img.example/é.png	-	https://img.example/é.png	178b2a2a5567e42473f795cd04063d7226c96700fa919222c8f92a8f7c6e7e8d.entry

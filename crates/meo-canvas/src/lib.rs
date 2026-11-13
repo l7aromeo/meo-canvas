@@ -123,6 +123,8 @@
 //! beneath is blocking by construction, so enabling it puts no runtime in any
 //! consumer. [`HttpOptions`](scene::HttpOptions) sets headers per source, so a
 //! page pulling from two origins sends each one only what belongs to it.
+//! Under `net`, `Root::image_cache` keeps fetched images across renders, in
+//! memory or on disk, and revalidates them as an HTTP cache would.
 //!
 //! **Off by default is the same reach at a different price.** The JavaScript
 //! surface fetches without a flag because its addon ships the client prebuilt;
@@ -166,6 +168,12 @@ pub use element::{
 /// assert!(Spring::default().at(0.2).unwrap_or(0.0) > 0.0);
 /// ```
 pub use meo_canvas_core::animate;
+/// Fetched images kept across renders: [`Root::image_cache`] and what it
+/// takes, as a module for the reason [`animate`] is one.
+///
+/// Requires the `net` feature.
+#[cfg(feature = "net")]
+pub use meo_canvas_core::image_cache;
 pub use meo_canvas_core::{
     EncodeOptions, Error, FetchFailure, ImageFormat as Format, ImageWarning,
     PreparedEncode, RenderedCanvas, Renderer,

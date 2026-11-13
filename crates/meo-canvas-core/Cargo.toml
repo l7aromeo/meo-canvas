@@ -29,7 +29,7 @@ vulkan = ["meo-skia-canvas/vulkan"]
 # consumer who never names a URL links no HTTP stack; off, a `Url` is refused.
 # Fixed bounds, 5 s to connect and 60 s and 32 MiB per image, are argued on
 # `resolve`'s constants; a caller wanting others passes `ImageSource::Bytes`.
-net = ["dep:ureq", "dep:rustls-webpki"]
+net = ["dep:ureq", "dep:rustls-webpki", "dep:sha2"]
 
 [dependencies]
 base64 = { workspace = true }
@@ -48,10 +48,17 @@ ureq = { workspace = true, optional = true }
 # requires at `^0.103.14`, which admits `RUSTSEC-2026-0382`; the root
 # `Cargo.toml` says when it retires.
 rustls-webpki = { workspace = true, optional = true }
+# The disk image cache's file names and checksums, which exist only under `net`.
+sha2 = { workspace = true, optional = true }
 
 [[bench]]
 name = "render"
 harness = false
+
+# docs.rs builds the default features alone, which would leave out everything
+# behind `net`: the image cache, and the reference its README links to.
+[package.metadata.docs.rs]
+features = ["net"]
 
 [lints]
 workspace = true

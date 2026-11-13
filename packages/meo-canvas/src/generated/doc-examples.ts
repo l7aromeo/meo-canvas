@@ -3,7 +3,7 @@
 // It exists so an example that does not compile fails a gate: TypeScript
 // compiles nothing inside a comment.
 
-import { Box, Column, Image, Path, Root, Row, Text, formatColor, mixColor, parseColor } from '../index.js'
+import { Box, Column, Image, Path, Root, Row, Text, createImageCache, diskImageStore, formatColor, memoryImageStore, mixColor, parseColor, type ImageCacheEntry, type ImageStore } from '../index.js'
 import type { Gradient } from '../index.js'
 
 /** `color.ts, parseColor`. */
@@ -12,6 +12,57 @@ export async function example_parseColor(): Promise<void> {
   const from = parseColor('#f2aa4c')
   const to = parseColor('rebeccapurple')
   if (from && to) formatColor(mixColor(from, to, 0.5))
+}
+
+/** `image-cache-disk.ts, diskImageStore`. */
+export async function example_diskImageStore(): Promise<void> {
+
+  // Once, at start-up: 2 GiB under the given directory.
+  const imageCache = createImageCache({
+    store: diskImageStore({ dir: '/var/cache/cards', maxBytes: 2 * 1024 ** 3 }),
+  })
+}
+
+/** `image-cache.ts, ImageStore`. */
+export async function example_ImageStore(): Promise<void> {
+
+  // Every entry, kept forever: a minimal store.
+  const entries = new Map<string, ImageCacheEntry>()
+  const unbounded: ImageStore = {
+    get: async key => entries.get(key),
+    set: async (key, entry) => void entries.set(key, entry),
+    delete: async key => void entries.delete(key),
+    clear: async () => entries.clear(),
+  }
+  const cache = createImageCache({ store: unbounded })
+}
+
+/** `image-cache.ts, ImageCache`. */
+export async function example_ImageCache(): Promise<void> {
+
+  // Once, where the server starts.
+  const imageCache = createImageCache({ store: memoryImageStore({ maxBytes: 256 * 1024 * 1024 }) })
+
+  // Every render.
+  const canvas = await Root({ width: 200, height: 200, imageCache, children: Image({ src: { url: 'https://example.com/a.png' } }) })
+}
+
+/** `image-cache.ts, createImageCache`. */
+export async function example_createImageCache(): Promise<void> {
+
+  const imageCache = createImageCache({
+    store: diskImageStore({ dir: '/var/cache/cards', maxBytes: 2 * 1024 ** 3 }),
+    fallbackTtl: 60 * 60 * 1000,
+  })
+}
+
+/** `image-cache.ts, memoryImageStore`. */
+export async function example_memoryImageStore(): Promise<void> {
+
+  // Once, at start-up: 256 MiB, and no entry over 8 MiB.
+  const imageCache = createImageCache({
+    store: memoryImageStore({ maxBytes: 256 * 1024 * 1024, maxEntryBytes: 8 * 1024 * 1024 }),
+  })
 }
 
 /** `node.ts, Row`. */
@@ -152,6 +203,21 @@ export async function example_README_md_5(): Promise<void> {
       // A different origin, a different key, and the scene's `accept` still.
       Image({ src: { url: 'https://other.example.invalid/logo.png', httpOptions: { headers: { authorization: 'Bearer other' } } } }),
     ],
+  })
+}
+
+/** `README.md`. */
+export async function example_README_md_6(): Promise<void> {
+
+  const imageCache = createImageCache({
+    store: diskImageStore({ dir: '/var/cache/cards', maxBytes: 2 * 1024 ** 3 }),
+  })
+
+  const canvas = await Root({
+    width: 400,
+    height: 300,
+    imageCache,
+    children: Image({ src: { url: 'https://cdn.example.invalid/splash.png' } }),
   })
 }
 

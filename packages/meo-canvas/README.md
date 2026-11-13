@@ -262,6 +262,35 @@ on both — fetch a URL, under a bound you did not choose — and only the price
 adjusting it differs, which is the reasoning that governs the crate's `net`
 feature too.
 
+### Keeping images across renders
+
+A server drawing many pictures from the same images can keep what one render
+fetched for the next. Create one cache where the process starts and pass it to
+every render:
+
+```ts
+import { createImageCache, diskImageStore, Image, Root } from 'meo-canvas'
+
+const imageCache = createImageCache({
+  store: diskImageStore({ dir: '/var/cache/cards', maxBytes: 2 * 1024 ** 3 }),
+})
+
+const canvas = await Root({
+  width: 400,
+  height: 300,
+  imageCache,
+  children: Image({ src: { url: 'https://cdn.example.invalid/splash.png' } }),
+})
+```
+
+It behaves as a browser's HTTP cache does: a fresh image is drawn with no
+request, an expired one is revalidated, and while the origin is down an expired
+one is drawn for up to a day past its expiry, with a diagnostic. `memoryImageStore` keeps the bytes in
+the process instead of on disk, and a store of your own can stand behind it. A
+store that fails never fails a render. Without `imageCache`, every render
+fetches as before. The rules, the stores' guarantees and every option are in the
+[reference](https://l7aromeo.github.io/meo-canvas/) under `ImageCache`.
+
 ## Sizing a service
 
 Measured on an Apple M4 Pro, macOS 26.6.2, Node v26.4.0 — the shape rather than
