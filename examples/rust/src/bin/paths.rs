@@ -2,8 +2,8 @@
 //! each cell's path in its own coordinates so a difference is one property.
 
 use meo_canvas::{
-    Box as BoxNode, Element, FillRule, FlexDirection, Path, Root, Styled,
-    hex_rgb, px,
+    Box as BoxNode, Element, FillRule, FlexDirection, Path as PathNode, Root,
+    Styled, hex_rgb, px,
     scene::{
         Gradient, GradientGeometry, GradientStop, LineCap, LineJoin,
         LinearDirection, PathPaint,
@@ -34,7 +34,7 @@ fn cell(path: Element) -> Element {
 
 /// The star, filled by one rule.
 fn star(rule: FillRule) -> Element {
-    Path::d(STAR)
+    PathNode::d(STAR)
         .size(px(64.0), px(64.0))
         .fill(Some(PathPaint::Solid(hex_rgb(0x28_50_dc).into())))
         .fill_rule(rule)
@@ -42,7 +42,7 @@ fn star(rule: FillRule) -> Element {
 
 /// A thick horizontal segment, so a cap is a visible fraction of it.
 fn capped(cap: LineCap) -> Element {
-    Path::d(SEGMENT)
+    PathNode::d(SEGMENT)
         .size(px(64.0), px(64.0))
         .fill(None)
         .stroke(Some(PathPaint::Solid(hex_rgb(0x22_88_44).into())))
@@ -52,7 +52,7 @@ fn capped(cap: LineCap) -> Element {
 
 /// A corner, so a join is a visible fraction of it.
 fn joined(join: LineJoin) -> Element {
-    Path::d(CHEVRON)
+    PathNode::d(CHEVRON)
         .size(px(64.0), px(64.0))
         .fill(None)
         .stroke(Some(PathPaint::Solid(hex_rgb(0xcc_44_22).into())))
@@ -62,7 +62,7 @@ fn joined(join: LineJoin) -> Element {
 
 /// A segment under a dash pattern.
 fn dashed(pattern: &[f32], offset: f32) -> Element {
-    Path::d(SEGMENT)
+    PathNode::d(SEGMENT)
         .size(px(64.0), px(64.0))
         .fill(None)
         .stroke(Some(PathPaint::Solid(hex_rgb(0x11_11_18).into())))
@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 cell(star(FillRule::NonZero)),
                 cell(star(FillRule::EvenOdd)),
                 cell(
-                    Path::d(STAR)
+                    PathNode::d(STAR)
                         .size(px(64.0), px(64.0))
                         .fill(None)
                         .stroke(Some(PathPaint::Solid(
@@ -97,10 +97,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ),
                 // A path with neither fill nor stroke set draws its default,
                 // which SVG says is black.
-                cell(Path::d(STAR).size(px(64.0), px(64.0))),
+                cell(PathNode::d(STAR).size(px(64.0), px(64.0))),
                 // A path paint is a colour or a gradient, and until today the
                 // JavaScript surface could spell only the first.
-                cell(Path::d(STAR).size(px(64.0), px(64.0)).fill(Some(
+                cell(PathNode::d(STAR).size(px(64.0), px(64.0)).fill(Some(
                     PathPaint::Gradient(Gradient {
                         geometry: GradientGeometry::Linear {
                             direction: LinearDirection::Angle(135.0),

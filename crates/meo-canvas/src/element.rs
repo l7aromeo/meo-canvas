@@ -717,21 +717,24 @@ impl Image {
 ///
 /// # Importing this shadows `std::path::Path`
 ///
-/// The same collision as [`Box`], and a likelier one: **both spell their
-/// constructor `Path::new`**, so a file that draws a shape and opens a font
-/// file has two `Path::new` calls meaning different things, and the compiler
-/// reports the second as a type error rather than as a name clash.
-///
-/// The fix is the same and so is the reason: spell the standard library's in
-/// full where you need it, and leave the component called `Path`.
+/// The same collision as [`Box`], and a likelier one: both spell a constructor
+/// `Path::new`, so in a file that draws a shape and opens a font file a plain
+/// `use meo_canvas::Path` turns the second into a type error rather than a
+/// name clash. **Alias the node where it is imported**, as for [`Box`], so that
+/// `Path` keeps its standard meaning in the file:
 ///
 /// ```
-/// use meo_canvas::Path;
+/// use std::path::Path;
 ///
-/// let arrow = Path::d("M0 0 L10 5 L0 10 Z");
-/// let font = std::path::Path::new("/usr/share/fonts/Inter.ttf");
+/// use meo_canvas::Path as PathNode;
+///
+/// let arrow = PathNode::d("M0 0 L10 5 L0 10 Z");
+/// let font = Path::new("/usr/share/fonts/Inter.ttf");
 /// # let _ = (arrow, font);
 /// ```
+///
+/// The type keeps its name, `Path`, which is what the node is called on the
+/// JavaScript surface too; only the binding in the importing file changes.
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct Path;
@@ -792,14 +795,14 @@ impl Element {
     /// How a path's interior is painted. `None` leaves it unfilled.
     ///
     /// ```
-    /// use meo_canvas::{ColorValue, Path, hex_rgb, scene::PathPaint};
+    /// use meo_canvas::{ColorValue, Path as PathNode, hex_rgb, scene::PathPaint};
     ///
-    /// let tick = Path::d("M2 8 L6 12 L14 3")
+    /// let tick = PathNode::d("M2 8 L6 12 L14 3")
     ///     .fill(None)
     ///     .stroke(Some(PathPaint::Solid(hex_rgb(0x22_cc_66).into())))
     ///     .line_width(2.0);
     /// // In the text colour, as an SVG `stroke="currentColor"` is.
-    /// let inked = Path::d("M2 8 L6 12 L14 3")
+    /// let inked = PathNode::d("M2 8 L6 12 L14 3")
     ///     .fill(None)
     ///     .stroke(Some(PathPaint::Solid(ColorValue::Current)));
     /// ```
@@ -820,11 +823,11 @@ impl Element {
     /// has no intrinsic one. Without a box the `d` is absolute.
     ///
     /// ```
-    /// use meo_canvas::Path;
+    /// use meo_canvas::Path as PathNode;
     ///
     /// // A unit square that fills whatever box it is given.
     /// let square =
-    ///     Path::d("M0 0 H10 V10 H0 Z").view_box(Some((0.0, 0.0, 10.0, 10.0)));
+    ///     PathNode::d("M0 0 H10 V10 H0 Z").view_box(Some((0.0, 0.0, 10.0, 10.0)));
     /// ```
     #[must_use]
     pub const fn view_box(
@@ -850,10 +853,10 @@ impl Element {
     /// stretched box comes out an ellipse while its stroke stays even.
     ///
     /// ```
-    /// use meo_canvas::Path;
+    /// use meo_canvas::Path as PathNode;
     ///
     /// // A line plot fills its box rather than being letterboxed into it.
-    /// let plot = Path::d("M 0 100 L 100 0")
+    /// let plot = PathNode::d("M 0 100 L 100 0")
     ///     .view_box(Some((0.0, 0.0, 100.0, 100.0)))
     ///     .stretch(true);
     /// ```
@@ -949,9 +952,9 @@ impl Path {
     /// A path from an SVG `d` attribute.
     ///
     /// ```
-    /// use meo_canvas::Path;
+    /// use meo_canvas::Path as PathNode;
     ///
-    /// let tick = Path::d("M2 8 L6 12 L14 3");
+    /// let tick = PathNode::d("M2 8 L6 12 L14 3");
     /// ```
     #[must_use]
     pub fn d(data: impl Into<String>) -> Element {
