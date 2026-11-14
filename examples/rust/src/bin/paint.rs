@@ -3,7 +3,8 @@
 //! so a cell like its neighbour is a property that did nothing.
 
 use meo_canvas::{
-    Box, Element, FlexDirection, Root, Styled, corners, hex_rgb, pct, px,
+    Box as BoxNode, Element, FlexDirection, Root, Styled, corners, hex_rgb,
+    pct, px,
     scene::{
         BackgroundImage, BackgroundRepeat, BackgroundSize, BlendMode,
         BorderStyle, BoxShadow, Color, Gradient, GradientGeometry,
@@ -27,7 +28,7 @@ const TO: Color = Color::rgb(0xf2, 0xb0, 0x2c);
 
 /// A cell of the one size every cell is.
 fn cell() -> Element {
-    Box::new()
+    BoxNode::new()
         .size(px(SIDE), px(SIDE))
         .background_color(hex_rgb(0xee_ee_f2))
 }
@@ -66,10 +67,10 @@ fn three() -> Vec<GradientStop> {
 
 /// One row of cells.
 fn row(children: Vec<Element>) -> Element {
-    Box::new().gap(px(8.0)).children(children)
+    BoxNode::new().gap(px(8.0)).children(children)
 }
 
-fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = Root::new(408.0)
         .height(568.0)
         .background_color(hex_rgb(0xff_ff_ff))
@@ -241,7 +242,7 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
                 // the circle beside it: on a 72 by 72 cell the two arms draw
                 // the same pixels and the picture says they are one keyword.
                 cell().children(
-                    Box::new()
+                    BoxNode::new()
                         .size(px(72.0), px(44.0))
                         .margin(sides(px(14.0), px(0.0), px(0.0), px(0.0)))
                         .background_color(FROM)
@@ -323,7 +324,7 @@ fn over(child: Element) -> Element {
 
 /// The square every compositing cell puts over its gradient.
 fn inner() -> Element {
-    Box::new()
+    BoxNode::new()
         .size(px(40.0), px(40.0))
         .margin(sides(px(16.0), px(16.0), px(16.0), px(16.0)))
         .background_color(FROM)

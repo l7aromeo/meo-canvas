@@ -2,7 +2,8 @@
 //! each cell's path in its own coordinates so a difference is one property.
 
 use meo_canvas::{
-    Box, Element, FillRule, FlexDirection, Path, Root, Styled, hex_rgb, px,
+    Box as BoxNode, Element, FillRule, FlexDirection, Path as PathNode, Root,
+    Styled, hex_rgb, px,
     scene::{
         Gradient, GradientGeometry, GradientStop, LineCap, LineJoin,
         LinearDirection, PathPaint,
@@ -25,7 +26,7 @@ const CHEVRON: &str = "M10 52 L32 12 L54 52";
 
 /// A cell of the one size every cell is.
 fn cell(path: Element) -> Element {
-    Box::new()
+    BoxNode::new()
         .size(px(64.0), px(64.0))
         .background_color(hex_rgb(0xee_ee_f2))
         .children(path)
@@ -33,7 +34,7 @@ fn cell(path: Element) -> Element {
 
 /// The star, filled by one rule.
 fn star(rule: FillRule) -> Element {
-    Path::d(STAR)
+    PathNode::d(STAR)
         .size(px(64.0), px(64.0))
         .fill(Some(PathPaint::Solid(hex_rgb(0x28_50_dc).into())))
         .fill_rule(rule)
@@ -41,7 +42,7 @@ fn star(rule: FillRule) -> Element {
 
 /// A thick horizontal segment, so a cap is a visible fraction of it.
 fn capped(cap: LineCap) -> Element {
-    Path::d(SEGMENT)
+    PathNode::d(SEGMENT)
         .size(px(64.0), px(64.0))
         .fill(None)
         .stroke(Some(PathPaint::Solid(hex_rgb(0x22_88_44).into())))
@@ -51,7 +52,7 @@ fn capped(cap: LineCap) -> Element {
 
 /// A corner, so a join is a visible fraction of it.
 fn joined(join: LineJoin) -> Element {
-    Path::d(CHEVRON)
+    PathNode::d(CHEVRON)
         .size(px(64.0), px(64.0))
         .fill(None)
         .stroke(Some(PathPaint::Solid(hex_rgb(0xcc_44_22).into())))
@@ -61,7 +62,7 @@ fn joined(join: LineJoin) -> Element {
 
 /// A segment under a dash pattern.
 fn dashed(pattern: &[f32], offset: f32) -> Element {
-    Path::d(SEGMENT)
+    PathNode::d(SEGMENT)
         .size(px(64.0), px(64.0))
         .fill(None)
         .stroke(Some(PathPaint::Solid(hex_rgb(0x11_11_18).into())))
@@ -70,7 +71,7 @@ fn dashed(pattern: &[f32], offset: f32) -> Element {
         .line_dash_offset(offset)
 }
 
-fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = Root::new(360.0)
         .height(300.0)
         .background_color(hex_rgb(0xff_ff_ff))
@@ -82,11 +83,11 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
             // the same shape with no fill at all -- which is the
             // only way to see that `None` means unpainted rather
             // than black.
-            Box::new().gap(px(6.0)).children(vec![
+            BoxNode::new().gap(px(6.0)).children(vec![
                 cell(star(FillRule::NonZero)),
                 cell(star(FillRule::EvenOdd)),
                 cell(
-                    Path::d(STAR)
+                    PathNode::d(STAR)
                         .size(px(64.0), px(64.0))
                         .fill(None)
                         .stroke(Some(PathPaint::Solid(
@@ -96,10 +97,10 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
                 ),
                 // A path with neither fill nor stroke set draws its default,
                 // which SVG says is black.
-                cell(Path::d(STAR).size(px(64.0), px(64.0))),
+                cell(PathNode::d(STAR).size(px(64.0), px(64.0))),
                 // A path paint is a colour or a gradient, and until today the
                 // JavaScript surface could spell only the first.
-                cell(Path::d(STAR).size(px(64.0), px(64.0)).fill(Some(
+                cell(PathNode::d(STAR).size(px(64.0), px(64.0)).fill(Some(
                     PathPaint::Gradient(Gradient {
                         geometry: GradientGeometry::Linear {
                             direction: LinearDirection::Angle(135.0),
@@ -117,17 +118,17 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
                     }),
                 ))),
             ]),
-            Box::new().gap(px(6.0)).children(vec![
+            BoxNode::new().gap(px(6.0)).children(vec![
                 cell(capped(LineCap::Butt)),
                 cell(capped(LineCap::Round)),
                 cell(capped(LineCap::Square)),
             ]),
-            Box::new().gap(px(6.0)).children(vec![
+            BoxNode::new().gap(px(6.0)).children(vec![
                 cell(joined(LineJoin::Bevel)),
                 cell(joined(LineJoin::Round)),
                 cell(joined(LineJoin::Miter)),
             ]),
-            Box::new().gap(px(6.0)).children(vec![
+            BoxNode::new().gap(px(6.0)).children(vec![
                 // Solid, the same pattern, and the same pattern begun part-way
                 // through -- so the offset is read against the dash it moves.
                 cell(dashed(&[], 0.0)),

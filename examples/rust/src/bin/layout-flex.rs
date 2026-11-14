@@ -3,14 +3,14 @@
 //! its neighbours.
 
 use meo_canvas::{
-    Align, Box, Column, FlexDirection, FlexWrap, Justify, Root, Row, Styled,
-    hex_rgb, px,
+    Align, Box as BoxNode, Column, FlexDirection, FlexWrap, Justify, Root, Row,
+    Styled, hex_rgb, px,
 };
 use meo_canvas_examples::{FORMATS, draw};
 
 /// One coloured block of a fixed size.
 fn block(colour: u32, width: f32) -> meo_canvas::Element {
-    Box::new()
+    BoxNode::new()
         .size(px(width), px(18.0))
         .background_color(hex_rgb(colour))
 }
@@ -25,7 +25,7 @@ fn strip(children: impl meo_canvas::IntoElements) -> meo_canvas::Element {
         .children(children)
 }
 
-fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let red = 0xdc_28_28;
     let blue = 0x28_50_dc;
     let green = 0x28_8c_3c;
@@ -92,7 +92,7 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
                 .size(px(180.0), px(26.0))
                 .background_color(hex_rgb(0xee_ee_f2))
                 .children(
-                    Box::new()
+                    BoxNode::new()
                         .width(px(48.0))
                         .aspect_ratio(3.0)
                         .background_color(hex_rgb(green)),
