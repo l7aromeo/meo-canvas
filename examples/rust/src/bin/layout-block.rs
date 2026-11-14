@@ -3,23 +3,23 @@
 //! summing.
 
 use meo_canvas::{
-    Box, BoxSizing, Display, Element, FlexDirection, Root, Styled, hex_rgb, px,
-    scene::BorderStyle, sides,
+    Box as BoxNode, BoxSizing, Display, Element, FlexDirection, Root, Styled,
+    hex_rgb, px, scene::BorderStyle, sides,
 };
 use meo_canvas_examples::{FORMATS, draw};
 
 /// A block of a fixed height and a stated width.
 fn bar(colour: u32, width: f32) -> Element {
-    Box::new()
+    BoxNode::new()
         .size(px(width), px(24.0))
         .background_color(hex_rgb(colour))
 }
 
-fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (red, blue, green) = (0xdc_28_28, 0x28_50_dc, 0x28_8c_3c);
 
     // Stacking: three blocks of different widths, each on its own line.
-    let stacked = Box::new()
+    let stacked = BoxNode::new()
         .display(Display::Block)
         .size(px(180.0), px(90.0))
         .padding(px(4.0))
@@ -28,7 +28,7 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
 
     // Margins: the middle bar is pushed down and right, and the gap between it
     // and its neighbours is its own rather than the sum of two.
-    let margins = Box::new()
+    let margins = BoxNode::new()
         .display(Display::Block)
         .size(px(180.0), px(90.0))
         .padding(px(4.0))
@@ -40,7 +40,7 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
         ]);
 
     // Box sizing: the same declared width, one counting its border and one not.
-    let sizing = Box::new()
+    let sizing = BoxNode::new()
         .display(Display::Block)
         .size(px(180.0), px(90.0))
         .padding(px(4.0))

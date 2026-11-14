@@ -192,10 +192,10 @@ impl Element {
     /// discover it by looking at the picture. The type refuses it instead:
     ///
     /// ```compile_fail
-    /// use meo_canvas::{Box, pct, px};
+    /// use meo_canvas::{Box as BoxNode, pct, px};
     ///
     /// // `pct` yields a `Length`, which is not a canvas size.
-    /// let scene = Box::new().into_scene(pct(50.0), 112.0);
+    /// let scene = BoxNode::new().into_scene(pct(50.0), 112.0);
     /// ```
     ///
     /// # Errors
@@ -438,34 +438,28 @@ fn push(
 /// rather than Yoga's column.
 ///
 /// ```
-/// use meo_canvas::{Box, Styled, px};
+/// use meo_canvas::{Box as BoxNode, Styled, px};
 ///
-/// let spacer = Box::new().size(px(8.0), px(8.0));
+/// let spacer = BoxNode::new().size(px(8.0), px(8.0));
 /// ```
 ///
 /// # Importing this shadows `std::boxed::Box`
 ///
-/// `Box<T>` is in the prelude, so a `use meo_canvas::Box` takes that name for
-/// the rest of the file. Nothing warns.
-///
-/// **The fix is to spell the heap allocation in full, not to rename the
-/// node.** `std::boxed::Box<dyn Error>` is unambiguous, it is one occurrence
-/// in a file that mostly draws, and it leaves the component called what it is
-/// called everywhere else -- in the JavaScript surface and in every example.
-/// Aliasing our own name to make room for the standard library's is backwards:
-/// the qualification belongs on the thing that is not the subject of the file.
-///
-/// Both names in one file, compiled here rather than asserted:
+/// `Box<T>` is in the prelude, so a plain `use meo_canvas::Box` takes that name
+/// for the rest of the file, and nothing warns. **Alias the node where it is
+/// imported**, as for any import that would shadow a prelude name, so that
+/// `Box` keeps its standard meaning in the file:
 ///
 /// ```
-/// use meo_canvas::{Box, Styled, px};
+/// use meo_canvas::{Box as BoxNode, Styled, px};
 ///
-/// let spacer = Box::new().size(px(8.0), px(8.0));
-/// let held: std::boxed::Box<dyn std::error::Error> = "in full".into();
+/// let spacer = BoxNode::new().size(px(8.0), px(8.0));
+/// let held: Box<dyn std::error::Error> = "the standard Box".into();
 /// # let _ = (spacer, held);
 /// ```
 ///
-/// A file that never heap-allocates needs none of this, which is most of them.
+/// The type keeps its name, `Box`, which is what the node is called on the
+/// JavaScript surface too; only the binding in the importing file changes.
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct Box;

@@ -3,8 +3,8 @@
 //! rectangle.
 
 use meo_canvas::{
-    Align, Box, Element, FlexDirection, Image, ObjectFit, Overflow, Root,
-    Styled, corners_all, hex_rgb, pct, px, scene::BorderStyle, sides,
+    Align, Box as BoxNode, Element, FlexDirection, Image, ObjectFit, Overflow,
+    Root, Styled, corners_all, hex_rgb, pct, px, scene::BorderStyle, sides,
 };
 use meo_canvas_examples::{FORMATS, draw};
 
@@ -14,7 +14,7 @@ const STRIP: &str = "../../crates/meo-canvas/tests/assets/strip.png";
 
 /// A clipped cell holding one image.
 fn cell(image: Element) -> Element {
-    Box::new()
+    BoxNode::new()
         .size(px(64.0), px(64.0))
         .overflow(Overflow::Hidden)
         .background_color(hex_rgb(0xee_ee_f2))
@@ -26,7 +26,7 @@ fn fitted(fit: ObjectFit) -> Element {
     Image::path(STRIP).size(px(64.0), px(64.0)).object_fit(fit)
 }
 
-fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bytes = std::fs::read(STRIP)?;
 
     let root = Root::new(400.0)
@@ -37,14 +37,14 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
         .gap(px(6.0))
         .children([
             // Every fit, in one row, so they are read against each other.
-            Box::new().gap(px(6.0)).children(vec![
+            BoxNode::new().gap(px(6.0)).children(vec![
                 cell(fitted(ObjectFit::Fill)),
                 cell(fitted(ObjectFit::Contain)),
                 cell(fitted(ObjectFit::Cover)),
                 cell(fitted(ObjectFit::None)),
                 cell(fitted(ObjectFit::ScaleDown)),
             ]),
-            Box::new()
+            BoxNode::new()
                 .gap(px(6.0))
                 .align_items(Align::Center)
                 .children(vec![

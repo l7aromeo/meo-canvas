@@ -3,8 +3,8 @@
 //! property that does nothing looks like the line above it.
 
 use meo_canvas::{
-    Box, Element, FlexDirection, LineHeight, Root, Styled, Text, TextAlign,
-    TextDecoration, hex_rgb, px, scene::DEFAULT_ELLIPSIS,
+    Box as BoxNode, Element, FlexDirection, LineHeight, Root, Styled, Text,
+    TextAlign, TextDecoration, hex_rgb, px, scene::DEFAULT_ELLIPSIS,
 };
 use meo_canvas_examples::{FONT, FORMATS, draw_with_fonts};
 
@@ -19,9 +19,9 @@ fn line(text: &str) -> Element {
         .color(hex_rgb(0x14_14_1e))
 }
 
-fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let column = |children: Vec<Element>| {
-        Box::new()
+        BoxNode::new()
             .width(px(184.0))
             .padding(px(4.0))
             .flex_direction(FlexDirection::Column)

@@ -2,7 +2,8 @@
 //! each cell's path in its own coordinates so a difference is one property.
 
 use meo_canvas::{
-    Box, Element, FillRule, FlexDirection, Path, Root, Styled, hex_rgb, px,
+    Box as BoxNode, Element, FillRule, FlexDirection, Path, Root, Styled,
+    hex_rgb, px,
     scene::{
         Gradient, GradientGeometry, GradientStop, LineCap, LineJoin,
         LinearDirection, PathPaint,
@@ -25,7 +26,7 @@ const CHEVRON: &str = "M10 52 L32 12 L54 52";
 
 /// A cell of the one size every cell is.
 fn cell(path: Element) -> Element {
-    Box::new()
+    BoxNode::new()
         .size(px(64.0), px(64.0))
         .background_color(hex_rgb(0xee_ee_f2))
         .children(path)
@@ -70,7 +71,7 @@ fn dashed(pattern: &[f32], offset: f32) -> Element {
         .line_dash_offset(offset)
 }
 
-fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = Root::new(360.0)
         .height(300.0)
         .background_color(hex_rgb(0xff_ff_ff))
@@ -82,7 +83,7 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
             // the same shape with no fill at all -- which is the
             // only way to see that `None` means unpainted rather
             // than black.
-            Box::new().gap(px(6.0)).children(vec![
+            BoxNode::new().gap(px(6.0)).children(vec![
                 cell(star(FillRule::NonZero)),
                 cell(star(FillRule::EvenOdd)),
                 cell(
@@ -117,17 +118,17 @@ fn main() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
                     }),
                 ))),
             ]),
-            Box::new().gap(px(6.0)).children(vec![
+            BoxNode::new().gap(px(6.0)).children(vec![
                 cell(capped(LineCap::Butt)),
                 cell(capped(LineCap::Round)),
                 cell(capped(LineCap::Square)),
             ]),
-            Box::new().gap(px(6.0)).children(vec![
+            BoxNode::new().gap(px(6.0)).children(vec![
                 cell(joined(LineJoin::Bevel)),
                 cell(joined(LineJoin::Round)),
                 cell(joined(LineJoin::Miter)),
             ]),
-            Box::new().gap(px(6.0)).children(vec![
+            BoxNode::new().gap(px(6.0)).children(vec![
                 // Solid, the same pattern, and the same pattern begun part-way
                 // through -- so the offset is read against the dash it moves.
                 cell(dashed(&[], 0.0)),
