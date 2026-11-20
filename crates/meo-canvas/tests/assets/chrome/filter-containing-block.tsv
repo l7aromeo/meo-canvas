@@ -1,0 +1,30 @@
+# Chrome, through `just conformance`. Which properties make a containing block.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
+#
+# A 400x300 page holds a 50px spacer, then a 100x80 box at
+# `margin-left: 30px` with `overflow: hidden` carrying the property, then its child:
+# `left: 110px; top: 10px; width: 50%; height: 25%`, absolute or fixed.
+# The rect is the child's border box from `getBoundingClientRect`; `ink` is what
+# its centre shows: `drawn`, or `clipped` by the box's overflow, which only a
+# containing block applies. `chain` is a JSON string, set with `setProperty`.
+# Written by packages/meo-canvas/tools/conformance/filtercontaining.mjs.
+#
+# property	chain	position	left	top	width	height	ink
+none	""	absolute	110	10	200	75	drawn
+none	""	fixed	110	10	200	75	drawn
+filter	"none"	absolute	110	10	200	75	drawn
+filter	"none"	fixed	110	10	200	75	drawn
+filter	"brightness(1)"	absolute	140	60	50	20	clipped
+filter	"brightness(1)"	fixed	140	60	50	20	clipped
+filter	"blur(0px)"	absolute	140	60	50	20	clipped
+filter	"blur(0px)"	fixed	140	60	50	20	clipped
+filter	"blur(2px)"	absolute	140	60	50	20	clipped
+filter	"blur(2px)"	fixed	140	60	50	20	clipped
+filter	"blur(-1px)"	absolute	110	10	200	75	drawn
+filter	"blur(-1px)"	fixed	110	10	200	75	drawn
+backdrop-filter	"none"	absolute	110	10	200	75	drawn
+backdrop-filter	"none"	fixed	110	10	200	75	drawn
+backdrop-filter	"brightness(1)"	absolute	140	60	50	20	clipped
+backdrop-filter	"brightness(1)"	fixed	140	60	50	20	clipped
+backdrop-filter	"blur(2px)"	absolute	140	60	50	20	clipped
+backdrop-filter	"blur(2px)"	fixed	140	60	50	20	clipped

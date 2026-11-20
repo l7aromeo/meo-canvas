@@ -554,7 +554,7 @@ impl DecodedImage {
 ///
 /// Dropped as Chrome drops an invalid declaration, and as `none` computes: the
 /// node is drawn as though the property were not set, which includes
-/// establishing no stacking context on its account.
+/// establishing no stacking context and no containing block on its account.
 #[derive(Debug, Default)]
 pub struct DroppedFilters {
     filter: HashSet<NodeId>,
@@ -562,6 +562,57 @@ pub struct DroppedFilters {
 }
 
 impl DroppedFilters {
+    /// Finds each `filter` and `backdrop_filter` that is `none`, silently, and
+    /// each one `meo-skia-canvas` refuses, with a diagnostic, asking once per
+    /// distinct chain.
+    ///
+    /// `none` is the keyword only: `blur(0px)` filters nothing and still
+    /// stacks, as Filter Effects 1 says and `filter-stacking.tsv` records
+    /// Chrome doing.
+    pub(crate) fn find(scene: &Scene) -> (Self, Vec<Diagnostic>) {
+        let mut found = Self::default();
+        let mut diagnostics = Vec::new();
+        let mut asked: HashMap<&str, Result<bool, String>> = HashMap::new();
+        for (index, node) in scene.nodes.iter().enumerate() {
+            // The cast is exact: the arena is bounded by `MAX_NODES`, a `u32`.
+            let id = NodeId::new(index as u32);
+            let chains = [
+                ("filter", node.effects.filter.as_deref()),
+                ("backdrop-filter", node.effects.backdrop_filter.as_deref()),
+            ];
+            for (property, chain) in chains {
+                let Some(css) = chain else { continue };
+                let reason = match asked
+                    .entry(css)
+                    .or_insert_with(|| {
+                        css_filter_is_none(css)
+                            .map_err(|error| error.to_string())
+                    })
+                    .clone()
+                {
+                    Ok(false) => continue,
+                    Ok(true) => None,
+                    Err(reason) => Some(reason),
+                };
+                let dropped = match property {
+                    "filter" => &mut found.filter,
+                    _ => &mut found.backdrop,
+                };
+                dropped.insert(id);
+                let Some(reason) = reason else { continue };
+                diagnostics.push(Diagnostic::new(
+                    property,
+                    format!(
+                        "node {}: {css:?} is not a filter chain the renderer \
+                         draws ({reason}), so the node is drawn without it",
+                        id.get()
+                    ),
+                ));
+            }
+        }
+        (found, diagnostics)
+    }
+
     /// `node`'s filter chain, unless it was dropped.
     #[must_use]
     pub fn filter<'node>(
@@ -728,53 +779,12 @@ impl<'scene> Resolved<'scene> {
         Ok(resolved)
     }
 
-    /// Drops each `filter` and `backdrop_filter` that is `none`, silently, and
-    /// each one `meo-skia-canvas` refuses, with a diagnostic, asking once per
-    /// distinct chain.
-    ///
-    /// `none` is the keyword only: `blur(0px)` filters nothing and still
-    /// stacks, as Filter Effects 1 says and `filter-stacking.tsv` records
-    /// Chrome doing.
+    /// Drops the filter chains [`DroppedFilters::find`] finds, with its
+    /// diagnostics.
     fn check_filters(&mut self) {
-        let mut asked: HashMap<&'scene str, Result<bool, String>> =
-            HashMap::new();
-        for (index, node) in self.scene.nodes.iter().enumerate() {
-            // The cast is exact: the arena is bounded by `MAX_NODES`, a `u32`.
-            let id = NodeId::new(index as u32);
-            let chains = [
-                ("filter", node.effects.filter.as_deref()),
-                ("backdrop-filter", node.effects.backdrop_filter.as_deref()),
-            ];
-            for (property, chain) in chains {
-                let Some(css) = chain else { continue };
-                let reason = match asked
-                    .entry(css)
-                    .or_insert_with(|| {
-                        css_filter_is_none(css)
-                            .map_err(|error| error.to_string())
-                    })
-                    .clone()
-                {
-                    Ok(false) => continue,
-                    Ok(true) => None,
-                    Err(reason) => Some(reason),
-                };
-                let dropped = match property {
-                    "filter" => &mut self.dropped.filter,
-                    _ => &mut self.dropped.backdrop,
-                };
-                dropped.insert(id);
-                let Some(reason) = reason else { continue };
-                self.diagnostics.push(Diagnostic::new(
-                    property,
-                    format!(
-                        "node {}: {css:?} is not a filter chain the renderer \
-                         draws ({reason}), so the node is drawn without it",
-                        id.get()
-                    ),
-                ));
-            }
-        }
+        let (dropped, diagnostics) = DroppedFilters::find(self.scene);
+        self.dropped = dropped;
+        self.diagnostics.extend(diagnostics);
     }
 
     /// Every value the caller wrote that the render goes on without, in node

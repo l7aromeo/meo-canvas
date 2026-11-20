@@ -858,9 +858,16 @@ export interface Style {
    * {@link Style.transform} is not masked back in.
    */
   readonly mask?: Mask
-  /** A CSS filter applied to this node's own drawing. */
+  /**
+   * A CSS filter applied to this node's own drawing. Any chain but `'none'`
+   * makes the node the containing block of its absolute and fixed descendants,
+   * as a {@link Style.transform} does.
+   */
   readonly filter?: string
-  /** A CSS filter applied to what shows through this node. */
+  /**
+   * A CSS filter applied to what shows through this node, which contains
+   * out-of-flow descendants as {@link Style.filter} does.
+   */
   readonly backdropFilter?: string
 
   // -- Image ----------------------------------------------------------

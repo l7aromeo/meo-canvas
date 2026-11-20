@@ -419,7 +419,8 @@ other case hidden. Four results carry the design:
 discriminants are published in both wire formats, and it is the `Default`. It
 reaches taffy as `Relative`: `build` places every out-of-flow box under its
 containing block itself, because taffy's `Style` makes only a positioned box
-one and a transformed static box is one too. It is the only variant that does
+one, and a static box with a transform, or with a filter or backdrop filter
+other than `none`, is one too (`filter-containing-block.tsv`). It is the only variant that does
 not stack, and `inset` does not apply to it, so `to_taffy_inset` drops it: a
 static child given `top: 30px` sits at its flow position in block, flex and grid
 alike.
