@@ -1,0 +1,63 @@
+# Chrome, through `just conformance`. What a `filter` covers.
+# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
+#
+# The element's whole rendering, filtered once as a group in its own
+# coordinate space, before its mask, opacity and blend.
+#
+# Each case is drawn at the top-left of a white 240x240 page. The disc is
+# filter-disc.png, 80x80 opaque blue on transparency. `text` is one `I`
+# in the fixture face at 80px, sampled at its stem's middle and 100px right.
+# `text past its line box` sets it at `line-height: 0.25` under 60px of padding.
+# The markup per case is in the tool; `why` says what each point separates.
+# Written by packages/meo-canvas/tools/conformance/filterwhole.mjs.
+#
+# case	x	y	r	g	b	why
+image shadow past its box	40	40	0	0	255	the disc's centre
+image shadow past its box	120	40	255	0	0	the shadow's centre, wholly outside the image box
+image shadow at its edge	82	40	255	0	0	the shadow two pixels past the image box
+image shadow at its edge	86	40	255	255	255	past the shadow
+box shadowing an image child	120	40	255	0	0	the child's shadow, outside the child's box
+one shadow under both children	20	20	0	160	0	the first child, under the second's shadow: per draw it is red
+one shadow under both children	15	45	255	0	0	the second child's shadow over nothing
+one opacity over both children	20	30	128	208	128	the first child alone
+one opacity over both children	50	30	128	128	255	the overlap, the second child alone at half: per draw both show
+blur past an image child	60	60	0	0	255	the disc's centre
+blur past an image child	102	60	187	187	255	two pixels past the child's box, which the blur reaches
+shadow of clipped overflow	120	40	255	0	0	the shadow of what the clip kept, outside the clip
+shadow of clipped overflow	158	40	255	0	0	the shadow ends where the clip did
+shadow of a rounded clip	120	40	255	0	0	the rounded shadow's centre
+shadow of a rounded clip	83	3	255	255	255	the shadow's rounded corner, clear
+opacity after the filter	40	40	126	126	255	the disc at half
+opacity after the filter	120	40	255	126	126	its shadow at half too
+blend after the filter	40	40	0	0	0	blue multiplied over yellow
+blend after the filter	120	40	0	255	0	the cyan shadow multiplied over yellow
+shadow scaled with its box	110	40	255	0	0	the shadow forty page pixels over: twenty would end at 100
+shadow scaled with its box	125	40	255	255	255	past the shadow
+shadow turned with its box	80	110	255	0	0	the shadow below: the offset turns with the box
+shadow turned with its box	110	80	255	255	255	right of the box, where an unturned offset would put it
+blur scaled with its box	92	40	230	230	255	twelve page pixels out, inside a ten-pixel standard deviation but not a five
+a transformed child inside the group	100	25	0	0	255	the bar's top end: only a moved, turned and doubled bar reaches it
+a transformed child inside the group	200	25	255	0	0	its shadow
+a transformed child inside the group	100	5	255	255	255	above the bar
+a transformed child inside the group	130	90	255	255	255	right of the bar, which an unturned doubled bar covers
+a filter that shows nothing	20	20	255	255	255	the box scaled to nothing
+a filter that shows nothing	100	20	255	255	255	its shadow, scaled with it
+a filter that shows nothing	20	60	0	160	0	the block after both
+nested filters	20	50	0	160	0	the inner shadow
+nested filters	70	20	255	0	0	the outer shadow of the box
+nested filters	70	50	255	0	0	the outer shadow of the inner shadow
+shadow of a box shadow	60	50	255	0	0	the drop shadow of the box shadow
+an ancestor's clip cuts the shadow	90	40	255	0	0	the shadow inside the clip
+an ancestor's clip cuts the shadow	110	40	255	255	255	the shadow beyond it
+the mask after the filter	40	40	0	0	255	the box, where the mask shows
+the mask after the filter	120	40	255	255	255	the shadow, where the mask hides
+the filter as a backdrop root	40	40	255	0	0	the backdrop sees only what the filtered ancestor drew
+no backdrop root	40	40	0	255	255	the backdrop sees the page
+icon tint	40	40	255	0	0	the disc's silhouette, in the shadow's colour
+icon tint	3	3	255	255	255	outside the disc, clear
+icon tint on the image	40	40	255	0	0	the disc's silhouette, in the shadow's colour
+icon tint on the image	3	3	255	255	255	outside the disc, clear
+text	10	40	0	0	255	the stem's middle
+text	110	40	255	0	0	the stem's shadow
+text past its line box	10	50	0	0	255	the stem above its line box
+text past its line box	110	50	255	0	0	its shadow, above the box too

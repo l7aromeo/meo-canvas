@@ -461,6 +461,22 @@ asks `meo-skia-canvas`'s `css_filter_is_none` and drops it without a
 diagnostic, since it is valid. `filter-stacking.tsv` pins the refusals and
 four spellings of `none` against Chrome, on both properties.
 
+### Filters
+
+**A `filter` covers the node's whole rendering.** Chrome filters an element's
+render surface: its box, content and descendants as one picture, after its own
+clips and before its mask, opacity and blend, with the chain's lengths in the
+element's own space. `meo-skia-canvas`'s `filter` is the canvas 2D state, which
+filters each draw on its own, as Chrome's canvas does, so paint draws a filtered
+node and everything it paints onto a canvas of its own and draws that back once
+(`paint/filter_group.rs`). Under a translation and a uniform scale the group is
+drawn back with the chain set and stays a vector source; under a turn or an
+uneven scale the chain is applied in the node's local space on a second canvas
+first. Rewriting the lengths into device space instead would need the chain
+parsed to turn a drop shadow's offset, and could not stretch a blur unevenly. The group is the size of what the subtree can ink, cut to what can reach
+the visible canvas through the chain, and a fresh canvas reads back empty, so a
+filtered node is the backdrop root Chrome makes it. `filter-whole.tsv` pins it.
+
 ### Where this does not match Chrome
 
 The rule is to match Chrome, and these are the places the maintainer has decided
@@ -489,6 +505,20 @@ what it draws, and Chrome's is not", is the source. Ramps can differ from
 Chrome's by a few levels: over the pixels 0.17 moved in
 `fixtures/backdrop-filter`'s `blur(4px)` panel, the mean distance to Chrome is
 1.7 levels, where 0.16.3's was 0.6.
+
+**A filter's lengths are rewritten only in `px`.** A filtered group is drawn at
+the device's resolution, so a chain's lengths are multiplied into its pixels and
+counted toward how far it reaches, and only `px` lengths are, as the backdrop's
+already are. Another unit is resolved by `meo-skia-canvas` against its own
+default font, in the group's pixels: `drop-shadow(1em 0 0 red)` on a 20px node
+at `scale: 2` lands 10 device pixels over, where Chrome puts it 40 over.
+
+**A node's own backdrop is drawn outside its own filter and opacity.** Chrome
+applies an element's `filter` and `opacity` to what its `backdrop-filter`
+produced, so `backdrop-filter: invert(1); filter: invert(1)` over red shows red,
+where this renderer shows cyan. A descendant's backdrop inside a filtered node
+sees only the node's group, as in Chrome; one inside an opacity, blend or mask
+group still reads the page, `l7aromeo/meo-canvas#267`.
 
 ## Errors and diagnostics
 
