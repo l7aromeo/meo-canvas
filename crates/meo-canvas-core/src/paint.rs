@@ -55,7 +55,7 @@ use meo_skia_canvas::{
 
 use crate::{
     Error,
-    layout::{LayoutResult, is_containing_block, used_border},
+    layout::{LayoutResult, captures_fixed, contains_absolute, used_border},
     lines::{Line, Metrics, Run, RunStyle, TextMeasurer, justify, line_width},
     measure::SceneMeasurer,
     resolve::{DecodedImage, DroppedFilters, Resolved, ResolvedText},
@@ -565,10 +565,9 @@ fn participants(
         .rev()
         .map(|child| {
             let owed = if root_clips
-                && scene
-                    .get(*child)
-                    .is_none_or(|child| !escapes_clip(node, child))
-            {
+                && scene.get(*child).is_none_or(|child| {
+                    !escapes_clip((root, node), child, dropped)
+                }) {
                 vec![root]
             } else {
                 Vec::new()
@@ -627,9 +626,9 @@ fn participants(
                 // Decided per child rather than once for all of them: whether
                 // this node's clip reaches a child depends on that child.
                 if clipper
-                    && scene
-                        .get(*child)
-                        .is_none_or(|child| !escapes_clip(source, child))
+                    && scene.get(*child).is_none_or(|child| {
+                        !escapes_clip((id, source), child, dropped)
+                    })
                 {
                     inherited.push(id);
                 }
@@ -651,17 +650,19 @@ fn participants(
         .collect()
 }
 
-/// Whether `child` slips out of `clipper`'s `overflow`: an absolute child
-/// passes an unpositioned clipper, and a fixed one every clipper but the
-/// transform that captures it. [`is_containing_block`] is the rule layout
-/// attaches them by.
-const fn escapes_clip(clipper: &Node, child: &Node) -> bool {
+/// Whether `child` slips out of `clipper`'s `overflow`: one passes every
+/// clipper that is not its containing block, by the rules layout attaches it
+/// by, [`contains_absolute`] and [`captures_fixed`].
+fn escapes_clip(
+    (id, clipper): (NodeId, &Node),
+    child: &Node,
+    dropped: &DroppedFilters,
+) -> bool {
     match child.layout.position_type {
-        // Only a transform captures a fixed box, so only a transform clips
-        // one. A positioned clipper is not its containing block and does not
-        // cut it.
-        PositionType::Fixed => clipper.effects.transform.is_none(),
-        PositionType::Absolute => !is_containing_block(clipper),
+        // A positioned clipper is not a fixed box's containing block and does
+        // not cut it.
+        PositionType::Fixed => !captures_fixed(id, clipper, dropped),
+        PositionType::Absolute => !contains_absolute(id, clipper, dropped),
         PositionType::Static
         | PositionType::Relative
         | PositionType::Sticky => false,

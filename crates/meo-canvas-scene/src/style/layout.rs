@@ -135,7 +135,9 @@ wire_enum! {
     pub enum PositionType {
         /// Placed by the flow, with `inset` shifting it from where it landed.
         Relative = 0,
-        /// Taken out of the flow and placed by `inset` against its container.
+        /// Taken out of the flow and placed by `inset` against its containing
+        /// block: the nearest ancestor that is positioned, transformed, or
+        /// carries a filter or backdrop filter other than `none`, else the page.
         Absolute = 1,
         /// Placed by the flow, and `inset` does not apply.
         ///
@@ -150,7 +152,9 @@ wire_enum! {
         /// nothing reads.
         #[default]
         Static = 2,
-        /// Placed by `inset` against the page rather than against an ancestor.
+        /// Placed by `inset` against the page rather than against a positioned
+        /// ancestor, unless an ancestor with a transform, or with a filter or
+        /// backdrop filter other than `none`, contains it.
         ///
         /// CSS resolves `fixed` against the viewport, and a still render's
         /// viewport is its page — there is nothing to scroll relative to, so

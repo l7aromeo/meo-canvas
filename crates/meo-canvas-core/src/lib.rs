@@ -693,7 +693,12 @@ impl Renderer {
         let mut surface: Option<Surface> = None;
 
         for &page in &scene.pages {
-            let solved = layout::solve(scene, page, &mut measurer)?;
+            let solved = layout::solve_with(
+                scene,
+                page,
+                &mut measurer,
+                resolved.dropped(),
+            )?;
             let size = page_size(scene, page, &solved);
             let surface = match surface {
                 Some(ref mut existing) => {

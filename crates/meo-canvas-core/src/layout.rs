@@ -56,6 +56,7 @@ use taffy::ResolveOrZero as _;
 use crate::{
     Error, FINITE_CEILING,
     measure::{Available, Measure},
+    resolve::DroppedFilters,
 };
 
 /// The scale layout solves at: one, always. taffy rounds to whole pixels on the
@@ -268,19 +269,21 @@ const fn handed_on(
 
 /// What every node under `page` inherits, along the scene's tree as in
 /// [`directions`]. An out-of-flow box aligns in its containing block, as
-/// [`build`] attaches it: the nearest positioned or transformed ancestor for an
-/// absolute box, the nearest transformed one for a fixed box, else the page.
+/// [`build`] attaches it: the nearest ancestor [`contains_absolute`] for an
+/// absolute box, the nearest one [`captures_fixed`] for a fixed box, else the
+/// page.
 fn inherit(
     scene: &Scene,
     page: NodeId,
     directions: &HashMap<NodeId, Direction>,
+    dropped: &DroppedFilters,
 ) -> HashMap<NodeId, Inherited> {
     /// Directions of the boxes a child of this node could be aligned in.
     #[derive(Clone, Copy)]
     struct Above {
         parent: Direction,
         containing: Direction,
-        transformed: Direction,
+        capturing: Direction,
         legacy: Option<LegacyPosition>,
     }
     let page_direction =
@@ -291,7 +294,7 @@ fn inherit(
         Above {
             parent: page_direction,
             containing: page_direction,
-            transformed: page_direction,
+            capturing: page_direction,
             legacy: None,
         },
     )];
@@ -302,7 +305,7 @@ fn inherit(
         let direction = directions.get(&id).copied().unwrap_or(Direction::Ltr);
         let parent_direction = match node.layout.position_type {
             PositionType::Absolute => above.containing,
-            PositionType::Fixed => above.transformed,
+            PositionType::Fixed => above.capturing,
             PositionType::Static
             | PositionType::Relative
             | PositionType::Sticky => above.parent,
@@ -316,15 +319,15 @@ fn inherit(
         }
         let below = Above {
             parent: direction,
-            containing: if is_containing_block(node) {
+            containing: if contains_absolute(id, node, dropped) {
                 direction
             } else {
                 above.containing
             },
-            transformed: if node.effects.transform.is_some() {
+            capturing: if captures_fixed(id, node, dropped) {
                 direction
             } else {
-                above.transformed
+                above.capturing
             },
             legacy: handed_on(node.layout.justify_items, above.legacy),
         };
@@ -382,6 +385,20 @@ pub fn solve<M>(
 where
     M: Measure + ?Sized,
 {
+    solve_with(scene, page, measure, &DroppedFilters::find(scene).0)
+}
+
+/// As [`solve`], given the filter chains resolve dropped, which decide what
+/// captures an out-of-flow box: see [`captures_fixed`].
+pub(crate) fn solve_with<M>(
+    scene: &Scene,
+    page: NodeId,
+    measure: &mut M,
+    dropped: &DroppedFilters,
+) -> Result<LayoutResult, Error>
+where
+    M: Measure + ?Sized,
+{
     let mut tree: taffy::TaffyTree<NodeId> =
         taffy::TaffyTree::with_capacity(scene.nodes.len());
 
@@ -395,11 +412,11 @@ where
     // unclaimed at the top belongs to the page, which is the initial containing
     // block and the last chance to be one.
     let mut orphans = Vec::new();
-    // Fixed boxes no transform captured. They belong to the page, which is the
+    // Fixed boxes nothing captured. They belong to the page, which is the
     // viewport they resolve against.
     let mut viewport = Vec::new();
     let directions = directions(scene, page);
-    let inherited = inherit(scene, page, &directions);
+    let inherited = inherit(scene, page, &directions, dropped);
     let mut ratio_boxes = HashMap::new();
     let root = build(
         scene,
@@ -418,6 +435,7 @@ where
             },
             parent: None,
             inherited: &inherited,
+            dropped,
             measure,
             ratio_boxes: &mut ratio_boxes,
         },
@@ -746,6 +764,8 @@ struct FromAbove<'above, M: ?Sized> {
     parent: Option<&'above meo_canvas_scene::node::Node>,
     /// What every node inherits, from [`inherit`].
     inherited: &'above HashMap<NodeId, Inherited>,
+    /// The filter chains resolve dropped, which capture nothing.
+    dropped: &'above DroppedFilters,
     /// The measurer this solve is running with.
     ///
     /// Here so a leaf's intrinsic size can be asked for while its style is
@@ -1031,15 +1051,30 @@ pub(crate) fn root_margin(edge: Dimension, canvas_width: f32) -> f32 {
     }
 }
 
-/// Whether a node is a containing block for the absolute boxes beneath it:
-/// positioned, or transformed (CSS Transforms 1 §3). Shared with the painter,
-/// whose clip follows the same rule. A fixed box passes positioned ancestors,
-/// so its caller tests the transform alone.
-pub(crate) const fn is_containing_block(
+/// Whether a node is the containing block of the fixed boxes beneath it, and
+/// so of the absolute ones too: transformed (CSS Transforms 1 §3), or with a
+/// filter or backdrop filter resolve kept (Filter Effects 1 and 2), as Chrome
+/// lays out `filter-containing-block.tsv`. Shared with the painter's clip.
+pub(crate) fn captures_fixed(
+    id: NodeId,
     node: &meo_canvas_scene::node::Node,
+    dropped: &DroppedFilters,
+) -> bool {
+    node.effects.transform.is_some()
+        || dropped.filter(id, node).is_some()
+        || dropped.backdrop(id, node).is_some()
+}
+
+/// Whether a node is the containing block of the absolute boxes beneath it:
+/// positioned, or one that [`captures_fixed`] boxes. A fixed box passes a
+/// merely positioned one.
+pub(crate) fn contains_absolute(
+    id: NodeId,
+    node: &meo_canvas_scene::node::Node,
+    dropped: &DroppedFilters,
 ) -> bool {
     !matches!(node.layout.position_type, PositionType::Static)
-        || node.effects.transform.is_some()
+        || captures_fixed(id, node, dropped)
 }
 
 /// The measure closure's body, as a function both passes of the workaround
@@ -2887,8 +2922,9 @@ fn unbound_declared_sizes(
 
 /// Builds the taffy tree for a subtree, leaving out `Display::None`, with each
 /// out-of-flow box under its containing block, since taffy's `Style` cannot
-/// make a transform one: `Absolute` under the nearest positioned or transformed
-/// ancestor, `Fixed` under the nearest transformed one or the root.
+/// make a transform or a filter one: `Absolute` under the nearest ancestor that
+/// [`contains_absolute`] boxes, `Fixed` under the nearest that
+/// [`captures_fixed`] boxes, or the root.
 fn build<M>(
     scene: &Scene,
     node: NodeId,
@@ -2908,6 +2944,7 @@ where
     let FromAbove {
         heights,
         inherited,
+        dropped,
         measure,
         ratio_boxes,
         ..
@@ -2918,10 +2955,9 @@ where
     // containing block. They become this node's children if it is one, and are
     // handed further up if it is not.
     let mut unclaimed: Vec<taffy::NodeId> = Vec::new();
-    // Fixed descendants from beneath here, which only a transform captures.
-    // They pass every positioned ancestor untouched -- a fixed box resolves
-    // against the viewport, not against the nearest positioned box -- and stop
-    // at the first transformed one.
+    // Fixed descendants from beneath here, which only [`captures_fixed`]
+    // stops. They pass every positioned ancestor untouched -- a fixed box
+    // resolves against the viewport, not against the nearest positioned box.
     let mut captured: Vec<taffy::NodeId> = Vec::new();
 
     for child in &source.children {
@@ -2944,6 +2980,7 @@ where
                     },
                     parent: Some(source),
                     inherited,
+                    dropped,
                     measure: &mut *measure,
                     ratio_boxes: &mut *ratio_boxes,
                 },
@@ -2972,6 +3009,7 @@ where
                 },
                 parent: Some(source),
                 inherited,
+                dropped,
                 measure: &mut *measure,
                 ratio_boxes: &mut *ratio_boxes,
             },
@@ -2985,18 +3023,18 @@ where
         }
     }
 
-    // A positioned or transformed box is a containing block (CSS Transforms 1
-    // §3): Chrome places an absolute child at 50,20 under a `translateZ(0)`
-    // clipper and 30,20 without. Anything unclaimed goes further up.
-    if is_containing_block(source) {
+    // A positioned, transformed or filtered box is a containing block: Chrome
+    // places an absolute child at 50,20 under a `translateZ(0)` clipper and
+    // 30,20 without. Anything unclaimed goes further up.
+    if contains_absolute(node, source, dropped) {
         children.append(&mut unclaimed);
     } else {
         orphans.append(&mut unclaimed);
     }
     // A fixed box passes a merely positioned ancestor untouched -- that is
-    // what makes it fixed rather than absolute -- and stops only at a
-    // transformed one.
-    if source.effects.transform.is_some() {
+    // what makes it fixed rather than absolute -- and stops only at one that
+    // captures it.
+    if captures_fixed(node, source, dropped) {
         children.append(&mut captured);
     } else {
         captive.append(&mut captured);
@@ -3394,8 +3432,8 @@ fn to_taffy_inset(
 
 /// In-flow positions reach taffy as `Relative`, out-of-flow ones as `Absolute`:
 /// [`build`] has placed each box under its containing block, which taffy's
-/// `Style` cannot make of a transform. `fixed-percent-transformed` in
-/// `absolute-percentage.tsv` fails otherwise; inset is [`to_taffy_inset`]'s.
+/// `Style` cannot make of a transform or a filter. `fixed-percent-transformed`
+/// in `absolute-percentage.tsv` fails otherwise; inset is [`to_taffy_inset`]'s.
 const fn to_position(position: PositionType) -> taffy::Position {
     match position {
         // `Sticky` is `Relative` here and not by approximation: CSS defines it
@@ -4126,6 +4164,50 @@ mod tests {
         assert_eq!(solved.inherited(between).parent_direction, Direction::Rtl);
         assert_eq!(solved.inherited(absolute).direction, Direction::Ltr);
         assert_eq!(solved.inherited(absolute).parent_direction, Direction::Rtl,);
+    }
+
+    /// An out-of-flow box aligns in the direction of a filtered box that
+    /// contains it, absolute or fixed, and of the page past a chain resolve
+    /// drops (`filter-containing-block.tsv`).
+    #[test]
+    fn a_filter_hands_out_of_flow_boxes_its_direction() {
+        let chains = [
+            ("filter", "brightness(1)", Direction::Rtl),
+            ("backdrop-filter", "blur(2px)", Direction::Rtl),
+            ("filter", "none", Direction::Ltr),
+            ("filter", "blur(-1px)", Direction::Ltr),
+        ];
+        for (property, chain, want) in chains {
+            for position in [PositionType::Absolute, PositionType::Fixed] {
+                let (mut scene, page) = scene_with_page(300.0, 200.0);
+                let push = |scene: &mut Scene, parent| {
+                    scene
+                        .push(parent, Node::new(NodeKind::Box))
+                        .unwrap_or_else(|error| unreachable!("{error}"))
+                };
+                let filtered = push(&mut scene, page);
+                let between = push(&mut scene, filtered);
+                let placed = push(&mut scene, between);
+                if let Some(node) = scene.get_mut(filtered) {
+                    node.layout.direction = Some(Direction::Rtl);
+                    let chain = Some(chain.to_owned());
+                    if property == "filter" {
+                        node.effects.filter = chain;
+                    } else {
+                        node.effects.backdrop_filter = chain;
+                    }
+                }
+                if let Some(node) = scene.get_mut(between) {
+                    node.layout.direction = Some(Direction::Ltr);
+                }
+                if let Some(node) = scene.get_mut(placed) {
+                    node.layout.position_type = position;
+                }
+                let got =
+                    solved(&scene, page).inherited(placed).parent_direction;
+                assert_eq!(got, want, "{property} {chain:?} {position:?}");
+            }
+        }
     }
 
     /// A growing child's negative margin reaches the container's own height,

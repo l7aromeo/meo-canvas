@@ -245,9 +245,12 @@ pub struct Style {
     pub text_shadows: Option<Vec<TextShadow>>,
     /// A shape or gradient the subtree is clipped to.
     pub mask: Option<Mask>,
-    /// A CSS filter applied to this node's own drawing.
+    /// A CSS filter applied to this node's own drawing. Any chain but `none`
+    /// makes the node the containing block of its absolute and fixed
+    /// descendants, as a transform does.
     pub filter: Option<String>,
-    /// A CSS filter applied to what shows through this node.
+    /// A CSS filter applied to what shows through this node, which contains
+    /// out-of-flow descendants as `filter` does.
     pub backdrop_filter: Option<String>,
 }
 
@@ -754,10 +757,13 @@ properties! {
         /// a path mask owns its data and a gradient mask owns its stops.
     owned mask: mask, Mask;
 
-        /// A CSS filter applied to this node's own drawing.
+        /// A CSS filter applied to this node's own drawing. Any chain but
+        /// `none` makes the node the containing block of its absolute and
+        /// fixed descendants, as a transform does.
     owned filter: filter, String;
 
-        /// A CSS filter applied to what shows through this node.
+        /// A CSS filter applied to what shows through this node, which
+        /// contains out-of-flow descendants as `filter` does.
     owned backdrop_filter: backdrop_filter, String;
     }
 
