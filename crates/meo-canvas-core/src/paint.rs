@@ -53,6 +53,10 @@ use meo_skia_canvas::{
     filter::{BlurStyle, MaskFilter},
 };
 
+mod filter_group;
+
+use filter_group::{FilterGroup, subtree_ink};
+
 use crate::{
     Error,
     layout::{LayoutResult, captures_fixed, contains_absolute, used_border},
@@ -153,6 +157,9 @@ pub struct Surface {
     canvas: Canvas,
     scale: f32,
     gpu: bool,
+    /// What the canvas was made with, which a filtered group's own canvases
+    /// are made with too, so a group composites as the page does.
+    options: CanvasOptions,
 }
 
 impl core::fmt::Debug for Surface {
@@ -204,12 +211,14 @@ impl Surface {
             color_space: to_skia_color_space(surface.color_space),
             ..CanvasOptions::default()
         };
-        let canvas = Canvas::with_options(pixels.width, pixels.height, options)
-            .map_err(|error| Error::Paint(error.to_string()))?;
+        let canvas =
+            Canvas::with_options(pixels.width, pixels.height, options.clone())
+                .map_err(|error| Error::Paint(error.to_string()))?;
         Ok(Self {
             canvas,
             scale,
             gpu: surface.gpu,
+            options,
         })
     }
 
@@ -333,6 +342,7 @@ pub fn draw(
     // Read before the context borrows the canvas: a backdrop readback has to
     // stay inside the surface, and this is the only place its extent is known.
     let device = Size::new(surface.canvas.width(), surface.canvas.height());
+    let options = surface.options.clone();
     let context = surface.context();
     context.save();
     context.scale(scale, scale);
@@ -349,8 +359,9 @@ pub fn draw(
         context.set_fill_style(to_skia_color(background));
         context.fill_rect(0.0, 0.0, canvas.size.width, canvas.size.height);
     }
-    let result =
-        walk(context, resolved, layout, measurer, page, device, canvas);
+    let result = walk(
+        context, resolved, layout, measurer, page, device, canvas, &options,
+    );
     context.restore();
     result
 }
@@ -375,41 +386,53 @@ enum Step {
         /// `DestinationIn` against everything the group drew, so inside the
         /// layer, after its last draw.
         masked: Option<NodeId>,
+        /// Whether the node opened a [`FilterGroup`], which closes first, so
+        /// the mask and the layers above apply to the filtered result.
+        filtered: bool,
     },
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each is a distinct input of the one traversal, passed down from \
+              `draw`, which has them all"
+)]
 fn walk(
-    context: &mut Context2D,
+    page_context: &mut Context2D,
     resolved: &Resolved<'_>,
     layout: &LayoutResult,
     measurer: &mut SceneMeasurer<'_>,
     page: NodeId,
     device: Size,
     canvas: Rect,
+    options: &CanvasOptions,
 ) -> Result<(), Error> {
     let scene = resolved.scene;
     let mut stack = vec![Step::Enter(page)];
+    // The open filtered groups, innermost last: everything is drawn onto
+    // the innermost one, or the page where none is open.
+    let mut groups: Vec<FilterGroup> = Vec::new();
 
     while let Some(step) = stack.pop() {
         match step {
-            Step::Leave { layers, masked } => {
-                if let Some(id) = masked
-                    && let (Some(rect), Some(node)) =
-                        (layout.get(id), scene.get(id))
-                {
-                    apply_mask(context, resolved, id, node, rect)?;
-                }
-                for _ in 0..layers {
-                    context.restore();
-                }
-                context.restore();
-            }
+            Step::Leave {
+                layers,
+                masked,
+                filtered,
+            } => leave(
+                (page_context, &mut groups),
+                resolved,
+                layout,
+                layers,
+                masked,
+                filtered,
+            )?,
             Step::EnterClipped { id, clips } => {
                 let (Some(rect), Some(node)) = (layout.get(id), scene.get(id))
                 else {
                     continue;
                 };
-
+                let context = current(page_context, &mut groups);
                 context.save();
                 // The clips this node was hoisted past, outermost first, so a
                 // nested `overflow` narrows in the order the tree does.
@@ -421,33 +444,32 @@ fn walk(
                     };
                     clip_to_box(context, &owed.paint, rect)?;
                 }
-
-                let chains = resolved.dropped().chains(id, node);
-                let layers =
-                    enter_node(context, node, chains, rect, device, false)?;
-                paint_own_content(
-                    context,
-                    resolved,
-                    measurer,
+                let entered = Entered {
                     id,
                     node,
                     rect,
-                    layout.content(id).unwrap_or(rect),
-                    unrounded_content(layout, id),
-                    layout.direction(id),
-                    layout.wrap_width(id),
-                    None,
+                    root: None,
+                };
+                let draws = enter(
+                    (page_context, &mut groups),
+                    resolved,
+                    layout,
+                    measurer,
+                    (device, options),
+                    entered,
+                    &mut stack,
                 )?;
-
-                stack.push(Step::Leave {
-                    layers,
-                    masked: node.effects.mask.as_ref().map(|_| id),
-                });
                 // **Only a context gathers.** A participant that establishes
                 // none was reached by its own context's walk, which already
                 // collected everything beneath it; gathering again here would
                 // paint that subtree a second time.
-                if establishes_stacking_context(id, node, resolved.dropped()) {
+                if draws
+                    && establishes_stacking_context(
+                        id,
+                        node,
+                        resolved.dropped(),
+                    )
+                {
                     for participant in
                         participants(scene, resolved.dropped(), id, node)
                             .into_iter()
@@ -465,49 +487,147 @@ fn walk(
                 else {
                     continue;
                 };
-
-                context.save();
+                current(page_context, &mut groups).save();
                 // The page root carries the canvas: its background layers
                 // cover it, and its blend mode has nothing beneath to blend
                 // with.
                 let root = (id == page).then_some(canvas);
-                let (chains, page_root) =
-                    (resolved.dropped().chains(id, node), root.is_some());
-                let layers =
-                    enter_node(context, node, chains, rect, device, page_root)?;
-                paint_own_content(
-                    context,
-                    resolved,
-                    measurer,
+                let entered = Entered {
                     id,
                     node,
                     rect,
-                    layout.content(id).unwrap_or(rect),
-                    unrounded_content(layout, id),
-                    layout.direction(id),
-                    layout.wrap_width(id),
                     root,
+                };
+                let draws = enter(
+                    (page_context, &mut groups),
+                    resolved,
+                    layout,
+                    measurer,
+                    (device, options),
+                    entered,
+                    &mut stack,
                 )?;
-
-                stack.push(Step::Leave {
-                    layers,
-                    masked: node.effects.mask.as_ref().map(|_| id),
-                });
                 // Everything this context paints, in CSS's order, gathered
                 // *through* descendants that establish no context of their own.
                 // A participant that does establish one is entered here and
                 // gathers its own.
-                for participant in
-                    participants(scene, resolved.dropped(), id, node)
-                        .into_iter()
-                        .rev()
-                {
-                    stack.push(participant);
+                if draws {
+                    for participant in
+                        participants(scene, resolved.dropped(), id, node)
+                            .into_iter()
+                            .rev()
+                    {
+                        stack.push(participant);
+                    }
                 }
             }
         }
     }
     Ok(())
+}
+
+/// Closes what entering a node opened, innermost first: its filter group,
+/// then its mask, its layers and its `save`.
+fn leave(
+    (page, groups): (&mut Context2D, &mut Vec<FilterGroup>),
+    resolved: &Resolved<'_>,
+    layout: &LayoutResult,
+    layers: u8,
+    masked: Option<NodeId>,
+    filtered: bool,
+) -> Result<(), Error> {
+    if filtered && let Some(group) = groups.pop() {
+        group.close(current(page, groups))?;
+    }
+    let context = current(page, groups);
+    if let Some(id) = masked
+        && let (Some(rect), Some(node)) =
+            (layout.get(id), resolved.scene.get(id))
+    {
+        apply_mask(context, resolved, id, node, rect)?;
+    }
+    for _ in 0..layers {
+        context.restore();
+    }
+    context.restore();
+    Ok(())
+}
+
+/// Where drawing goes: the innermost open group, or the page.
+fn current<'context>(
+    page: &'context mut Context2D,
+    groups: &'context mut [FilterGroup],
+) -> &'context mut Context2D {
+    groups.last_mut().map_or(page, |group| group.context())
+}
+
+/// A node being entered: `root` is the page's canvas where it is the page root.
+struct Entered<'scene> {
+    id: NodeId,
+    node: &'scene Node,
+    rect: Rect,
+    root: Option<Rect>,
+}
+
+/// Enters a node after its `save` and any owed clips: its transform, backdrop
+/// and isolation layers, then a filter group of its own where it has a chain,
+/// then its own content, and the `Leave` that closes them in reverse.
+fn enter(
+    (page_context, groups): (&mut Context2D, &mut Vec<FilterGroup>),
+    resolved: &Resolved<'_>,
+    layout: &LayoutResult,
+    measurer: &mut SceneMeasurer<'_>,
+    (device, options): (Size, &CanvasOptions),
+    Entered {
+        id,
+        node,
+        rect,
+        root,
+    }: Entered<'_>,
+    stack: &mut Vec<Step>,
+) -> Result<bool, Error> {
+    // A backdrop read stays inside whatever it reads: the page, or the group.
+    let visible = groups.last().map_or(device, FilterGroup::pixels);
+    let context = current(page_context, groups);
+    let (filter, backdrop) = resolved.dropped().chains(id, node);
+    let layers =
+        enter_node(context, node, backdrop, rect, visible, root.is_some())?;
+    let group = match filter {
+        Some(css) => FilterGroup::open(
+            context,
+            css,
+            subtree_ink(resolved, layout, id, root),
+            visible,
+            options,
+        )?,
+        None => None,
+    };
+    let filtered = group.is_some();
+    groups.extend(group);
+    // A chain whose group can show nothing still closes what was opened, and
+    // draws nothing in between: neither the node nor what it gathers.
+    let draws = filter.is_none() || filtered;
+    if draws {
+        paint_own_content(
+            current(page_context, groups),
+            resolved,
+            measurer,
+            id,
+            node,
+            rect,
+            layout.content(id).unwrap_or(rect),
+            unrounded_content(layout, id),
+            layout.direction(id),
+            layout.wrap_width(id),
+            root,
+        )?;
+    }
+    stack.push(Step::Leave {
+        layers,
+        masked: node.effects.mask.as_ref().map(|_| id),
+        filtered,
+    });
+    Ok(draws)
 }
 
 /// Everything one stacking context paints, in CSS's order: negative `z_index`,
@@ -790,28 +910,23 @@ fn draw_outer_shadows(
     Ok(())
 }
 
-/// Applies the transform and opens whatever isolation layers the node needs.
-/// The page root's blend mode is ignored: beneath it is only its own canvas
-/// base, which Chrome does not blend it against.
-///
-/// Returns how many layers were opened, so the matching `Leave` closes exactly
-/// those.
-///
-/// `chains` are the node's filter and backdrop filter, less any chain resolve
-/// dropped as one `meo-skia-canvas` refuses.
+/// Applies the transform, draws the `backdrop` chain resolve kept over
+/// `device`, and opens the isolation layers, returning how many `Leave` closes.
+/// [`FilterGroup`] draws the filter inside them, so opacity, blend and mask
+/// follow it. As in Chrome, the root's blend is ignored over its canvas base.
 fn enter_node(
     context: &mut Context2D,
     node: &Node,
-    (filter, backdrop): (Option<&str>, Option<&str>),
+    backdrop: Option<&str>,
     rect: Rect,
     device: Size,
     page_root: bool,
 ) -> Result<u8, Error> {
     apply_transform(context, node.effects.transform.as_ref(), rect);
 
-    // Before the node's own filter is set and before its group opens: the
-    // backdrop is what is **already** on the canvas, so it has to be read and
-    // put back while that is still all there is.
+    // Before its groups open: the backdrop is what is **already** on the
+    // canvas, so it has to be read and put back while that is still all
+    // there is.
     draw_backdrop(context, node, backdrop, rect, device)?;
 
     // The node's own `overflow` is not applied here: descendants arrive as
@@ -828,14 +943,6 @@ fn enter_node(
     let needs_group = alpha < OPAQUE
         || blend != BlendMode::Normal
         || node.effects.mask.is_some();
-
-    // Resolve dropped every chain `meo-skia-canvas` refuses, so a failure here
-    // is a broken invariant rather than a caller's mistake.
-    if let Some(filter) = filter {
-        context
-            .set_filter_css(filter)
-            .map_err(|error| in_property("filter", &error))?;
-    }
 
     if needs_group {
         context.set_global_composite_operation(to_skia_blend(blend));
@@ -6385,5 +6492,83 @@ mod tests {
             ty: 0.0,
         };
         assert!((page_scale(collapsed) - 1.0).abs() < f32::EPSILON);
+    }
+
+    /// A filtered group is the size of what its subtree inks, grown only for
+    /// antialiasing, and never the page: an 80px box on a 4000px page gets an
+    /// 82px group at scale 1 and a 164px one at scale 2. A path, which leaves
+    /// no bound, takes what can reach the page through the chain.
+    #[test]
+    fn a_filter_group_is_the_size_of_its_ink_not_the_page() {
+        use meo_canvas_scene::style::Dimension;
+        use meo_skia_canvas::{Canvas, CanvasOptions};
+
+        use super::{FilterGroup, subtree_ink};
+
+        const PAGE: f32 = 4000.0;
+        let build = |kind: NodeKind| {
+            let mut scene = Scene::new(Size::new(PAGE, PAGE));
+            let id = scene
+                .push(NodeId::ROOT, Node::new(kind))
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            if let Some(node) = scene.get_mut(id) {
+                node.layout.size =
+                    (Dimension::Points(80.0), Dimension::Points(80.0));
+                node.effects.filter =
+                    Some("drop-shadow(20px 0px 0px red)".to_owned());
+            }
+            (scene, id)
+        };
+        let pixels = |kind: NodeKind, scale: f32| {
+            let (scene, id) = build(kind);
+            let fonts = Fonts::new();
+            let resolved = Resolved::new(&scene, &fonts)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            let mut measurer = SceneMeasurer::prepare(&resolved, &fonts)
+                .unwrap_or_else(|error| unreachable!("{error}"));
+            let solved =
+                crate::layout::solve(&scene, scene.pages[0], &mut measurer)
+                    .unwrap_or_else(|error| unreachable!("{error}"));
+            let options = CanvasOptions {
+                gpu: false,
+                ..CanvasOptions::default()
+            };
+            let mut page = Canvas::with_options(
+                PAGE * scale,
+                PAGE * scale,
+                options.clone(),
+            )
+            .unwrap_or_else(|error| unreachable!("{error}"));
+            let context = page.context();
+            context.scale(scale, scale);
+            FilterGroup::open(
+                context,
+                "drop-shadow(20px 0px 0px red)",
+                subtree_ink(&resolved, &solved, id, None),
+                Size::new(PAGE * scale, PAGE * scale),
+                &options,
+            )
+            .unwrap_or_else(|error| unreachable!("{error}"))
+            .map(|group| group.pixels())
+        };
+        assert_eq!(pixels(NodeKind::Box, 1.0), Some(Size::new(82.0, 82.0)));
+        assert_eq!(pixels(NodeKind::Box, 2.0), Some(Size::new(164.0, 164.0)));
+        let path = NodeKind::Path {
+            data: "M0 0H80V80H0Z".to_owned(),
+            view_box: None,
+            stretch: false,
+            fill: None,
+            stroke: None,
+            line_width: 1.0,
+            fill_rule: meo_canvas_scene::style::effect::FillRule::NonZero,
+            line_cap: meo_canvas_scene::node::LineCap::Butt,
+            line_join: meo_canvas_scene::node::LineJoin::Miter,
+            line_dash: Vec::new(),
+            line_dash_offset: 0.0,
+        };
+        assert_eq!(
+            pixels(path, 1.0),
+            Some(Size::new(PAGE + 40.0, PAGE + 40.0)),
+        );
     }
 }

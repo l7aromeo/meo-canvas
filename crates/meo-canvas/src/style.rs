@@ -245,8 +245,12 @@ pub struct Style {
     pub text_shadows: Option<Vec<TextShadow>>,
     /// A shape or gradient the subtree is clipped to.
     pub mask: Option<Mask>,
-    /// A CSS filter applied to this node's own drawing. Any chain but `none`
-    /// makes the node the containing block of its absolute and fixed
+    /// A CSS filter applied to this node's whole rendering: its box, its
+    /// content and every descendant, filtered once as one picture, so a
+    /// `drop-shadow()` falls under all the children and past every clip inside
+    /// the node. Its lengths follow the node's transform, and the mask,
+    /// opacity and blend mode apply to its result, as in CSS. Any chain but
+    /// `none` makes the node the containing block of its absolute and fixed
     /// descendants, as a transform does.
     pub filter: Option<String>,
     /// A CSS filter applied to what shows through this node, which contains
@@ -757,9 +761,11 @@ properties! {
         /// a path mask owns its data and a gradient mask owns its stops.
     owned mask: mask, Mask;
 
-        /// A CSS filter applied to this node's own drawing. Any chain but
-        /// `none` makes the node the containing block of its absolute and
-        /// fixed descendants, as a transform does.
+        /// A CSS filter applied to this node's whole rendering, children
+        /// included, as one picture in the node's own space and before its
+        /// mask, opacity and blend mode. Any chain but `none` makes the node
+        /// the containing block of its absolute and fixed descendants, as a
+        /// transform does.
     owned filter: filter, String;
 
         /// A CSS filter applied to what shows through this node, which

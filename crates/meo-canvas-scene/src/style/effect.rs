@@ -178,9 +178,11 @@ pub struct Effects {
     pub text_shadows: Vec<TextShadow>,
     /// What restricts the node's drawing.
     pub mask: Option<Mask>,
-    /// A CSS filter chain applied to the node's own pixels. Any chain but
-    /// `none` makes the node the containing block of its absolute and fixed
-    /// descendants, as a transform does.
+    /// A CSS filter chain applied to the node's whole rendering, its
+    /// descendants included, as one picture in the node's own space and
+    /// before its mask, opacity and blend mode. Any chain but `none` makes the
+    /// node the containing block of its absolute and fixed descendants, as a
+    /// transform does.
     pub filter: Option<String>,
     /// A CSS filter chain applied to what is behind the node, which contains
     /// out-of-flow descendants as [`Effects::filter`] does.

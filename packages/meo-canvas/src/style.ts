@@ -859,9 +859,13 @@ export interface Style {
    */
   readonly mask?: Mask
   /**
-   * A CSS filter applied to this node's own drawing. Any chain but `'none'`
-   * makes the node the containing block of its absolute and fixed descendants,
-   * as a {@link Style.transform} does.
+   * A CSS filter applied to this node's whole rendering: its box, its content
+   * and every descendant, filtered once as one picture, so a `drop-shadow()`
+   * falls under all the children and past every clip inside the node. Its
+   * lengths follow the node's {@link Style.transform}, and
+   * {@link Style.mask}, {@link Style.opacity} and {@link Style.mixBlendMode}
+   * apply to its result, as in CSS. Any chain but `'none'` makes the node the
+   * containing block of its absolute and fixed descendants, as a transform does.
    */
   readonly filter?: string
   /**
