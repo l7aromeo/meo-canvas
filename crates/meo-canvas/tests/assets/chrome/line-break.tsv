@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`: where a line of text breaks, at 16px in Noto Sans SC subset to
-# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 159.0.8154.6, the chromium Playwright pins here.
 # the width rows, line-height 20px, from each character's client rect in an HTML block.
 # Written by packages/meo-canvas/tools/conformance/linebreak.mjs.
 #

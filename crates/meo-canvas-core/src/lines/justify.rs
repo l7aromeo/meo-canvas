@@ -10,7 +10,7 @@ use icu_segmenter::GraphemeClusterSegmenter;
 use super::Line;
 
 /// The code points a gap beside which takes a share, as inclusive ranges,
-/// swept from Chrome 158 (`justify.tsv`'s `class` rows, which
+/// swept from Chrome 159 (`justify.tsv`'s `class` rows, which
 /// `the_class_is_the_one_chrome_spreads` reads): Han, kana, bopomofo, CJK
 /// symbols and punctuation, most full-width forms, and symbols Chrome sets as
 /// CJK, enclosed numbers and much of the emoji among them. Hangul is not.

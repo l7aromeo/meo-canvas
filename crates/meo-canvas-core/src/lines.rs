@@ -95,7 +95,7 @@
 //!
 //! A face without `halt`, or a mark its `halt` leaves alone, measures the same
 //! both ways, and nothing in it is narrowed, which is what Chrome does. `lang`
-//! changes none of this in Chrome 158, and the scene has no `lang`.
+//! changes none of this in Chrome 159, and the scene has no `lang`.
 //! `chrome_text_spacing_trim.rs` holds every pair of forty marks, lines and
 //! min-content widths against Chrome.
 

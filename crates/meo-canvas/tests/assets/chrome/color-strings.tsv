@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`. What a colour string paints as a background.
-# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 159.0.8154.6, the chromium Playwright pins here.
 # Written by packages/meo-canvas/tools/conformance/colorstrings.mjs.
 #
 # Each string is a div’s `background-color`, after a sentinel declaration of

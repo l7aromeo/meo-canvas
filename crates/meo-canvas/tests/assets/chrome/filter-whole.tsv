@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`. What a `filter` covers.
-# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 159.0.8154.6, the chromium Playwright pins here.
 #
 # The element's whole rendering, filtered once as a group in its own
 # coordinate space, before its mask, opacity and blend.

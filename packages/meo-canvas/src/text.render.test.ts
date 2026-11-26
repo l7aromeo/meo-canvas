@@ -170,7 +170,7 @@ describe('a text box rounded to a whole pixel', () => {
 
 describe('text with no spaces to break at', () => {
   // `chrome_line_break.rs` pins every break against Chrome; this proves the npm
-  // surface wraps the same. Chrome 158 at 200px with a 20px line: four lines and three.
+  // surface wraps the same. Chrome 159 at 200px with a 20px line: four lines and three.
   const CJK = fileURLToPath(new URL('../../../crates/meo-canvas-core/tests/assets/fonts/NotoSansSC-Subset.ttf', import.meta.url))
   it.each([
     ['漢字'.repeat(20), 80],
@@ -190,7 +190,7 @@ describe('text with no spaces to break at', () => {
 })
 
 describe('full-width punctuation beside another mark', () => {
-  // `chrome_text_spacing_trim.rs` pins every pair and line against Chrome 158; this
+  // `chrome_text_spacing_trim.rs` pins every pair and line against Chrome 159; this
   // proves the npm surface narrows the same. The second `「` and a line-ending `」`
   // lose half their em in the face with `halt`, and nothing does without it.
   const font = (name: string) => fileURLToPath(new URL(`../../../crates/meo-canvas-core/tests/assets/fonts/${name}`, import.meta.url))
@@ -236,7 +236,7 @@ describe('full-width punctuation beside another mark', () => {
 })
 
 describe('justified Chinese', () => {
-  // `chrome_justify.rs` and the core's table test pin every row against Chrome 158;
+  // `chrome_justify.rs` and the core's table test pin every row against Chrome 159;
   // this proves the npm surface spreads a line written without spaces, and leaves a
   // line a newline ends as set left.
   const FONTS = [

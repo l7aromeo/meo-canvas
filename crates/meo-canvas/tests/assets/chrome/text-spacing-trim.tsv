@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`: which full-width punctuation `text-spacing-trim: normal`, its default,
-# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 159.0.8154.6, the chromium Playwright pins here.
 # narrows, at 16px with a 20px line, from each character's client rect in an HTML block.
 # Written by packages/meo-canvas/tools/conformance/spacingtrim.mjs.
 #
