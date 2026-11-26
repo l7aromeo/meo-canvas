@@ -3006,10 +3006,11 @@ dependencies = [
 
 [[package]]
 name = "taffy"
-version = "0.15.1"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31f7bd2d97198df05186f93a3a3c306845f40e8b3c22bf9279cdd7e5cf5fea7d"
+checksum = "cae92eb1b204bfd239b5c463e1bd2c3ce4913d2d3abfb5c64f5cfee9d65e5c68"
 dependencies = [
+ "rustc-hash",
  "serde",
  "slotmap",
  "smallvec",

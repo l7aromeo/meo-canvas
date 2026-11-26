@@ -1,0 +1,34 @@
+# Chrome, through `just conformance`. A shrink-to-fit block around an image sized in percent.
+# Measured on Chrome Headless Shell 159.0.8154.6, the chromium Playwright pins here.
+#
+# The art is 80x40, a `display: block` image with the sizing named. Its block is
+# shrink-to-fit: `absolute` with `width: auto` in a positioned root, a `flex-item`,
+# or the item in a `grid-auto` column, at the start on both axes. The root is `room`
+# wide and 100 tall at the origin. Both rectangles are border boxes from `getBoundingClientRect`.
+# Written by packages/meo-canvas/tools/conformance/replacedpercent.mjs.
+#
+# wrapper	sizing	room	block-x	block-y	block-w	block-h	image-x	image-y	image-w	image-h
+absolute	none	40	0	0	80	40	0	0	80	40
+absolute	none	200	0	0	80	40	0	0	80	40
+absolute	width-100	40	0	0	40	20	0	0	40	20
+absolute	width-100	200	0	0	80	40	0	0	80	40
+absolute	max-width-100	40	0	0	40	20	0	0	40	20
+absolute	max-width-100	200	0	0	80	40	0	0	80	40
+absolute	width-50	40	0	0	40	10	0	0	20	10
+absolute	width-50	200	0	0	80	20	0	0	40	20
+flex-item	none	40	0	0	80	40	0	0	80	40
+flex-item	none	200	0	0	80	40	0	0	80	40
+flex-item	width-100	40	0	0	40	20	0	0	40	20
+flex-item	width-100	200	0	0	80	40	0	0	80	40
+flex-item	max-width-100	40	0	0	40	20	0	0	40	20
+flex-item	max-width-100	200	0	0	80	40	0	0	80	40
+flex-item	width-50	40	0	0	40	10	0	0	20	10
+flex-item	width-50	200	0	0	80	20	0	0	40	20
+grid-auto	none	40	0	0	80	40	0	0	80	40
+grid-auto	none	200	0	0	80	40	0	0	80	40
+grid-auto	width-100	40	0	0	40	20	0	0	40	20
+grid-auto	width-100	200	0	0	80	40	0	0	80	40
+grid-auto	max-width-100	40	0	0	40	20	0	0	40	20
+grid-auto	max-width-100	200	0	0	80	40	0	0	80	40
+grid-auto	width-50	40	0	0	40	10	0	0	20	10
+grid-auto	width-50	200	0	0	80	20	0	0	40	20

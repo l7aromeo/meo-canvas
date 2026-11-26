@@ -620,7 +620,7 @@ by construction, and the crate ships them together.
 | crate             |        |                                                          |
 | ----------------- | ------ | -------------------------------------------------------- |
 | `meo-skia-canvas` | 0.17.3 | Skia, text shaping, encoding. `patched-skia`, see below. |
-| `taffy`           | 0.15   | Flexbox, CSS grid, block layout. Without `calc`.         |
+| `taffy`           | 0.16   | Flexbox, CSS grid, block layout. Without `calc`.         |
 | `neon`            | 1.1    | Node addon.                                              |
 | `clap`            | 4.6    | CLI.                                                     |
 | `thiserror`       | 2.0    | Error types.                                             |
@@ -630,11 +630,6 @@ by construction, and the crate ships them together.
 | `rustls-webpki`   | 0.103  | A floor, not a use -- see `Cargo.toml`. Under `net`.     |
 | `sha2`            | 0.11   | The disk image cache's names and checksums. Under `net`. |
 | `rayon`           | 1.11   | The addon's asynchronous encode. Not an async runtime.   |
-
-**taffy 0.16 is a pending major**, held at 0.15.1 for a change of its own: its
-block, flexbox and grid fixes move rendered bytes, so taking it means
-measuring every moved row against Chrome and checking which of the
-`[WORKAROUND]`s on taffy retire.
 
 **`patched-skia` is always on.** With it, `meo-skia-canvas` links the patched
 Skia its npm package draws with, downloaded from the archives the justfile's

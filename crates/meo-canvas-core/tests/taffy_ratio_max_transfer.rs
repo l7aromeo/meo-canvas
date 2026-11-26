@@ -1,4 +1,4 @@
-//! Pins taffy 0.15.1 carrying a maximum through `aspect_ratio` onto a declared
+//! Pins taffy 0.16.0 carrying a maximum through `aspect_ratio` onto a declared
 //! other axis, 90x60 and 50x33.33 where Chrome gives 200x60 and 50x60. A fix
 //! fails here and the [WORKAROUND] `unbound_declared_sizes` can go.
 //! `l7aromeo/meo-canvas#193`, `l7aromeo/meo-canvas#129`.

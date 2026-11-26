@@ -1,4 +1,4 @@
-//! Pins two inherited taffy defects, taffy 0.15.1 `src/compute/flexbox.rs`,
+//! Pins two inherited taffy defects, taffy 0.16.0 `src/compute/flexbox.rs`,
 //! for a flex item with a ratio, a declared width and an `auto` height in a
 //! row too narrow for it. 60x40 art declared 300 wide in a 200 row is 300x200:
 //! its automatic minimum is measured at the height 300 gives, so it is 300.

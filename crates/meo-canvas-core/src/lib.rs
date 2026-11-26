@@ -48,7 +48,7 @@
 //! [`layout`] owns its taffy tree and never lets it escape, because
 //! `taffy::TaffyTree` is `!Send` and `!Sync` on every supported target --
 //! `CompactLengthInner` stores each length as a tagged `*const ()`
-//! (`taffy-0.15.1/src/style/compact_length.rs:76`), which poisons the auto
+//! (`taffy-0.16.0/src/style/compact_length.rs:102`), which poisons the auto
 //! traits for `Style` and everything holding one. A [`Scene`] is `Send`, so
 //! parallelism happens between renders: each render builds, uses and drops its
 //! own tree on one thread.

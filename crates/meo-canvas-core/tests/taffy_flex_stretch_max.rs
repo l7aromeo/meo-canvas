@@ -1,4 +1,4 @@
-//! Pins an inherited taffy defect, taffy 0.15.1 `src/compute/flexbox.rs`
+//! Pins an inherited taffy defect, taffy 0.16.0 `src/compute/flexbox.rs`
 //! `determine_flex_base_size`: in a flex row of indefinite height, a stretched
 //! item with both sizes `auto` is measured at its maximum height, or at the
 //! one its maximum width transfers through its ratio, as though stretched to

@@ -6,8 +6,9 @@
 use std::collections::BTreeMap;
 
 use meo_canvas::{
-    BorderStyle, Box, BoxSizing, Display, Element, Format, PositionType,
-    Renderer, Root, Styled, hex_rgb, pct, px,
+    Align, BorderStyle, Box, BoxSizing, Direction, Display, Element,
+    FlexDirection, FlexWrap, Format, Image, Justify, JustifySelf, PositionType,
+    Renderer, Root, SelfPosition, Styled, hex_rgb, pct, px,
     scene::{Color, GridAutoFlow, GridPlacement, TrackSize, Transform},
     sides,
 };
@@ -1086,25 +1087,25 @@ const FLEX_BOX: (f32, f32) = (160.0, 80.0);
 const KNOWN_FLEX: &[&str] = &[];
 
 /// The `Justify` a table's name asks for.
-fn justify_of(name: &str) -> meo_canvas::Justify {
+fn justify_of(name: &str) -> Justify {
     match name {
-        "flex-end" => meo_canvas::Justify::FlexEnd,
-        "center" => meo_canvas::Justify::Center,
-        "space-between" => meo_canvas::Justify::SpaceBetween,
-        "space-around" => meo_canvas::Justify::SpaceAround,
-        "space-evenly" => meo_canvas::Justify::SpaceEvenly,
-        _ => meo_canvas::Justify::FlexStart,
+        "flex-end" => Justify::FlexEnd,
+        "center" => Justify::Center,
+        "space-between" => Justify::SpaceBetween,
+        "space-around" => Justify::SpaceAround,
+        "space-evenly" => Justify::SpaceEvenly,
+        _ => Justify::FlexStart,
     }
 }
 
 /// The `Align` a table's name asks for.
-fn align_of(name: &str) -> meo_canvas::Align {
+fn align_of(name: &str) -> Align {
     match name {
-        "flex-end" => meo_canvas::Align::FlexEnd,
-        "center" => meo_canvas::Align::Center,
-        "stretch" => meo_canvas::Align::Stretch,
-        "baseline" => meo_canvas::Align::Baseline,
-        _ => meo_canvas::Align::FlexStart,
+        "flex-end" => Align::FlexEnd,
+        "center" => Align::Center,
+        "stretch" => Align::Stretch,
+        "baseline" => Align::Baseline,
+        _ => Align::FlexStart,
     }
 }
 
@@ -1251,10 +1252,7 @@ const FLEX_WRAP_PAGE: (f32, f32) = (88.0, 200.0);
 /// Where the container sits on that page, so a line above it is still drawn.
 const FLEX_WRAP_AT: f32 = 72.0;
 
-/// The wrapping cases answered differently from Chrome: empty. taffy's safe
-/// fallback for an overflowing distributed alignment throws the reversal away,
-/// where Chrome keeps it; `bottom_align_reversed_wraps` in `layout.rs` shifts
-/// the stack after the solve.
+/// The wrapping cases answered differently from Chrome: empty.
 const KNOWN_WRAP: &[&str] = &[];
 
 /// Each child's rectangle when six of them are wrapped in a narrow box.
@@ -1283,9 +1281,9 @@ fn wrap_rects(wrap: &str) -> Vec<[f32; 4]> {
             .position(sides(Some(px(FLEX_WRAP_AT)), None, None, Some(px(0.0))))
             .size(px(FLEX_WRAP_BOX.0), px(FLEX_WRAP_BOX.1))
             .flex_wrap(match wrap {
-                "wrap" => meo_canvas::FlexWrap::Wrap,
-                "wrap-reverse" => meo_canvas::FlexWrap::WrapReverse,
-                _ => meo_canvas::FlexWrap::NoWrap,
+                "wrap" => FlexWrap::Wrap,
+                "wrap-reverse" => FlexWrap::WrapReverse,
+                _ => FlexWrap::NoWrap,
             })
             .children(children),
     );
@@ -1554,5 +1552,551 @@ fn grid_placement_matches_chrome() {
          {} pinned",
         cases.len(),
         KNOWN_GRID.len()
+    );
+}
+
+/// The flex overflow container's edge, and its offset on the page: away from
+/// the origin, so a line overflowing above or left of it is still drawn.
+const FLEX_OVERFLOW_BOX: f32 = 40.0;
+const FLEX_OVERFLOW_AT: f32 = 60.0;
+const FLEX_OVERFLOW_PAGE: (f32, f32) = (160.0, 160.0);
+
+/// The flex overflow cases answered differently from Chrome: empty.
+const KNOWN_FLEX_OVERFLOW: &[&str] = &[];
+
+/// The third child's colour in the wrapped flex overflow cases.
+const C_INK: Color = Color::rgb(40, 160, 80);
+
+/// How far an edge may sit from Chrome's: taffy rounds every edge to a whole
+/// pixel (`LAYOUT_SCALE` in `layout.rs`), so a centred 47 in 40 lands at -3
+/// where Chrome keeps -3.5.
+const HALF_PIXEL: f32 = 0.5;
+
+/// Each child's rectangle relative to the container, for one overflow case:
+/// two lines of 40x30, one 47x20 item, or wrapped items 47, 15 and 15 long
+/// and 10 across, each turned for a column.
+fn flex_overflow_rects(
+    part: &str,
+    dir: &str,
+    direction: &str,
+    wrap: &str,
+    value: &str,
+) -> Vec<[f32; 4]> {
+    let lines = part == "lines";
+    // Each child's size along the main axis and across it, by part.
+    let sizes: &[(f32, f32)] = match part {
+        "lines" => &[(40.0, 30.0), (40.0, 30.0)],
+        "items" => &[(47.0, 20.0)],
+        "wrapped" => &[(47.0, 10.0), (15.0, 10.0), (15.0, 10.0)],
+        other => unreachable!("no part named {other}"),
+    };
+    let inks = &[A_INK, B_INK, C_INK][..sizes.len()];
+    let children: Vec<Element> = sizes
+        .iter()
+        .zip(inks)
+        .map(|((main, cross), ink)| {
+            let (width, height) = if direction.starts_with("row") {
+                (*main, *cross)
+            } else {
+                (*cross, *main)
+            };
+            Box::new()
+                .display(Display::Block)
+                .size(px(width), px(height))
+                .flex_shrink(0.0)
+                .background_color(*ink)
+        })
+        .collect();
+
+    let container = Box::new()
+        .display(Display::Flex)
+        .position_type(PositionType::Absolute)
+        .position(sides(
+            Some(px(FLEX_OVERFLOW_AT)),
+            None,
+            None,
+            Some(px(FLEX_OVERFLOW_AT)),
+        ))
+        .size(px(FLEX_OVERFLOW_BOX), px(FLEX_OVERFLOW_BOX))
+        .direction(match dir {
+            "ltr" => Direction::Ltr,
+            "rtl" => Direction::Rtl,
+            other => unreachable!("no direction named {other}"),
+        })
+        .flex_direction(match direction {
+            "row" => FlexDirection::Row,
+            "row-reverse" => FlexDirection::RowReverse,
+            "column" => FlexDirection::Column,
+            "column-reverse" => FlexDirection::ColumnReverse,
+            other => unreachable!("no flex-direction named {other}"),
+        })
+        .flex_wrap(match wrap {
+            "nowrap" => FlexWrap::NoWrap,
+            "wrap" => FlexWrap::Wrap,
+            "wrap-reverse" => FlexWrap::WrapReverse,
+            other => unreachable!("no flex-wrap named {other}"),
+        });
+    // `normal` is the property left unset, as the table's tool leaves it.
+    let container = match (lines, value) {
+        (_, "normal") => container,
+        (true, value) => container.align_content(match value {
+            "stretch" => Align::Stretch,
+            "flex-start" => Align::FlexStart,
+            "flex-end" => Align::FlexEnd,
+            "center" => Align::Center,
+            "space-between" => Align::SpaceBetween,
+            "space-around" => Align::SpaceAround,
+            "space-evenly" => Align::SpaceEvenly,
+            other => unreachable!("no align-content named {other}"),
+        }),
+        (false, value) => container.justify_content(match value {
+            "flex-start" => Justify::FlexStart,
+            "flex-end" => Justify::FlexEnd,
+            "center" => Justify::Center,
+            "space-between" => Justify::SpaceBetween,
+            "space-around" => Justify::SpaceAround,
+            "space-evenly" => Justify::SpaceEvenly,
+            other => unreachable!("no justify-content named {other}"),
+        }),
+    };
+
+    let page = render(FLEX_OVERFLOW_PAGE, container.children(children));
+    inks.iter()
+        .map(|ink| {
+            page.extent(*ink).map_or([f32::NAN; 4], |found| {
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "a coordinate on a 160-pixel page is exact in an f32"
+                )]
+                [
+                    found.0 as f32 - FLEX_OVERFLOW_AT,
+                    found.1 as f32 - FLEX_OVERFLOW_AT,
+                    (found.2 - found.0 + 1) as f32,
+                    (found.3 - found.1 + 1) as f32,
+                ]
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn flex_overflow_matches_chrome() {
+    const KEYS: [&str; 5] = ["part", "dir", "direction", "wrap", "value"];
+    let text = include_str!("assets/chrome/flex-overflow.tsv");
+    let mut cases: BTreeMap<[String; 5], Vec<[f32; 4]>> = BTreeMap::new();
+    for row in read_columns(
+        text,
+        &[
+            "part",
+            "dir",
+            "direction",
+            "wrap",
+            "value",
+            "child",
+            "x",
+            "y",
+            "w",
+            "h",
+        ],
+    ) {
+        cases
+            .entry(KEYS.map(|key| row[key].clone()))
+            .or_default()
+            .push(["x", "y", "w", "h"].map(|key| cell(&row, key)));
+    }
+
+    let mut wrong = Vec::new();
+    for ([part, dir, direction, wrap, value], theirs) in &cases {
+        let name = format!("{part} {dir} {direction} {wrap} {value}");
+        let ours = flex_overflow_rects(part, dir, direction, wrap, value);
+        let known = KNOWN_FLEX_OVERFLOW.contains(&name.as_str());
+        let apart = ours.len() != theirs.len()
+            || ours.iter().flatten().zip(theirs.iter().flatten()).any(
+                |(ours, theirs)| {
+                    ours.is_nan() || (ours - theirs).abs() > HALF_PIXEL
+                },
+            );
+        if apart != known {
+            wrong.push(if known {
+                format!("{name}: now agrees with Chrome; delete it from KNOWN_FLEX_OVERFLOW")
+            } else {
+                format!("{name}: ours {ours:?}, Chrome {theirs:?}")
+            });
+        }
+    }
+    assert_eq!(
+        cases.len(),
+        176,
+        "flex-overflow.tsv holds {} cases",
+        cases.len()
+    );
+    assert!(
+        wrong.is_empty(),
+        "{} cases differ:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// A table's cell as a number: a malformed one is a broken checkout.
+fn cell(row: &Row, key: &str) -> f32 {
+    row[key]
+        .parse::<f32>()
+        .unwrap_or_else(|_| unreachable!("{key} {} is not a number", row[key]))
+}
+
+/// The bounding box of every pixel of any of `inks`, as `[x, y, w, h]`.
+fn extent_of(page: &Pixels, inks: &[Color]) -> Option<[f32; 4]> {
+    let found = inks.iter().filter_map(|ink| page.extent(*ink)).reduce(
+        |(x0, y0, x1, y1), (a0, b0, a1, b1)| {
+            (x0.min(a0), y0.min(b0), x1.max(a1), y1.max(b1))
+        },
+    )?;
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a coordinate on a page this size is exact in an f32"
+    )]
+    Some([
+        found.0 as f32,
+        found.1 as f32,
+        (found.2 - found.0 + 1) as f32,
+        (found.3 - found.1 + 1) as f32,
+    ])
+}
+
+/// The page the margin collapse cases are drawn on: the root's width, and
+/// room below the tallest case.
+const MARGIN_PAGE: (f32, f32) = (50.0, 100.0);
+
+/// The margin collapse cases answered differently from Chrome: empty.
+const KNOWN_MARGIN_COLLAPSE: &[&str] = &[];
+
+/// The block's top and height, from its ink, which a block with no height
+/// leaves none of, and the top of the sibling after it.
+fn margin_collapse_case(
+    edges: &str,
+    top: f32,
+    bottom: f32,
+    after: &str,
+) -> (Option<(f32, f32)>, f32) {
+    let edge = 10.0;
+    let (border, padding) = match edges {
+        "none" => ((0.0, 0.0), (0.0, 0.0)),
+        "border-bottom" => ((0.0, edge), (0.0, 0.0)),
+        "padding-bottom" => ((0.0, 0.0), (0.0, edge)),
+        "border-top" => ((edge, 0.0), (0.0, 0.0)),
+        "padding-top" => ((0.0, 0.0), (edge, 0.0)),
+        "border-both" => ((edge, edge), (0.0, 0.0)),
+        other => unreachable!("no edges named {other}"),
+    };
+    let mut inside = vec![Box::new().display(Display::Block).margin(sides(
+        px(top),
+        px(0.0),
+        px(bottom),
+        px(0.0),
+    ))];
+    match after {
+        "none" => {}
+        "box" => {
+            inside.push(Box::new().display(Display::Block).height(px(10.0)));
+        }
+        other => unreachable!("no after named {other}"),
+    }
+    let block = Box::new()
+        .display(Display::Block)
+        .background_color(PARENT_INK)
+        .border(sides(border.0, 0.0, border.1, 0.0))
+        .border_style(BorderStyle::Solid)
+        .border_color(PARENT_INK)
+        .padding(sides(px(padding.0), px(0.0), px(padding.1), px(0.0)))
+        .children(inside);
+    let next = Box::new()
+        .display(Display::Block)
+        .height(px(10.0))
+        .background_color(B_INK);
+    let page = render(
+        MARGIN_PAGE,
+        Box::new()
+            .display(Display::Block)
+            .position_type(PositionType::Absolute)
+            .position(sides(Some(px(0.0)), None, None, Some(px(0.0))))
+            .width(px(MARGIN_PAGE.0))
+            .children(vec![block, next]),
+    );
+    let block = extent_of(&page, &[PARENT_INK]).map(|[_, y, _, h]| (y, h));
+    let next = extent_of(&page, &[B_INK]).map_or(f32::NAN, |[_, y, _, _]| y);
+    (block, next)
+}
+
+#[test]
+fn margin_collapse_matches_chrome() {
+    let text = include_str!("assets/chrome/margin-collapse.tsv");
+    let rows = read_columns(
+        text,
+        &[
+            "edges",
+            "margin-top",
+            "margin-bottom",
+            "after",
+            "top",
+            "height",
+            "next",
+        ],
+    );
+    let mut wrong = Vec::new();
+    for row in &rows {
+        let name = format!(
+            "{} {} {} {}",
+            row["edges"], row["margin-top"], row["margin-bottom"], row["after"]
+        );
+        let (block, next) = margin_collapse_case(
+            &row["edges"],
+            cell(row, "margin-top"),
+            cell(row, "margin-bottom"),
+            &row["after"],
+        );
+        let height = cell(row, "height");
+        // A block with no height has no ink to place it by; its sibling does.
+        let theirs = (height > 0.0).then(|| (cell(row, "top"), height));
+        let near = |ours: f32, theirs: f32| (ours - theirs).abs() <= HALF_PIXEL;
+        let apart = match (block, theirs) {
+            (None, None) => false,
+            (Some(ours), Some(theirs)) => {
+                !near(ours.0, theirs.0) || !near(ours.1, theirs.1)
+            }
+            _ => true,
+        } || !near(next, cell(row, "next"));
+        if apart != KNOWN_MARGIN_COLLAPSE.contains(&name.as_str()) {
+            wrong.push(format!(
+                "{name}: ours block {block:?} next {next}, Chrome block \
+                 {theirs:?} next {}",
+                row["next"]
+            ));
+        }
+    }
+    assert_eq!(rows.len(), 60, "margin-collapse.tsv holds {}", rows.len());
+    assert!(
+        wrong.is_empty(),
+        "{} cases differ:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// The art the replaced percentage cases size: 80x40, one colour.
+const PERCENT_ART: (f32, f32) = (80.0, 40.0);
+const PERCENT_INK: Color = Color::rgb(204, 0, 0);
+
+/// The replaced percentage cases answered differently from Chrome: empty.
+const KNOWN_REPLACED_PERCENT: &[&str] = &[];
+
+/// The art as a PNG, drawn by this renderer so its size is one stated here.
+fn percent_art() -> Vec<u8> {
+    let mut renderer = Renderer::new();
+    renderer.set_gpu(false);
+    Root::new(PERCENT_ART.0)
+        .height(PERCENT_ART.1)
+        .background_color(PERCENT_INK)
+        .render(&renderer)
+        .and_then(|mut canvas| canvas.to_buffer(Format::Png))
+        .unwrap_or_else(|error| unreachable!("the art did not render: {error}"))
+}
+
+/// The block's and the image's rectangles: the block's is the box around both
+/// inks, since the image covers it from the corner.
+fn replaced_percent_case(
+    wrapper: &str,
+    sizing: &str,
+    room: f32,
+    art: &[u8],
+) -> (Option<[f32; 4]>, Option<[f32; 4]>) {
+    let image = Image::bytes(art.to_vec()).display(Display::Block);
+    let image = match sizing {
+        "none" => image,
+        "width-100" => image.width(pct(100.0)),
+        "max-width-100" => image.max_width(pct(100.0)),
+        "width-50" => image.width(pct(50.0)),
+        other => unreachable!("no sizing named {other}"),
+    };
+    let block = Box::new()
+        .display(Display::Block)
+        .background_color(PARENT_INK)
+        .align_self(Align::FlexStart)
+        .justify_self(JustifySelf::Position {
+            position: SelfPosition::Start,
+            overflow: None,
+        })
+        .children(image);
+    let at = sides(Some(px(0.0)), None, None, Some(px(0.0)));
+    let root = Box::new()
+        .position_type(PositionType::Absolute)
+        .position(at)
+        .size(px(room), px(100.0));
+    let root = match wrapper {
+        "absolute" => root
+            .display(Display::Block)
+            .children(block.position_type(PositionType::Absolute).position(at)),
+        "flex-item" => root.display(Display::Flex).children(block),
+        "grid-auto" => root
+            .display(Display::Grid)
+            .grid_template_columns(vec![TrackSize::Auto])
+            .children(block),
+        other => unreachable!("no wrapper named {other}"),
+    };
+    let page = render((200.0, 100.0), root);
+    (
+        extent_of(&page, &[PARENT_INK, PERCENT_INK]),
+        extent_of(&page, &[PERCENT_INK]),
+    )
+}
+
+#[test]
+fn replaced_percentage_matches_chrome() {
+    let text = include_str!("assets/chrome/replaced-percentage.tsv");
+    let rows = read_columns(
+        text,
+        &[
+            "wrapper", "sizing", "room", "block-x", "block-y", "block-w",
+            "block-h", "image-x", "image-y", "image-w", "image-h",
+        ],
+    );
+    let art = percent_art();
+    let mut wrong = Vec::new();
+    for row in &rows {
+        let name =
+            format!("{} {} {}", row["wrapper"], row["sizing"], row["room"]);
+        let ours = replaced_percent_case(
+            &row["wrapper"],
+            &row["sizing"],
+            cell(row, "room"),
+            &art,
+        );
+        let rect = |prefix: &str| {
+            Some(
+                ["x", "y", "w", "h"]
+                    .map(|key| cell(row, &format!("{prefix}-{key}"))),
+            )
+        };
+        let theirs = (rect("block"), rect("image"));
+        if (ours != theirs) != KNOWN_REPLACED_PERCENT.contains(&name.as_str()) {
+            wrong.push(format!("{name}: ours {ours:?}, Chrome {theirs:?}"));
+        }
+    }
+    assert_eq!(
+        rows.len(),
+        24,
+        "replaced-percentage.tsv holds {}",
+        rows.len()
+    );
+    assert!(
+        wrong.is_empty(),
+        "{} cases differ:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// The grid baseline shim cases answered differently from Chrome: empty.
+const KNOWN_GRID_SHIM: &[&str] = &[];
+
+/// The grid's height, read from the top of a one-pixel marker after it in
+/// flow since overflowing items cover its own ink, and both items' rectangles,
+/// each item painted whole in its own colour.
+fn grid_shim_case(
+    track: &str,
+    margin: f32,
+) -> (Option<[f32; 4]>, [Option<[f32; 4]>; 2]) {
+    let item = |ink: Color, padding: (f32, f32), margin: f32| {
+        Box::new()
+            .display(Display::Grid)
+            .background_color(ink)
+            .padding(sides(px(padding.0), px(0.0), px(padding.1), px(0.0)))
+            .margin(sides(px(margin), px(0.0), px(0.0), px(0.0)))
+            .children(
+                Box::new().display(Display::Block).size(px(25.0), px(25.0)),
+            )
+    };
+    let grid = Box::new()
+        .display(Display::Grid)
+        .grid_template_columns(vec![
+            TrackSize::Points(50.0),
+            TrackSize::Points(50.0),
+        ])
+        .grid_template_rows(vec![match track {
+            "auto" => TrackSize::Auto,
+            "60px" => TrackSize::Points(60.0),
+            "30px" => TrackSize::Points(30.0),
+            other => unreachable!("no track named {other}"),
+        }])
+        .align_items(Align::Baseline)
+        .children(vec![
+            item(A_INK, (25.0, 0.0), 0.0),
+            item(B_INK, (0.0, 25.0), margin),
+        ]);
+    let marker = Box::new()
+        .display(Display::Block)
+        .height(px(1.0))
+        .background_color(PARENT_INK);
+    let page = render(
+        (100.0, 120.0),
+        Box::new()
+            .display(Display::Block)
+            .position_type(PositionType::Absolute)
+            .position(sides(Some(px(0.0)), None, None, Some(px(0.0))))
+            .width(px(100.0))
+            .children(vec![grid, marker]),
+    );
+    (
+        extent_of(&page, &[PARENT_INK]),
+        [extent_of(&page, &[A_INK]), extent_of(&page, &[B_INK])],
+    )
+}
+
+#[test]
+fn grid_baseline_shim_matches_chrome() {
+    let text = include_str!("assets/chrome/grid-baseline-shim.tsv");
+    let rows = read_columns(
+        text,
+        &[
+            "track",
+            "margin-top",
+            "height",
+            "a-x",
+            "a-y",
+            "a-w",
+            "a-h",
+            "b-x",
+            "b-y",
+            "b-w",
+            "b-h",
+        ],
+    );
+    let mut wrong = Vec::new();
+    for row in &rows {
+        let name = format!("{} {}", row["track"], row["margin-top"]);
+        let (grid, items) =
+            grid_shim_case(&row["track"], cell(row, "margin-top"));
+        let item = |prefix: &str| {
+            Some(
+                ["x", "y", "w", "h"]
+                    .map(|key| cell(row, &format!("{prefix}-{key}"))),
+            )
+        };
+        let theirs = [item("a"), item("b")];
+        let height = grid.map(|[_, y, _, _]| y);
+        let apart = items != theirs || height != Some(cell(row, "height"));
+        if apart != KNOWN_GRID_SHIM.contains(&name.as_str()) {
+            wrong.push(format!(
+                "{name}: ours height {height:?} items {items:?}, Chrome height {} items {theirs:?}",
+                row["height"]
+            ));
+        }
+    }
+    assert_eq!(rows.len(), 6, "grid-baseline-shim.tsv holds {}", rows.len());
+    assert!(
+        wrong.is_empty(),
+        "{} cases differ:\n{}",
+        wrong.len(),
+        wrong.join("\n")
     );
 }
