@@ -3,7 +3,7 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 # The formatting toolchain, pinned by date because `rustfmt.toml` uses options
 # only nightly reads and nightly drifts daily. `.github/workflows/ci.yml`
 # installs this exact one, reading it from here.
-fmt_toolchain := "nightly-2026-08-10"
+fmt_toolchain := "nightly-2026-11-26"
 
 # The GPU backend meo-skia-canvas compiles on this platform. Only
 # `meo-canvas-node` names it: it builds the cdylib, so it is the crate that
