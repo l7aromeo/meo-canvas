@@ -41,9 +41,9 @@ taffy = { version = "0.16", default-features = false, features = [
     "block_layout",
     "std",
     "taffy_tree",
-    "content_size",
     # The tracks each grid item spans, which the inline-axis baseline pass reads.
     "detailed_layout_info",
+    # Not `content_size`: it computes only the scrollable overflow rectangle.
 ] }
 
 # Line break opportunities. `unstable` for the UAX 14 17 rules Chrome's ICU
