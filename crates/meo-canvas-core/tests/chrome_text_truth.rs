@@ -290,11 +290,13 @@ fn our_widths_run_a_known_shade_under_chromes() {
     for (text, chrome) in CHROME_WIDTHS {
         let words: Vec<&str> = text.split(' ').collect();
         let gaps = words.len() - 1;
-        let ours = words
-            .iter()
-            .map(|word| measurer.run_width(&style, 0.0, word))
-            .sum::<f32>()
-            + space * gaps as f32;
+        let ours = space.mul_add(
+            gaps as f32,
+            words
+                .iter()
+                .map(|word| measurer.run_width(&style, 0.0, word))
+                .sum::<f32>(),
+        );
         let deficit = chrome - ours;
         assert!(
             deficit >= 0.0,

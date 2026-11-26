@@ -229,6 +229,20 @@ net-check:
     cargo test -p meo-canvas-cli --features net --test cli
     # The image cache's examples exist only under `net`, which `test` omits.
     cargo test -p meo-canvas-core -p meo-canvas --features net --doc
+
+# Checks the workspace on the `rust-version` Cargo.toml declares, read from there
+# so the number has one home, while the pinned toolchain is newer.
+# Not `--all-features`: `vulkan` builds Skia cold on macOS and gates nothing `metal` misses.
+[doc("Check the workspace on the oldest Rust Cargo.toml declares.")]
+msrv-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    version=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml)
+    test -n "$version" || { echo "error: Cargo.toml declares no rust-version" >&2; exit 1; }
+    rustup toolchain install "$version" --profile minimal --no-self-update
+    cargo +"$version" check --workspace --features "net,{{ host_features }}" \
+        --target-dir "${MSRV_TARGET_DIR:-target/msrv}"
+
 # Not in `ci`: it regenerates four images rather than checking, so it sits with
 # `conformance`. Wants `dist` and the addon built first.
 [doc("Redraw the README banners with the library itself.")]

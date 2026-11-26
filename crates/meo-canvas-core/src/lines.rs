@@ -2126,12 +2126,6 @@ mod tests {
     /// equalities are exact: `0.0` is what `normal` resolves to, and the
     /// pass-through row asserts a number arrived unchanged.
     #[test]
-    #[expect(
-        clippy::float_cmp,
-        reason = "the point of these rows is that a value is exactly what it \
-                  was, or exactly what `normal` resolves to; a tolerance would \
-                  pass a repair that shifted every spacing slightly"
-    )]
     fn a_spacing_that_is_not_a_number_resolves_to_normal() {
         assert_eq!(spacing_pixels(Spacing::Points(f32::NAN), 16.0), 0.0);
         assert_eq!(spacing_pixels(Spacing::Em(f32::NAN), 16.0), 0.0);
@@ -2147,11 +2141,6 @@ mod tests {
     /// infinity and it clamps, and Chrome 151 gives `calc(-infinity * 1px)` as
     /// `-3.35544e+07px`.
     #[test]
-    #[expect(
-        clippy::float_cmp,
-        reason = "the two directions are the same magnitude exactly, which is \
-                  what says the sign is carried rather than recomputed"
-    )]
     fn an_infinite_spacing_is_clamped_and_keeps_its_direction() {
         let up = spacing_pixels(Spacing::Points(f32::INFINITY), 16.0);
         let down = spacing_pixels(Spacing::Points(f32::NEG_INFINITY), 16.0);
@@ -2164,10 +2153,6 @@ mod tests {
     /// The product is checked, not the numbers that made it: `Em` multiplies by
     /// the run's own font size, so two finite values can overflow to infinity.
     #[test]
-    #[expect(
-        clippy::float_cmp,
-        reason = "the clamped value is the ceiling itself, exactly"
-    )]
     fn a_spacing_that_overflows_while_resolving_is_clamped_too() {
         let resolved = spacing_pixels(Spacing::Em(1.0e30), 1.0e30);
         assert!(resolved.is_finite(), "{resolved} reached a measurement");
@@ -2177,10 +2162,6 @@ mod tests {
     /// An absurd finite spacing is left alone, to the bit: nothing here judges
     /// a spacing too large to have meant, and a `clamp` would pull `1e30` down.
     #[test]
-    #[expect(
-        clippy::float_cmp,
-        reason = "unchanged means unchanged, to the bit"
-    )]
     fn a_finite_spacing_is_carried_through_unchanged() {
         // The row says nothing unless the list crosses the ceiling, so that is
         // checked where it cannot rot: a `1e30` edited down to `1e3` one day
@@ -2194,10 +2175,6 @@ mod tests {
     /// The line gap is checked too, though it is a plain `f32` rather than a
     /// `Spacing`: a non-finite gap times the line count is a non-finite height.
     #[test]
-    #[expect(
-        clippy::float_cmp,
-        reason = "zero is the value, not an approximation of it"
-    )]
     fn a_line_gap_that_is_not_a_number_is_replaced_as_well() {
         let mut base = style();
         base.line_gap = f32::NAN;
@@ -2231,10 +2208,6 @@ mod tests {
     /// A `NaN` size is neutralised: refused at the writer, where a refusal can
     /// be reported, and neutralised here, where it cannot.
     #[test]
-    #[expect(
-        clippy::float_cmp,
-        reason = "zero is the value, not an approximation of it"
-    )]
     fn a_size_that_is_not_a_number_is_neutralised() {
         let mut base = style();
         base.size = f32::NAN;
@@ -2245,7 +2218,6 @@ mod tests {
     /// the call site a scene takes, where the rows above test `spacing_pixels`
     /// alone.
     #[test]
-    #[expect(clippy::float_cmp, reason = "`normal` resolves to exactly zero")]
     fn resolved_metrics_are_finite_whatever_the_style_asked_for() {
         let mut base = style();
         base.letter_spacing = Spacing::Points(f32::NAN);
@@ -2578,7 +2550,7 @@ mod tests {
             metrics,
         );
         assert_eq!(block.lines.len(), 3);
-        assert!(block.lines[1].runs.is_empty());
+        assert_eq!(block.lines[1].runs, []);
         // The empty line takes the node's own face rather than nothing, which
         // is what keeps a blank line as tall as a written one.
         assert!(block.lines[1].height > 0.0);
@@ -3103,7 +3075,7 @@ mod tests {
         // one empty line rather than one holding a space.
         let lines = wrap(&mut measurer, &base, &plain("   "), 1000.0, metrics);
         assert_eq!(lines.len(), 1);
-        assert!(lines[0].runs.is_empty());
+        assert_eq!(lines[0].runs, []);
     }
 
     #[test]

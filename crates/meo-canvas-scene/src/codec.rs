@@ -1356,7 +1356,7 @@ mod tests {
             CodecError::TrailingBytes { count: 6 }.to_string(),
         ];
         for message in &messages {
-            assert!(!message.is_empty());
+            assert_ne!(message, "");
         }
         assert!(messages[1].contains('2'));
         assert!(messages[2].contains("byte 4"));

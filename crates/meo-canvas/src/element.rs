@@ -1117,7 +1117,7 @@ mod tests {
         // to be a paragraph, so one empty run stands in for it.
         let segments = runs_of(Text::new("<b></b>"));
         assert_eq!(segments.len(), 1);
-        assert!(segments[0].text.is_empty());
+        assert_eq!(segments[0].text, "");
     }
 
     #[test]

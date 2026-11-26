@@ -606,8 +606,8 @@ mod tests {
     #[test]
     fn every_format_names_an_extension_a_name_and_a_media_type() {
         for format in ImageFormat::ALL {
-            assert!(!format.extension().is_empty());
-            assert!(!format.name().is_empty());
+            assert_ne!(format.extension(), "");
+            assert_ne!(format.name(), "");
             assert!(
                 format.media_type().contains('/'),
                 "{format} has no media type"

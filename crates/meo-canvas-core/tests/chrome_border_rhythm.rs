@@ -190,7 +190,7 @@ fn a_side_is_fitted_the_way_chrome_fits_it() {
         // and the runs sum to the side, which is what "both ends flush" means
         // arithmetically.
         let count = side.runs.iter().step_by(2).count() as f32;
-        let fitted = (side.length - count * dash) / (count - 1.0);
+        let fitted = count.mul_add(-dash, side.length) / (count - 1.0);
         assert!(
             (gap - fitted).abs() < 0.01 || side.runs.len() < 7,
             "a {}px side gaps {gap} where fitting {count} dashes wants \

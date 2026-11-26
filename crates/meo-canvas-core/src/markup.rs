@@ -663,8 +663,8 @@ mod tests {
         // And so does a string that is nothing but tags. A paragraph that must
         // exist is the caller's to supply; inventing an empty segment here
         // would put a run in the scene that nothing asked for.
-        assert!(parse("").is_empty());
-        assert!(parse("<b></b>").is_empty());
+        assert_eq!(parse(""), []);
+        assert_eq!(parse("<b></b>"), []);
     }
 
     #[test]

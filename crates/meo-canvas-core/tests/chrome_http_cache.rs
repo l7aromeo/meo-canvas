@@ -307,9 +307,7 @@ fn replay(row: &Row<'_>) -> (usize, String) {
             .unwrap_or_else(|error| unreachable!("{}: {error}", row.name));
         assert!(canvas.warnings().is_empty(), "{}", row.name);
     }
-    sent.lock()
-        .map(|log| (log.len(), log.join(" ")))
-        .unwrap_or_default()
+    sent.lock().map_or_default(|log| (log.len(), log.join(" ")))
 }
 
 #[test]

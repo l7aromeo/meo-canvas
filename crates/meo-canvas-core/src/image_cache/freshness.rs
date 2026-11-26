@@ -282,8 +282,8 @@ mod tests {
         for line in rows {
             let c: Vec<&str> = line.split('\t').collect();
             assert_eq!(c.len(), 15, "{line}");
-            let headers: Vec<(String, String)> = cell(c[6])
-                .map(|items| {
+            let headers: Vec<(String, String)> =
+                cell(c[6]).map_or_default(|items| {
                     items
                         .split(" | ")
                         .map(|item| {
@@ -294,8 +294,7 @@ mod tests {
                             (name.to_owned(), value.to_owned())
                         })
                         .collect()
-                })
-                .unwrap_or_default();
+                });
             let settings = Settings {
                 fallback_ttl: cell(c[4]).map(ms),
                 stale_if_error: cell(c[5]).map_or_else(

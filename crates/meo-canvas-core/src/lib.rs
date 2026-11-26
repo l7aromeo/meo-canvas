@@ -1294,10 +1294,10 @@ mod tests {
         let renderer = renderer();
         assert!(renderer.fonts().has(TEST_FAMILY));
         assert_eq!(renderer.fonts().registered(), vec![TEST_FAMILY.to_owned()]);
-        assert!(!format!("{renderer:?}").is_empty());
+        assert_ne!(format!("{renderer:?}"), "");
 
         let mut empty = Renderer::new();
-        assert!(empty.fonts().registered().is_empty());
+        assert_eq!(empty.fonts().registered(), Vec::<String>::new());
         assert!(empty.register_font("Broken", "/no/such/font.ttf").is_err());
     }
 
@@ -1415,7 +1415,7 @@ mod tests {
                 .to_buffer(ImageFormat::Png, &EncodeOptions::default())
                 .is_ok()
         );
-        assert!(!format!("{canvas:?}").is_empty());
+        assert_ne!(format!("{canvas:?}"), "");
     }
 }
 

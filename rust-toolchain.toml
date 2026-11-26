@@ -1,7 +1,7 @@
-# Pinned so a local build and CI apply the same clippy lints. `just fmt` uses
-# the pinned nightly by name for rustfmt's unstable options, which keeps the
-# build itself on stable.
+# Pinned so a local build and CI apply the same clippy lints; the oldest Rust
+# supported is `rust-version` in `Cargo.toml`, which `just msrv-check` builds.
+# `just fmt` uses the pinned nightly by name for rustfmt's unstable options.
 [toolchain]
-channel = "1.98.0"
+channel = "1.100.0"
 components = ["rustfmt", "clippy", "llvm-tools-preview"]
 profile = "minimal"

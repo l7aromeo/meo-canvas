@@ -681,7 +681,7 @@ mod tests {
         assert_eq!(PositionType::default(), PositionType::Static);
         assert_eq!(style.grid_auto_flow, GridAutoFlow::Row);
         assert_eq!(style.grid_column, GridPlacement::AUTO);
-        assert!(style.grid_template_rows.is_empty());
+        assert_eq!(style.grid_template_rows, []);
     }
 
     #[test]

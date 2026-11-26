@@ -129,7 +129,7 @@ fn root_image_cache_reuses_the_first_fetch() {
             )
             .render(&Renderer::new())
             .unwrap_or_else(|error| unreachable!("{error}"));
-        assert!(canvas.warnings().is_empty());
+        assert_eq!(canvas.warnings(), []);
     }
     assert_eq!(served.load(Ordering::SeqCst), 1);
     assert_eq!(cache.stats().hits, 1);

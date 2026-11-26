@@ -89,11 +89,6 @@ pub trait Sampled {
 }
 
 #[cfg(test)]
-#[expect(
-    clippy::float_cmp,
-    reason = "every expected value here is a whole number or a half, exact in \
-              binary, and the exact comparison is the assertion"
-)]
 mod tests {
     use super::Sampled;
     use crate::{

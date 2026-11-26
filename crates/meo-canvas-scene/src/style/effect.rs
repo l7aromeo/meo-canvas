@@ -235,8 +235,8 @@ mod tests {
     fn effects_default_to_nothing_applied() {
         let effects = Effects::default();
         assert!(effects.transform.is_none());
-        assert!(effects.box_shadows.is_empty());
-        assert!(effects.text_shadows.is_empty());
+        assert_eq!(effects.box_shadows, []);
+        assert_eq!(effects.text_shadows, []);
         assert!(effects.mask.is_none());
         assert!(effects.filter.is_none());
         assert!(effects.backdrop_filter.is_none());

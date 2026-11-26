@@ -295,6 +295,16 @@ jobs:
         shell: pwsh
         run: just threads-probe
 
+      # The oldest Rust `Cargo.toml` declares, once, on macOS, where Skia is
+      # prebuilt. After rust-cache restored, so the toolchain stays out of its key,
+      # and outside `target/`, so its artefacts stay out of the cache. See
+      # `just msrv-check`.
+      - name: Does the workspace still build on its declared Rust?
+        if: runner.os == 'macOS'
+        env:
+          MSRV_TARGET_DIR: ${{ runner.temp }}/msrv
+        run: just msrv-check
+
       # What a failing fixture wrote, `actual.png` and `diff.png` beside each,
       # so a pixel difference on a runner can be looked at rather than rerun.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

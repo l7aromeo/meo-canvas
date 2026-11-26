@@ -212,7 +212,7 @@ fn centroid(bytes: &[u8], line: usize, from: f32) -> f32 {
                 reason = "a column of a 140-pixel page"
             )]
             let column = x as f32 + 0.5;
-            moment += dark * column;
+            moment = f32::mul_add(dark, column, moment);
         }
     }
     moment / weight

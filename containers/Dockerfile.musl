@@ -35,7 +35,7 @@ ENV PKG_CONFIG_ALL_STATIC=1
 # against Alpine's musl, like every other target.
 ENV RUSTFLAGS="-C linker=g++ -C link-arg=-static-libstdc++ -C target-feature=-crt-static"
 
-ARG RUST=1.98.0
+ARG RUST=1.100.0
 RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "$RUST"
 ENV PATH="/root/.cargo/bin:${PATH}"
 
