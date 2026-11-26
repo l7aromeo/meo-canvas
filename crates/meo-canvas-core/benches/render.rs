@@ -190,10 +190,8 @@ fn large_scene() -> Scene {
             let copy = scene
                 .push(NodeId::ROOT, Node::container())
                 .unwrap_or_else(|error| unreachable!("{error}"));
-            let children: Vec<NodeId> = scene
-                .get(row)
-                .map(|node| node.children.clone())
-                .unwrap_or_default();
+            let children: Vec<NodeId> =
+                scene.get(row).map_or_default(|node| node.children.clone());
             for child in children {
                 let kind = scene
                     .get(child)

@@ -1548,7 +1548,7 @@ mod tests {
             unreachable!("expected text");
         };
         assert_eq!(segments.len(), 1);
-        assert!(segments[0].text.is_empty());
+        assert_eq!(segments[0].text, "");
     }
 
     #[test]
@@ -1853,7 +1853,7 @@ mod tests {
             ArenaError::TrailingSlots { count: 2 }.to_string(),
         ];
         for message in &messages {
-            assert!(!message.is_empty());
+            assert_ne!(message, "");
         }
         assert!(messages[2].contains("slot 4"));
         assert!(messages[7].contains("Length"));
@@ -1872,7 +1872,7 @@ mod tests {
         let one = Values::new(vec![SideValue::Text("x".to_owned())]);
         assert!(!one.is_empty());
         assert_eq!(one.len(), 1);
-        assert!(!format!("{one:?}").is_empty());
+        assert_ne!(format!("{one:?}"), "");
     }
 
     #[test]
@@ -2132,7 +2132,7 @@ mod tests {
                 },
             }
         );
-        assert!(gradient.stops.is_empty());
+        assert_eq!(gradient.stops, []);
     }
 
     /// The three image sources, split out for the line cap.

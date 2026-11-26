@@ -202,7 +202,7 @@ pub trait Measure {
     }
 }
 
-/// An `auto` axis of an image whose source did not decode: Chrome 158's
+/// An `auto` axis of an image whose source did not decode: Chrome 159's
 /// broken-image icon, 16px, for an `<img>` with no `alt` answering HTTP 522 or
 /// aborted (`failed-image.tsv`). With `alt=""` Chrome gives 0; an `Image` has
 /// no `alt`, so this is the box it matches.
@@ -874,7 +874,7 @@ mod tests {
             (Available::Definite(10.0), Available::MaxContent),
         );
         assert!(narrower.size.height >= first.size.height);
-        assert!(!format!("{measurer:?}").is_empty());
+        assert_ne!(format!("{measurer:?}"), "");
         assert_eq!(measurer.resolved().scene.len(), scene.len());
     }
 
@@ -1021,7 +1021,7 @@ mod tests {
         let sized = MeasuredLeaf::sized(Size::new(3.0, 4.0));
         assert_eq!(sized.size, Size::new(3.0, 4.0));
         assert!(sized.first_baseline.is_none());
-        assert!(!format!("{sized:?}").is_empty());
+        assert_ne!(format!("{sized:?}"), "");
     }
 
     #[test]
@@ -1042,7 +1042,7 @@ mod tests {
             AvailableKey::from(Available::MaxContent),
             AvailableKey::MaxContent
         );
-        assert!(!format!("{:?}", Available::MinContent).is_empty());
+        assert_ne!(format!("{:?}", Available::MinContent), "");
     }
 
     #[test]
@@ -1082,10 +1082,10 @@ mod tests {
         // The empty family is a request for any registered face, which the
         // backend spells as an empty list rather than a name.
         let anonymous = ResolvedText::initial();
-        assert!(
+        assert_eq!(
             super::skia_style(&anonymous, &ParagraphStyle::default(), &[])
-                .font_families
-                .is_empty()
+                .font_families,
+            []
         );
     }
     /// A `MaxContent` question is unconstrained, so a run that fits on one line

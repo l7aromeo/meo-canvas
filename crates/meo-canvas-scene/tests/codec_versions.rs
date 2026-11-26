@@ -26,7 +26,7 @@ fn a_version_10_scene_decodes_as_its_current_counterpart() {
         codec::decode(V10).unwrap_or_else(|error| unreachable!("{error}"));
     let current =
         codec::decode(CURRENT).unwrap_or_else(|error| unreachable!("{error}"));
-    assert!(old.fetched_images.is_empty());
+    assert_eq!(old.fetched_images, []);
     assert_eq!(old, current);
     // Written back, it is the current revision: nothing writes 10.
     assert_eq!(codec::encode(&old), CURRENT);

@@ -96,10 +96,6 @@ fn a_maximum_height_transfers_into_a_declared_width() {
 // width; if it stopped, the width would narrow again. Width alone: a replaced
 // leaf's height is floored at 133 here, as `taffy_leaf_ratio_floor.rs` pins.
 #[test]
-#[expect(
-    clippy::float_cmp,
-    reason = "taffy lays a declared length out as that length, exactly"
-)]
 fn a_stated_maximum_width_stops_the_transfer() {
     for case in WHERE {
         assert_eq!(
@@ -192,10 +188,6 @@ fn a_maximum_width_transfers_into_a_declared_height() {
 // on: a maximum height that is not `auto` stops the transfer, so the largest
 // one leaves the declared height; if it stopped, the height would shrink again.
 #[test]
-#[expect(
-    clippy::float_cmp,
-    reason = "taffy lays a declared length out as that length, exactly"
-)]
 fn a_stated_maximum_height_stops_the_transfer() {
     for case in TALL_WHERE {
         assert_eq!(

@@ -1959,7 +1959,7 @@ pub(crate) mod tests {
         // The empty family is what a node that named none resolves to, and it
         // always matches: Skia reads it as "any registered face".
         assert!(fonts.has(""));
-        assert!(!format!("{fonts:?}").is_empty());
+        assert_ne!(format!("{fonts:?}"), "");
     }
 
     #[test]
@@ -2072,7 +2072,7 @@ pub(crate) mod tests {
             .image(node)
             .unwrap_or_else(|| unreachable!("the body was not used"));
         assert_eq!(image.intrinsic_size(), Size::new(4.0, 2.0));
-        assert!(resolved.warnings().is_empty());
+        assert_eq!(resolved.warnings(), []);
     }
 
     /// The defect `l7aromeo/meo-canvas#240` reported: a fetched body that will
@@ -2188,7 +2188,7 @@ pub(crate) mod tests {
             .unwrap_or_else(|| unreachable!("the node is an image"));
         assert_eq!(image.intrinsic_size(), Size::new(4.0, 2.0));
         assert!(resolved.image(NodeId::ROOT).is_none());
-        assert!(!format!("{image:?}").is_empty());
+        assert_ne!(format!("{image:?}"), "");
     }
 
     /// The same 4x2 red PNG as a `data:` URI, base64 or percent-encoded, built
@@ -2591,11 +2591,11 @@ pub(crate) mod tests {
         assert_eq!(initial.weight, FontWeight::NORMAL);
         assert_eq!(initial.color, Color::BLACK);
         assert!(initial.line_height.is_none());
-        assert!(initial.font_variant.is_empty());
+        assert_eq!(initial.font_variant, []);
 
         // An overlay that sets nothing changes nothing.
         assert_eq!(initial.inherit(&TextStyle::default()), initial);
-        assert!(!format!("{initial:?}").is_empty());
+        assert_ne!(format!("{initial:?}"), "");
     }
 
     #[test]
@@ -2604,7 +2604,7 @@ pub(crate) mod tests {
         let resolved = Resolved::new(&scene, &Fonts::new())
             .unwrap_or_else(|error| unreachable!("{error}"));
         assert_eq!(resolved.scene.len(), 1);
-        assert!(!format!("{resolved:?}").is_empty());
+        assert_ne!(format!("{resolved:?}"), "");
     }
 
     fn image_node(source: ImageSource) -> Node {

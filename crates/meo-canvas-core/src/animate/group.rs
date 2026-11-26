@@ -258,14 +258,6 @@ impl<T: Animatable> Sampled for Parallel<T> {
 }
 
 #[cfg(test)]
-#[expect(
-    clippy::float_cmp,
-    reason = "every expected value here is exact in binary -- halves, \
-              quarters and the eighths `outCubic` lands on -- and each came \
-              from v9 through the JavaScript surface. The exact comparison is \
-              the assertion, as in `tests/animate_vectors.rs`; an epsilon \
-              would hide the disagreement these exist to find."
-)]
 mod tests {
     use super::{Member, Parallel};
     use crate::{

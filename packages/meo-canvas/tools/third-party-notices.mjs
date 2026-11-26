@@ -644,9 +644,13 @@ export function cargoAbout(manifest, args) {
   }
 }
 
-/** cargo-about's report for the addon on one target. */
+/**
+ * cargo-about's report for the addon on one target. The fetch takes every
+ * platform's packages, since cargo-about's `cargo metadata` reads them all
+ * whatever `--target` says.
+ */
 export function rustLicences(triple, features) {
-  run('cargo', ['fetch', '--locked', '--target', triple, '--manifest-path', NODE_CRATE])
+  run('cargo', ['fetch', '--locked', '--manifest-path', NODE_CRATE])
   const featureArgs = features === 'all' ? ['--all-features'] : features.length === 0 ? [] : ['--features', features.join(' ')]
   return cargoAbout(NODE_CRATE, ['--target', triple, ...featureArgs])
 }

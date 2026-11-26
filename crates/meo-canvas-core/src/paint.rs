@@ -725,7 +725,7 @@ fn participants(
         let key = if explicit {
             vec![own]
         } else {
-            let mut key = ancestry.clone();
+            let mut key = ancestry;
             key.push(own);
             key
         };
@@ -5239,7 +5239,7 @@ mod tests {
             .begin_page(Size::new(20.0, 10.0))
             .unwrap_or_else(|error| unreachable!("{error}"));
         assert_eq!(surface.page_count(), 3);
-        assert!(!format!("{surface:?}").is_empty());
+        assert_ne!(format!("{surface:?}"), "");
     }
 
     #[test]

@@ -88,7 +88,7 @@ mod tests {
 
     #[test]
     fn of_two_marks_the_opening_one_is_narrowed_and_otherwise_the_first() {
-        // Chrome 158's rows, `text-spacing-trim.tsv` has them all.
+        // Chrome 159's rows, `text-spacing-trim.tsv` has them all.
         for (text, chrome) in [
             ("漢「「漢", "「"),
             ("漢」」漢", "」"),

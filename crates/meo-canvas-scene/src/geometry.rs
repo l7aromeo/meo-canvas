@@ -236,7 +236,7 @@ mod tests {
             format!("{:?}", rect.origin),
             format!("{:?}", rect.size),
         ] {
-            assert!(!rendered.is_empty());
+            assert_ne!(rendered, "");
         }
 
         assert_eq!(sides.clone(), sides);

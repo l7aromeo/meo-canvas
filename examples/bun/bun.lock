@@ -8,32 +8,32 @@
         "meo-canvas": "file:../../packages/meo-canvas",
       },
       "devDependencies": {
-        "@types/bun": "^1.4.4",
+        "@types/bun": "^1.4.5",
       },
     },
   },
   "packages": {
-    "@meo-canvas/darwin-arm64": ["@meo-canvas/darwin-arm64@10.0.4", "", { "os": "darwin", "cpu": "arm64" }, "sha512-NxuOUS9K4fvKA/CIPrmoSt6jJkNskkcz/0cbcDK86DggYMldpehL4HXJ02M/bKrFWD7AE3o0jx3lopw6DYe4zQ=="],
+    "@meo-canvas/darwin-arm64": ["@meo-canvas/darwin-arm64@11.0.1", "", { "os": "darwin", "cpu": "arm64" }, "sha512-vrhJla80xMZntqIJg0VvwiEK9dLqqab6FPZQ/S2+wj+K3PDWjTWJNloNYHtanerNlREKhOo+uzY7+7q6Q6u4Ew=="],
 
-    "@meo-canvas/linux-arm64-gnu": ["@meo-canvas/linux-arm64-gnu@10.0.4", "", { "os": "linux", "cpu": "arm64", "libc": "glibc" }, "sha512-BjLd1mmHvz1IZUsX3Bbro6a9O7Chn3PQlBvq5oeS4XqZFkCHRGhvSy7fvNywI87lWRD9H5IOGyJYg5TyZlkqdg=="],
+    "@meo-canvas/linux-arm64-gnu": ["@meo-canvas/linux-arm64-gnu@11.0.1", "", { "os": "linux", "cpu": "arm64", "libc": "glibc" }, "sha512-H/ZOv+FG6/OVFxQAfRXRcqnWW60sudqvA8wSoMwEwTaP0v1m4s6WlvQx6QMg5z3JX5nwWAOkaZ97FiW4HG+21Q=="],
 
-    "@meo-canvas/linux-arm64-musl": ["@meo-canvas/linux-arm64-musl@10.0.4", "", { "os": "linux", "cpu": "arm64", "libc": "musl" }, "sha512-H9ssxgWQ+xSv9WdgBvlXDZbUaVc2EE5qfhY6M+Fx91DBrgAOes1DzIc4mum7RzjDBj4/zxrVt/30wUUxbWj8JA=="],
+    "@meo-canvas/linux-arm64-musl": ["@meo-canvas/linux-arm64-musl@11.0.1", "", { "os": "linux", "cpu": "arm64", "libc": "musl" }, "sha512-ZNk4wD9cDa4uSUxPMAExAcqsy5CH0FBPWDAUJB801MgYA1D/YMRdIk6WvpKSKJ0CxOrgQON9L9jPhxjs4MA75w=="],
 
-    "@meo-canvas/linux-x64-gnu": ["@meo-canvas/linux-x64-gnu@10.0.4", "", { "os": "linux", "cpu": "x64", "libc": "glibc" }, "sha512-IT8BQF0+OoCOgK0m8qPcSZ9kYidsGb8ZbH+5vFeCZNvAtm6PkVZSogLZ2l8oRqZml9ByJAclsDnUjGWQpT9Mxg=="],
+    "@meo-canvas/linux-x64-gnu": ["@meo-canvas/linux-x64-gnu@11.0.1", "", { "os": "linux", "cpu": "x64", "libc": "glibc" }, "sha512-HdFiICPDVR5osXepOZWFMbUfqRRrJYRiddR07XunoSTeUSMyjGRnsVBFvUCSmFLMbgPgyi6vZir9eiReDB6yUw=="],
 
-    "@meo-canvas/linux-x64-musl": ["@meo-canvas/linux-x64-musl@10.0.4", "", { "os": "linux", "cpu": "x64", "libc": "musl" }, "sha512-HPk9hun2vf1Qhno3+kB0ENvX3zo26YKuJLg2oPQVyWlWSqGrn7F3KptbvER58RokbLdJEOndK8CH4/udR0LVLg=="],
+    "@meo-canvas/linux-x64-musl": ["@meo-canvas/linux-x64-musl@11.0.1", "", { "os": "linux", "cpu": "x64", "libc": "musl" }, "sha512-Qqu2UC1Oce7pCkakAu7PZF/coHxtJ3YcOhjOtgp6EzWabLQxJyZttYVJd6t0NZPcOMzYldk+Gmh8Q43GQPsKxw=="],
 
-    "@meo-canvas/win32-arm64": ["@meo-canvas/win32-arm64@10.0.4", "", { "os": "win32", "cpu": "arm64" }, "sha512-F5hyDX2yXPeeu2iJ5aK7TWnomFR+mCoIuszniM3IJx3wdIL6ypavK2HZFr0XoVbGx89ghB9CBKr22Vj4nbIL/Q=="],
+    "@meo-canvas/win32-arm64": ["@meo-canvas/win32-arm64@11.0.1", "", { "os": "win32", "cpu": "arm64" }, "sha512-4iV4D4qEZyA7ZeiLqt3LYsF25SAu6E1EpTihFdgl6/+cwJGTvzPeouyfhax/Aqme9oV0QxoAl2dE8LEUa5SIZg=="],
 
-    "@meo-canvas/win32-x64": ["@meo-canvas/win32-x64@10.0.4", "", { "os": "win32", "cpu": "x64" }, "sha512-uwtNbMLv14kSwxHCLrcuDNHfASXMo5z9v6jInkQSLz0BHZPUIjWqI+8SsUcWB+YN0gBgiKOYwzTi8LmgJ3Db5g=="],
+    "@meo-canvas/win32-x64": ["@meo-canvas/win32-x64@11.0.1", "", { "os": "win32", "cpu": "x64" }, "sha512-pneGVexqrPrKGCagwPFm3hkJkrioA8Z0d2f31VCDKW6Ut/TKmgjI9WfVuRrXxe0Qhe8241gFaWpOb1Qgi6MiUQ=="],
 
-    "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
+    "@types/bun": ["@types/bun@1.4.5", "", { "dependencies": { "bun-types": "1.4.5" } }, "sha512-DpgwNI9z0L1S0gtb45QLCWgwCUcMLnsHYMJHQvpNj7erGiCGBvpggltAIeARrtobNMKMuy0UP7i56tKKgwFs/Q=="],
 
     "@types/node": ["@types/node@22.20.5", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-U2+DNr+wSjpsTS/wZGYHq7GcwfuSmKiKvoPvK22zwTlRhU91yOniN4qRR5KhIjvif7ysw/dz/hKmfDH0Ris4aA=="],
 
-    "bun-types": ["bun-types@1.4.4", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-yjrJh5oGX7mMPKGd19YXyIjmEuj4G4zNC30bs7PM9Az7NQ3ndF3j6hbeRdvJTRQEhJ/FYQwW0a2moweEi2hMxQ=="],
+    "bun-types": ["bun-types@1.4.5", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-ECHn+9dhL3wv0G6u0+7dQvrnaimXiRDxxerYBmhTaLyJEEuvTPWk2Fye3XIf5Y++JIIiHKfQw4Z7V5D8KuiXbg=="],
 
-    "meo-canvas": ["meo-canvas@file:../../packages/meo-canvas", { "dependencies": { "@types/node": "^22.20.5" }, "optionalDependencies": { "@meo-canvas/darwin-arm64": "10.0.4", "@meo-canvas/linux-arm64-gnu": "10.0.4", "@meo-canvas/linux-arm64-musl": "10.0.4", "@meo-canvas/linux-x64-gnu": "10.0.4", "@meo-canvas/linux-x64-musl": "10.0.4", "@meo-canvas/win32-arm64": "10.0.4", "@meo-canvas/win32-x64": "10.0.4" } }],
+    "meo-canvas": ["meo-canvas@file:../../packages/meo-canvas", { "dependencies": { "@types/node": "^22.20.5" }, "optionalDependencies": { "@meo-canvas/darwin-arm64": "11.0.1", "@meo-canvas/linux-arm64-gnu": "11.0.1", "@meo-canvas/linux-arm64-musl": "11.0.1", "@meo-canvas/linux-x64-gnu": "11.0.1", "@meo-canvas/linux-x64-musl": "11.0.1", "@meo-canvas/win32-arm64": "11.0.1", "@meo-canvas/win32-x64": "11.0.1" } }],
 
     "undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
   }

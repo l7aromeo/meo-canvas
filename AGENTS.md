@@ -178,6 +178,7 @@ recipe beside it too:
 | anything behind a `net` feature, or URL fetching     | `just net-check`                    | `ci.yml`, Linux only |
 | a dependency or the lockfile                         | `just audit`                        | `ci.yml`, Linux only |
 | how the addon loads, or a worker thread loading it   | `just threads-probe`                | `ci.yml`             |
+| `rust-version`, or code near the MSRV                | `just msrv-check`                   | `ci.yml`, macOS only |
 | what the package ships: `files`, `exports`, platform | `just verify-pack`                  | `release.yml` only   |
 | the Linux build: `containers/`, link flags           | `just abi-floor`, `just acceptance` | `release.yml` only   |
 

@@ -597,9 +597,9 @@ mod tests {
     #[test]
     fn a_scene_prints_and_clones() {
         let scene = Scene::new(Size::new(2.0, 3.0));
-        assert!(!format!("{scene:?}").is_empty());
+        assert_ne!(format!("{scene:?}"), "");
         assert_eq!(scene.clone(), scene);
-        assert!(!format!("{:?}", SceneError::TooManyNodes).is_empty());
+        assert_ne!(format!("{:?}", SceneError::TooManyNodes), "");
     }
     #[test]
     fn a_new_scene_has_exactly_one_page() {
@@ -696,7 +696,7 @@ mod tests {
             SceneError::MultipleParents(NodeId::new(4)).to_string(),
             SceneError::Unreachable(NodeId::new(5)).to_string(),
         ] {
-            assert!(!message.is_empty());
+            assert_ne!(message, "");
         }
         assert_eq!(
             SceneError::UnknownNode(NodeId::new(3)).to_string(),

@@ -567,7 +567,7 @@ mod tests {
         assert_eq!(node.kind, NodeKind::Box);
         assert_eq!(node.layout, LayoutStyle::default());
         assert_eq!(node.paint, PaintStyle::default());
-        assert!(node.children.is_empty());
+        assert_eq!(node.children, []);
         assert!(node.name.is_none());
     }
 
@@ -761,7 +761,7 @@ mod tests {
             format!("{:?}", LineJoin::Bevel),
             format!("{:?}", PathPaint::Solid(Color::BLACK.into())),
         ] {
-            assert!(!rendered.is_empty());
+            assert_ne!(rendered, "");
         }
         assert_eq!(node.clone(), node);
     }

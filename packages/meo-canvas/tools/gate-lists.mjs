@@ -98,7 +98,7 @@ for (const list of ['portable', 'native']) {
 // The platform-guarded recipes, named rather than counted since each is the only
 // coverage of what it covers, and the platform each needs in the matrix. `LABEL`
 // joins `runner.os`, which an `if:` spells, to the matrix's runner labels.
-const GUARDED = { audit: 'Linux', 'net-check': 'Linux', 'threads-probe': 'Windows' }
+const GUARDED = { audit: 'Linux', 'net-check': 'Linux', 'threads-probe': 'Windows', 'msrv-check': 'macOS' }
 const LABEL = { Linux: 'ubuntu', Windows: 'windows', macOS: 'macos' }
 
 const workflowLines = readFileSync(WORKFLOW, 'utf8')
@@ -172,8 +172,8 @@ if (problems.length > 0) {
       'And both halves must be invoked in `.github/workflows/ci.yml`. Deleting a job there leaves every other ' +
       'assertion above it true while its recipes stop running in CI -- including this check, which is in ' +
       '`portable`.\n\n' +
-      'The platform-guarded recipes are the same failure one level down: `audit`, `net-check` and ' +
-      '`threads-probe` each run on one platform, so removing that platform from the matrix stops the step ' +
+      'The platform-guarded recipes are the same failure one level down: `audit`, `net-check`, ' +
+      '`threads-probe` and `msrv-check` each run on one platform, so removing that platform from the matrix stops the step ' +
       'without failing anything. Put the platform back, or move the recipe to one the matrix still has.\n',
   )
   process.exit(1)

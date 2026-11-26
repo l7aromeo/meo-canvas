@@ -74,7 +74,7 @@ body:
     attributes:
       label: Node or Rust version
       description: '`node -v`, or `rustc --version`. Whichever surface you named above.'
-      placeholder: v22.11.0 / rustc 1.98.0
+      placeholder: v22.11.0 / rustc 1.100.0
     validations:
       required: true
 

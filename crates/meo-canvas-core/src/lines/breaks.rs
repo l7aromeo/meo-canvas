@@ -171,8 +171,8 @@ mod tests {
 
     #[test]
     fn neither_end_of_the_text_is_an_opportunity() {
-        assert!(opportunities("").is_empty());
-        assert!(opportunities("漢").is_empty());
+        assert_eq!(opportunities(""), Vec::<usize>::new());
+        assert_eq!(opportunities("漢"), Vec::<usize>::new());
         assert_eq!(opportunities("a "), Vec::<usize>::new());
     }
 }

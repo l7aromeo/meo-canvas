@@ -21,8 +21,9 @@ not need to read either to send a patch, but they are where the reasoning lives 
 
 ## Getting set up
 
-- **Rust** — the toolchain is pinned in `rust-toolchain.toml` (1.98.0 with `rustfmt`, `clippy` and
+- **Rust** — the toolchain is pinned in `rust-toolchain.toml` (1.100.0 with `rustfmt`, `clippy` and
   `llvm-tools-preview`). With `rustup` installed, it is fetched for you the first time you build.
+  The oldest Rust supported is `rust-version` in `Cargo.toml`, which `just msrv-check` builds.
 - **Node 22 or newer**, and **[bun](https://bun.sh)** — `bun.lock` is the lockfile and
   `packageManager` names the version. `npm` is used deliberately in two places (packing and the
   consumer-side install check) and nowhere else.

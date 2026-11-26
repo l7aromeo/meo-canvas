@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`: where `text-align: justify` puts a line's slack, at 16px with a 20px
-# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 159.0.8154.6, the chromium Playwright pins here.
 # line in a 120px block unless `css` says otherwise, from each character's client rect.
 # Written by packages/meo-canvas/tools/conformance/justify.mjs.
 #
@@ -62,7 +62,7 @@ line	Wide	"①①①①"	text-align-last:justify	0:0:34.672 0:34.656:34.688 0:69
 line	Wide	"a①a①a"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.5 0:110.984:9.016
 line	Wide	"㈱㈱㈱㈱"	text-align-last:justify	0:0:34.563 0:34.547:34.578 0:69.109:34.578 0:103.672:16.328
 line	Wide	"a㈱a㈱a"	text-align-last:justify	0:0:9.016 0:9:46.5 0:55.484:9.031 0:64.5:46.484 0:110.969:9.031
-line	Wide	"…………"	text-align-last:justify	0:0:16 0:16:16 0:32:16 0:48:16
+line	Wide	"…………"	text-align-last:justify	0:0:16.953 0:16.938:16.953 0:33.875:16.969 0:50.828:16.953
 line	Wide	"a…a…a"	text-align-last:justify	0:0:9.016 0:9:16.953 0:25.938:9.031 0:34.953:16.953 0:51.891:9.031
 line	Wide	"————"	text-align-last:justify	0:0:13.125 0:13.109:13.125 0:26.219:13.141 0:39.344:14.313
 line	Wide	"a—a—a"	text-align-last:justify	0:0:9.016 0:9:14.313 0:23.297:9.031 0:32.313:14.313 0:46.609:9.031

@@ -143,8 +143,7 @@ impl Origin {
     fn head(&self, n: usize) -> String {
         self.heads
             .lock()
-            .map(|heads| heads.get(n).cloned().unwrap_or_default())
-            .unwrap_or_default()
+            .map_or_default(|heads| heads.get(n).cloned().unwrap_or_default())
     }
 }
 
@@ -234,7 +233,7 @@ fn a_fresh_hit_makes_no_request() {
     for _ in 0..3 {
         let canvas = render(&url, &cache);
         assert!(canvas.warnings().is_empty(), "{:?}", canvas.warnings());
-        assert!(canvas.diagnostics().is_empty());
+        assert_eq!(canvas.diagnostics(), []);
     }
     assert_eq!(origin.requests(), 1);
     let stats = cache.stats();
@@ -359,7 +358,7 @@ fn an_entry_over_max_entry_bytes_is_not_stored_and_still_drawn() {
     let cache = ImageCache::new(store);
     let url = origin.url("/a.png");
     for _ in 0..2 {
-        assert!(render(&url, &cache).warnings().is_empty());
+        assert_eq!(render(&url, &cache).warnings(), []);
     }
     assert_eq!(origin.requests(), 2);
     assert_eq!(cache.stats().entries, 0);
@@ -606,7 +605,7 @@ fn a_disk_store_persists_across_two_instances() {
     };
     let _ = render(&url, &open());
     let again = open();
-    assert!(render(&url, &again).warnings().is_empty());
+    assert_eq!(render(&url, &again).warnings(), []);
     assert_eq!(origin.requests(), 1, "the second process found the file");
     assert_eq!(again.stats().hits, 1);
 }
@@ -684,7 +683,7 @@ fn a_clock_moved_back_revalidates_rather_than_serving_fresh() {
         .set(&ImageCache::key(&url, &HttpOptions::new()), &planted)
         .unwrap_or_else(|error| unreachable!("{error}"));
     let cache = ImageCache::new(Arc::clone(&store));
-    assert!(render(&url, &cache).warnings().is_empty());
+    assert_eq!(render(&url, &cache).warnings(), []);
     assert_eq!(origin.requests(), 1, "expired, so revalidated");
     assert_eq!(cache.stats().revalidated, 1);
 }
@@ -776,7 +775,7 @@ fn a_corrupt_entry_is_deleted_and_reported() {
     assert!(details(&canvas)[0].ends_with(
         "the image cache's entry is corrupt (bad magic), so it is deleted and the image fetched"
     ));
-    let deleted = store.deleted.lock().map(|d| d.clone()).unwrap_or_default();
+    let deleted = store.deleted.lock().map_or_default(|d| d.clone());
     assert_eq!(deleted, [ImageCache::key(&url, &HttpOptions::new())]);
 }
 
@@ -798,7 +797,7 @@ fn a_corrupt_disk_file_is_a_miss_and_is_replaced() {
         let _ = std::fs::write(listed.path(), b"garbage");
     }
     let canvas = render(&url, &cache);
-    assert!(canvas.warnings().is_empty());
+    assert_eq!(canvas.warnings(), []);
     assert_eq!(details(&canvas).len(), 1, "{:?}", details(&canvas));
     assert_eq!(origin.requests(), 2);
     let _ = render(&url, &cache);

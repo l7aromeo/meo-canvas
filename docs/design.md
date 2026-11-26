@@ -626,10 +626,15 @@ by construction, and the crate ships them together.
 | `thiserror`       | 2.0    | Error types.                                             |
 | `icu_segmenter`   | 2.4    | Line break opportunities, UAX 14 17. See `Cargo.toml`.   |
 | `foldhash`        | 0.2    | The text caches' hasher. See `Cargo.toml`.               |
-| `ureq`            | 3.5.1  | Remote images, behind the optional `net` feature.        |
+| `ureq`            | 3.5.2  | Remote images, behind the optional `net` feature.        |
 | `rustls-webpki`   | 0.103  | A floor, not a use -- see `Cargo.toml`. Under `net`.     |
 | `sha2`            | 0.11   | The disk image cache's names and checksums. Under `net`. |
 | `rayon`           | 1.11   | The addon's asynchronous encode. Not an async runtime.   |
+
+**taffy 0.16 is a pending major**, held at 0.15.1 for a change of its own: its
+block, flexbox and grid fixes move rendered bytes, so taking it means
+measuring every moved row against Chrome and checking which of the
+`[WORKAROUND]`s on taffy retire.
 
 **`patched-skia` is always on.** With it, `meo-skia-canvas` links the patched
 Skia its npm package draws with, downloaded from the archives the justfile's
@@ -643,7 +648,7 @@ changes it.
 
 | tool       |       |                                                                |
 | ---------- | ----- | -------------------------------------------------------------- |
-| bun        | 1.4.4 | Package manager and the JavaScript examples' runtime.          |
+| bun        | 1.4.5 | Package manager and the JavaScript examples' runtime.          |
 | typescript | 6.0.3 | Not 7, which neither typescript-eslint nor TypeDoc loads.      |
 | eslint     | 10    | typescript-eslint 8, `eslint-config-prettier` last.            |
 | prettier   | 3.10  | Whole tree; `.prettierignore` names the machine-written files. |
@@ -651,14 +656,14 @@ changes it.
 | typedoc    | 0.28  | Its own package, so it pins the TypeScript it loads.           |
 | playwright | 1.65  | Drives Chrome for the conformance tables.                      |
 
-**The root forces minimatch to 11** through `overrides` in `package.json`, for
-GHSA-g3hv-75wg-m249, a denial of service fixed in 11.0.1. eslint,
-`@eslint/config-array` and `@typescript-eslint/typescript-estree` each declare
-`^10`, and ESLint lints the same files with the same results under 11. The
-override goes once all three accept 11 themselves, which
-`just override-probes` reports by failing. The reference tool stays on 10:
-TypeDoc 0.28.20 calls `Minimatch#matchOne`, which 11 makes private, so its
-`bun audit` reports the advisory until TypeDoc accepts 11.
+**The reference tool resolves minimatch 10**, which GHSA-g3hv-75wg-m249, a
+denial of service fixed in 11.0.1, covers: TypeDoc 0.28.20 declares `^10.2.5`
+and calls `Minimatch#matchOne`, which 11 makes private, so its `bun audit`
+reports the advisory until TypeDoc accepts 11. The root resolves 11 with no
+override, since eslint, `@eslint/config-array` and
+`@typescript-eslint/typescript-estree` all declare it. A root `overrides` entry
+is checked by `just override-probes`, which fails once its dependents accept
+the forced major themselves.
 
 **`taffy::TaffyTree` is neither `Send` nor `Sync`**: taffy represents every
 length as a tagged pointer, so `Style` itself holds a `*const ()`. A tree is

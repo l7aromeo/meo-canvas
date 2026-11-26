@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`: how many lines a box a pixel either side of a line breaks into.
-# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 159.0.8154.6, the chromium Playwright pins here.
 # Text is 20px Fixture, line-height 1.2; "paragraph" is "one two three four five six seven eight".
 # A stated width is a block at `left`; `auto` is a flex row item as wide as its content,
 # or with `column` as its holder an item stretched across a 157px flex column.

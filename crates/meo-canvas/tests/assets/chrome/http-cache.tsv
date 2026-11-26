@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`: what its HTTP cache does with an image's response headers.
-# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 159.0.8154.6, the chromium Playwright pins here.
 # Each row loads one <img> `loads` times, each in a new page of one context, so the HTTP cache answers rather than
 # a document's memory cache. `responses` are the origin's answers to successive requests, ` || ` between them and
 # ` | ` between a status and its headers; `@-90` is the HTTP-date 90 s before the request arrived, `@0` its arrival,

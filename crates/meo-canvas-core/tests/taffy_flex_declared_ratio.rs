@@ -130,10 +130,6 @@ fn a_shrunk_item_keeps_the_height_of_its_declared_width() {
 // ratio, and no flexing keeps them. If either stopped, the pins would no
 // longer hold the sizes Chrome gives.
 #[test]
-#[expect(
-    clippy::float_cmp,
-    reason = "taffy lays a whole length out as that length, exactly"
-)]
 fn a_minimum_and_two_pinned_sizes_hold() {
     assert_eq!(
         laid_out(declared(LengthPercentageAuto::length(ART.0))).0,

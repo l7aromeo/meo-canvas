@@ -438,7 +438,7 @@ fn the_gradient_under_the_blends_is_the_analytic_ramp() {
         )]
         let along = ((*x + step) as f64 + 0.5) / f64::from(CELL.0);
         let want = [0, 1, 2].map(|channel| {
-            let (from, to) = (STOPS[0], STOPS[1]);
+            let [from, to] = STOPS;
             let (from, to) = match channel {
                 0 => (from.0, to.0),
                 1 => (from.1, to.1),

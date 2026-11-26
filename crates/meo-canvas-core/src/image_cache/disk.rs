@@ -803,16 +803,15 @@ mod tests {
     }
 
     fn names(dir: &Path) -> Vec<String> {
-        let mut names: Vec<String> = fs::read_dir(dir)
-            .map(|listing| {
+        let mut names: Vec<String> =
+            fs::read_dir(dir).map_or_default(|listing| {
                 listing
                     .filter_map(Result::ok)
                     .map(|listed| {
                         listed.file_name().to_string_lossy().into_owned()
                     })
                     .collect()
-            })
-            .unwrap_or_default();
+            });
         names.sort();
         names
     }

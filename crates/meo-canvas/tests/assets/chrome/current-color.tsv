@@ -1,5 +1,5 @@
 # Chrome, through `just conformance`. What `currentColor` paints as, per property.
-# Measured on Chrome Headless Shell 158.0.8127.18, the chromium Playwright pins here.
+# Measured on Chrome Headless Shell 159.0.8154.6, the chromium Playwright pins here.
 # Written by packages/meo-canvas/tools/conformance/currentcolor.mjs.
 #
 # A 24px div at (10, 10) on a white 48px page, inside a parent. In context `own`

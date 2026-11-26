@@ -140,7 +140,7 @@ mod tests {
             format!("{:?}", Dimension::Points(1.0)),
             format!("{:?}", PaintOrder::Stroke),
         ] {
-            assert!(!rendered.is_empty());
+            assert_ne!(rendered, "");
         }
 
         let mut hasher = DefaultHasher::new();
