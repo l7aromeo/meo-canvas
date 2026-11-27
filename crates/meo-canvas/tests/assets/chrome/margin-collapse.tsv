@@ -1,0 +1,70 @@
+# Chrome, through `just conformance`. A block whose first child collapses through.
+# Measured on Chrome Headless Shell 159.0.8154.6, the chromium Playwright pins here.
+#
+# A 50px-wide root at the origin holds the block, then a 10px sibling. The block
+# holds an empty first child with the margins named, then nothing or a 10px box,
+# and has the edges named, each 10px. `top` and `height` are the block's border
+# box and `next` the sibling's top, relative to the root, from `getBoundingClientRect`.
+# Written by packages/meo-canvas/tools/conformance/margincollapse.mjs.
+#
+# edges	margin-top	margin-bottom	after	top	height	next
+none	10	10	none	10	0	10
+none	10	10	box	10	10	20
+none	10	0	none	10	0	10
+none	10	0	box	10	10	20
+none	0	10	none	10	0	10
+none	0	10	box	10	10	20
+none	10	20	none	20	0	20
+none	10	20	box	20	10	30
+none	20	10	none	20	0	20
+none	20	10	box	20	10	30
+border-bottom	10	10	none	10	10	20
+border-bottom	10	10	box	10	20	30
+border-bottom	10	0	none	10	10	20
+border-bottom	10	0	box	10	20	30
+border-bottom	0	10	none	10	10	20
+border-bottom	0	10	box	10	20	30
+border-bottom	10	20	none	20	10	30
+border-bottom	10	20	box	20	20	40
+border-bottom	20	10	none	20	10	30
+border-bottom	20	10	box	20	20	40
+padding-bottom	10	10	none	10	10	20
+padding-bottom	10	10	box	10	20	30
+padding-bottom	10	0	none	10	10	20
+padding-bottom	10	0	box	10	20	30
+padding-bottom	0	10	none	10	10	20
+padding-bottom	0	10	box	10	20	30
+padding-bottom	10	20	none	20	10	30
+padding-bottom	10	20	box	20	20	40
+padding-bottom	20	10	none	20	10	30
+padding-bottom	20	10	box	20	20	40
+border-top	10	10	none	0	10	20
+border-top	10	10	box	0	30	30
+border-top	10	0	none	0	10	20
+border-top	10	0	box	0	30	30
+border-top	0	10	none	0	10	20
+border-top	0	10	box	0	30	30
+border-top	10	20	none	0	10	30
+border-top	10	20	box	0	40	40
+border-top	20	10	none	0	10	30
+border-top	20	10	box	0	40	40
+padding-top	10	10	none	0	10	20
+padding-top	10	10	box	0	30	30
+padding-top	10	0	none	0	10	20
+padding-top	10	0	box	0	30	30
+padding-top	0	10	none	0	10	20
+padding-top	0	10	box	0	30	30
+padding-top	10	20	none	0	10	30
+padding-top	10	20	box	0	40	40
+padding-top	20	10	none	0	10	30
+padding-top	20	10	box	0	40	40
+border-both	10	10	none	0	30	30
+border-both	10	10	box	0	40	40
+border-both	10	0	none	0	30	30
+border-both	10	0	box	0	40	40
+border-both	0	10	none	0	30	30
+border-both	0	10	box	0	40	40
+border-both	10	20	none	0	40	40
+border-both	10	20	box	0	50	50
+border-both	20	10	none	0	40	40
+border-both	20	10	box	0	50	50

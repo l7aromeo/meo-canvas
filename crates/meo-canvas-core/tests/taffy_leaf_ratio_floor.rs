@@ -1,4 +1,4 @@
-//! Pins an inherited taffy defect, taffy 0.15.1 `src/compute/leaf.rs`: a
+//! Pins an inherited taffy defect, taffy 0.16.0 `src/compute/leaf.rs`: a
 //! block-flow leaf with an `aspect_ratio` is floored at `width / ratio` after
 //! its sizes apply, 333x167 for a declared 333x150 or under `max-height: 150`,
 //! where Chrome gives 333x150. Asserts taffy's numbers, so a fix fails here and

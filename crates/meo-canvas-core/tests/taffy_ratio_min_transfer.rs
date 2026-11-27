@@ -1,4 +1,4 @@
-//! Pins an inherited taffy defect, taffy 0.15.1: a minimum height transfers
+//! Pins an inherited taffy defect, taffy 0.16.0: a minimum height transfers
 //! through an `aspect_ratio` into a minimum width even where the width is
 //! declared, 240x160 for a declared 200 under `min-height: 160` at 3:2, in
 //! block flow, as a flex item and out of flow, where Chrome gives 200x160.

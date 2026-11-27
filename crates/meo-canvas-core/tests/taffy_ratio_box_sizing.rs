@@ -1,4 +1,4 @@
-//! Pins two inherited taffy defects, taffy 0.15.1, for a picture with
+//! Pins two inherited taffy defects, taffy 0.16.0, for a picture with
 //! padding, whose own ratio CSS applies to its content box. `src/compute/
 //! leaf.rs` hands the measure function a known size as the border box, so
 //! 60x40 art with 10px of padding stretched in a flex row is measured 80 wide

@@ -1,0 +1,17 @@
+# Chrome, through `just conformance`. Baseline-aligned grid items and the row they share.
+# Measured on Chrome Headless Shell 159.0.8154.6, the chromium Playwright pins here.
+#
+# A 100px-wide grid at the origin, columns `50px 50px`, one row of the track named,
+# `align-items: baseline`. Each item is `display: grid` holding a 25x25 box: the
+# first with `padding-top: 25px`, the second with `padding-bottom: 25px` and the
+# `margin-top` named, so its baseline is shimmed down to the first's. `height` is
+# the grid's; the items' border boxes are relative to it, from `getBoundingClientRect`.
+# Written by packages/meo-canvas/tools/conformance/gridbaselineshim.mjs.
+#
+# track	margin-top	height	a-x	a-y	a-w	a-h	b-x	b-y	b-w	b-h
+auto	0	75	0	0	50	50	50	25	50	50
+auto	10	75	0	0	50	50	50	25	50	50
+60px	0	60	0	0	50	50	50	25	50	50
+60px	10	60	0	0	50	50	50	25	50	50
+30px	0	30	0	0	50	50	50	25	50	50
+30px	10	30	0	0	50	50	50	25	50	50

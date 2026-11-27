@@ -4,11 +4,11 @@
 //! The taffy tree is built here, used here and dropped here. It never appears
 //! in a public signature and never crosses a thread, because it cannot: every
 //! length taffy stores is a tagged `*const ()`
-//! (`taffy-0.15.1/src/style/compact_length.rs:76`), which makes `taffy::Style`,
-//! and therefore `TaffyTree`, `!Send` and `!Sync` regardless of feature
-//! selection -- a build with `calc` removed fails `assert_send` identically.
-//! Confining the tree to one function is what keeps that fact from spreading
-//! into the rest of the workspace.
+//! (`taffy-0.16.0/src/style/compact_length.rs:102`), which makes
+//! `taffy::Style`, and therefore `TaffyTree`, `!Send` and `!Sync` regardless of
+//! feature selection -- a build with `calc` removed fails `assert_send`
+//! identically. Confining the tree to one function is what keeps that fact from
+//! spreading into the rest of the workspace.
 //!
 //! Output rectangles are absolute rather than parent-relative. taffy rounds on
 //! cumulative viewport coordinates, rounding each edge and taking the
@@ -507,7 +507,9 @@ where
         &directions,
         &mut rects,
     );
-    bottom_align_reversed_wraps(scene, page, &insets, &mut rects);
+    pack_space_between_at_flex_start(
+        &tree, root, &to_scene, &insets, &mut rects,
+    );
 
     Ok(LayoutResult {
         rects,
@@ -559,7 +561,7 @@ struct GroupMember {
 
 /// Aligns a grid column's `baseline` and `last baseline` items on their border
 /// boxes' left edges, at its start or end (`chrome_justify_baseline`). taffy
-/// 0.15 places `Baseline` at the start in the inline axis and has no `last
+/// 0.16 places `Baseline` at the start in the inline axis and has no `last
 /// baseline`; re-check against that test when upgrading it.
 fn align_grid_baselines(
     scene: &Scene,
@@ -651,28 +653,36 @@ fn align_grid_baselines(
             for member in members {
                 let shift = (baseline - member.x).round();
                 if shift != 0.0 {
-                    shift_subtree(tree, member.node, to_scene, rects, shift);
+                    shift_subtree(
+                        tree,
+                        member.node,
+                        to_scene,
+                        rects,
+                        taffy::Point { x: shift, y: 0.0 },
+                    );
                 }
             }
         }
     }
 }
 
-/// Moves a taffy node and everything positioned against it `shift` along x,
-/// since the rectangles are absolute.
+/// Moves a taffy node and everything positioned against it by `shift`, since
+/// the rectangles are absolute. The taffy tree holds each out-of-flow box under
+/// its containing block, so one placed against an ancestor stays put.
 fn shift_subtree(
     tree: &taffy::TaffyTree<NodeId>,
     node: taffy::NodeId,
     to_scene: &HashMap<taffy::NodeId, NodeId>,
     rects: &mut HashMap<NodeId, Rect>,
-    shift: f32,
+    shift: taffy::Point<f32>,
 ) {
     let mut pending = vec![node];
     while let Some(moving) = pending.pop() {
         if let Some(rect) =
             to_scene.get(&moving).and_then(|id| rects.get_mut(id))
         {
-            rect.origin.x += shift;
+            rect.origin.x += shift.x;
+            rect.origin.y += shift.y;
         }
         if let Ok(children) = tree.children(moving) {
             pending.extend(children);
@@ -680,75 +690,152 @@ fn shift_subtree(
     }
 }
 
-/// Moves an overflowing `wrap-reverse` line stack to the bottom of its box, as
-/// Chrome does: taffy packs it from the top once it overflows, css-align-3's
-/// safe fallback, so six 28x44 children in 88x56 sit at 0 and 44, not -32 and
-/// 12. Only in-flow children move.
-fn bottom_align_reversed_wraps(
-    scene: &Scene,
-    page: NodeId,
+/// How far a packed edge may sit from the content edge it was packed against:
+/// both are whole pixels, each rounded from an unrounded edge by up to half.
+const PACKED_TOLERANCE: f32 = 1.0;
+
+// [WORKAROUND] taffy packs an overflowing `space-between` at `start`, Chrome
+// at `flex-start`, the far edge in a reversed axis: deliberate upstream,
+// DioxusLabs/taffy#1363. `l7aromeo/meo-canvas#272`; retires when this fails:
+// `crates/meo-canvas-core/tests/taffy_space_between_fallback.rs`.
+/// Moves each overflowing `space-between` group in a reversed axis to the
+/// `flex-start` edge (`flex-overflow.tsv`): a `wrap-reverse` line stack, a
+/// reversed run unwrapped, and wrapped each item wider than the content box,
+/// which is alone on its line, so the lines that fit stay distributed.
+fn pack_space_between_at_flex_start(
+    tree: &taffy::TaffyTree<NodeId>,
+    root: taffy::NodeId,
+    to_scene: &HashMap<taffy::NodeId, NodeId>,
     insets: &HashMap<NodeId, Sides<f32>>,
     rects: &mut HashMap<NodeId, Rect>,
 ) {
-    let mut pending = vec![page];
-    while let Some(id) = pending.pop() {
-        let Some(node) = scene.get(id) else { continue };
-        pending.extend(node.children.iter().copied());
-
-        if !matches!(node.layout.flex_wrap, FlexWrap::WrapReverse)
-            || !matches!(node.layout.display, Display::Flex)
-        {
-            continue;
-        }
-        let Some(rect) = rects.get(&id).copied() else {
+    let mut pending = vec![root];
+    while let Some(container) = pending.pop() {
+        let Ok(children) = tree.children(container) else {
             continue;
         };
-
-        let flow: Vec<NodeId> = node
-            .children
+        pending.extend(children.iter().copied());
+        let Ok(style) = tree.style(container) else {
+            continue;
+        };
+        if style.display != taffy::Display::Flex {
+            continue;
+        }
+        let Some((rect, inset)) = to_scene
+            .get(&container)
+            .and_then(|id| Some((*rects.get(id)?, *insets.get(id)?)))
+        else {
+            continue;
+        };
+        let flow: Vec<taffy::NodeId> = children
             .iter()
             .copied()
             .filter(|child| {
-                scene.get(*child).is_some_and(|child| {
-                    matches!(
-                        child.layout.position_type,
-                        PositionType::Static
-                            | PositionType::Relative
-                            | PositionType::Sticky
-                    )
+                tree.style(*child).is_ok_and(|child| {
+                    child.position != taffy::Position::Absolute
                 })
             })
             .collect();
-        let bottom = flow
-            .iter()
-            .filter_map(|child| rects.get(child))
-            .map(Rect::bottom)
-            .fold(f32::NEG_INFINITY, f32::max);
-
-        // The content box's own bottom, read from [`collect`]'s insets: the
-        // edges taffy reserved, where a re-derivation resolved a percentage
-        // against the wrong box. A node with no entry has no rectangle either,
-        // and returned above.
-        let Some(inset) = insets.get(&id).map(|sides| sides.bottom) else {
-            continue;
+        let horizontal = matches!(
+            style.flex_direction,
+            taffy::FlexDirection::Row | taffy::FlexDirection::RowReverse
+        );
+        let content = |main: bool| {
+            if main == horizontal {
+                (rect.origin.x + inset.left, rect.right() - inset.right)
+            } else {
+                (rect.origin.y + inset.top, rect.bottom() - inset.bottom)
+            }
         };
-        let content_bottom = rect.bottom() - inset;
-        let shift = content_bottom - bottom;
-        if shift >= 0.0 {
-            continue;
-        }
 
-        // Every in-flow child, and everything inside it, since the rectangles
-        // are absolute.
-        let mut subtree: Vec<NodeId> = flow;
-        while let Some(moving) = subtree.pop() {
-            if let Some(rect) = rects.get_mut(&moving) {
-                rect.origin.y += shift;
-            }
-            if let Some(node) = scene.get(moving) {
-                subtree.extend(node.children.iter().copied());
+        if style.flex_wrap == taffy::FlexWrap::WrapReverse
+            && style.align_content == taffy::AlignContent::SPACE_BETWEEN
+        {
+            mirror_overflow(
+                tree,
+                &flow,
+                content(false),
+                !horizontal,
+                to_scene,
+                rects,
+            );
+        }
+        let reversed = matches!(
+            style.flex_direction,
+            taffy::FlexDirection::RowReverse
+                | taffy::FlexDirection::ColumnReverse
+        );
+        if reversed
+            && style.justify_content == taffy::JustifyContent::SPACE_BETWEEN
+        {
+            if style.flex_wrap == taffy::FlexWrap::NoWrap {
+                mirror_overflow(
+                    tree,
+                    &flow,
+                    content(true),
+                    horizontal,
+                    to_scene,
+                    rects,
+                );
+            } else {
+                for item in &flow {
+                    mirror_overflow(
+                        tree,
+                        std::slice::from_ref(item),
+                        content(true),
+                        horizontal,
+                        to_scene,
+                        rects,
+                    );
+                }
             }
         }
+    }
+}
+
+// [WORKAROUND] the move `pack_space_between_at_flex_start` makes, which names
+// the defect and its probe.
+/// Moves `group` to the opposite edge of `content` along x if `horizontal`,
+/// else y, when its margin boxes overflow it and sit packed against one edge,
+/// as taffy's `start` leaves them; a group that fits, or sits elsewhere, stays.
+fn mirror_overflow(
+    tree: &taffy::TaffyTree<NodeId>,
+    group: &[taffy::NodeId],
+    (start, end): (f32, f32),
+    horizontal: bool,
+    to_scene: &HashMap<taffy::NodeId, NodeId>,
+    rects: &mut HashMap<NodeId, Rect>,
+) {
+    let span = group
+        .iter()
+        .filter_map(|node| {
+            let rect = to_scene.get(node).and_then(|id| rects.get(id))?;
+            let margin = tree.layout(*node).ok()?.margin;
+            Some(if horizontal {
+                (rect.origin.x - margin.left, rect.right() + margin.right)
+            } else {
+                (rect.origin.y - margin.top, rect.bottom() + margin.bottom)
+            })
+        })
+        .reduce(|(low, high), (from, to)| (low.min(from), high.max(to)));
+    let Some((low, high)) = span else { return };
+    if high - low <= end - start + PACKED_TOLERANCE {
+        return;
+    }
+    let shift = if (low - start).abs() <= PACKED_TOLERANCE {
+        end - high
+    } else if (high - end).abs() <= PACKED_TOLERANCE {
+        start - low
+    } else {
+        return;
+    };
+    let shift = if horizontal {
+        taffy::Point { x: shift, y: 0.0 }
+    } else {
+        taffy::Point { x: 0.0, y: shift }
+    };
+    for node in group {
+        shift_subtree(tree, *node, to_scene, rects, shift);
     }
 }
 
@@ -943,7 +1030,7 @@ fn ratio_settles_it(node: &meo_canvas_scene::node::Node) -> bool {
 /// `FINITE_CEILING`, as `l7aromeo/meo-canvas#142` records.
 const DERIVED_TOLERANCE: f32 = 0.01;
 
-// [WORKAROUND] taffy 0.15.1 `src/compute/leaf.rs` floors a leaf's height at
+// [WORKAROUND] taffy 0.16.0 `src/compute/leaf.rs` floors a leaf's height at
 // `width / ratio` even when it is declared, 333x167 for a declared 333x150 in
 // block flow; a ratio has no say once both sizes are, so none is passed.
 // `l7aromeo/meo-canvas#189`; retires when `taffy_leaf_ratio_floor.rs` fails.
@@ -1108,7 +1195,7 @@ where
                 return taffy::Size::ZERO;
             };
 
-            // [WORKAROUND] taffy 0.15.1 `src/compute/leaf.rs` passes a known
+            // [WORKAROUND] taffy 0.16.0 `src/compute/leaf.rs` passes a known
             // size as the border box, so it is narrowed as the space is: 60x40
             // art 80 wide with 10px of padding was 80x73, Chrome 80x60. Probed
             // by `crates/meo-canvas-core/tests/taffy_ratio_box_sizing.rs`.
@@ -1510,7 +1597,7 @@ where
     )
 }
 
-// [WORKAROUND] taffy 0.15.1 `src/compute/flexbox.rs` measures a stretched
+// [WORKAROUND] taffy 0.16.0 `src/compute/flexbox.rs` measures a stretched
 // item in a row of indefinite height at its maximum height, or one its maximum
 // width transfers: 60x40 art under `max-height: 60` is 90x60, Chrome 60x40.
 // `l7aromeo/meo-canvas#197`, probed by
@@ -1651,7 +1738,7 @@ fn natural_basis(
     Ok(Some((natural + outside.width, minimum)))
 }
 
-// [WORKAROUND] taffy 0.15.1 applies an `aspect_ratio` to the box `box_sizing`
+// [WORKAROUND] taffy 0.16.0 applies an `aspect_ratio` to the box `box_sizing`
 // names, the border box under `border-box`, where CSS applies a picture's own
 // ratio to its content box: 60x40 art declared 100 wide with 10px of padding
 // is 100x67, Chrome 100x73.33. `l7aromeo/meo-canvas#217`, probed by
@@ -1859,7 +1946,7 @@ fn content_bound(
         .map(|length| (length - outside).max(0.0))
 }
 
-// [WORKAROUND] taffy 0.15.1 `src/compute/flexbox.rs` measures the automatic
+// [WORKAROUND] taffy 0.16.0 `src/compute/flexbox.rs` measures the automatic
 // minimum of a flex item with a ratio and a declared main size at the cross
 // size that size gives, so it is that size: 60x40 art declared 300 wide stays
 // 300 in a 200 row, Chrome 200. `l7aromeo/meo-canvas#196`, probed by
@@ -1987,7 +2074,7 @@ fn automatic_minimum(
     Ok(Some((row, minimum.max(0.0) + main_out)))
 }
 
-// [WORKAROUND] taffy 0.15.1 `src/compute/flexbox.rs` keeps the cross size a
+// [WORKAROUND] taffy 0.16.0 `src/compute/flexbox.rs` keeps the cross size a
 // flex item's declared main size gives through its ratio once it is flexed:
 // 60x40 art declared 300 wide is 200x200 shrunk to a 200 row, Chrome
 // 200x133.33. `l7aromeo/meo-canvas#196`, probed by
@@ -2108,7 +2195,7 @@ fn flexed_size(
     }))
 }
 
-// [WORKAROUND] taffy 0.15.1 `src/compute/leaf.rs` bounds a leaf's ratio by
+// [WORKAROUND] taffy 0.16.0 `src/compute/leaf.rs` bounds a leaf's ratio by
 // its minimum alone: 60x40 art is 60x40 under `max-height: 20`, 30x40 under
 // `max-width: 30`, Chrome 30x20. `l7aromeo/meo-canvas#198`, probed by
 // `crates/meo-canvas-core/tests/taffy_leaf_ratio_bounds.rs`.
@@ -2280,7 +2367,7 @@ fn natural_bounded(
     taffy::Size { width, height }
 }
 
-// [WORKAROUND] taffy 0.15.1 `src/compute/leaf.rs` floors a leaf's height at
+// [WORKAROUND] taffy 0.16.0 `src/compute/leaf.rs` floors a leaf's height at
 // `width / ratio` after its min and max apply, so a maximum below that is lost
 // as a declared height is, 200x133 under `max-height: 60`.
 // `l7aromeo/meo-canvas#189`; retires when `taffy_leaf_ratio_floor.rs` fails.
@@ -2364,7 +2451,7 @@ where
     solve_once(tree, root, available, measure, baselines)
 }
 
-// [WORKAROUND] taffy 0.15.1 transfers a minimum height through the ratio into
+// [WORKAROUND] taffy 0.16.0 transfers a minimum height through the ratio into
 // a minimum width over a declared one: 240x160 for 200 wide under a minimum of
 // 160 at 3:2, in block, flex or out of flow. `l7aromeo/meo-canvas#192`, probed
 // by `crates/meo-canvas-core/tests/taffy_ratio_min_transfer.rs`.
@@ -2890,7 +2977,7 @@ const fn drop_indefinite_percentages(
     }
 }
 
-// [WORKAROUND] taffy 0.15.1 carries a maximum through the ratio onto a declared
+// [WORKAROUND] taffy 0.16.0 carries a maximum through the ratio onto a declared
 // other axis: 90x60 for 200 wide under `max-height: 60` at 3:2, and 50x33 for
 // 60 tall under `max-width: 50`. `l7aromeo/meo-canvas#193` and
 // `l7aromeo/meo-canvas#129`; probed in `taffy_ratio_max_transfer.rs`.
@@ -4888,7 +4975,7 @@ mod tests {
         // Six 28x44 children in an 88x56 box: three fit across, so two lines
         // of 44 in a box of 56. Chrome puts the last line's bottom on the
         // box's bottom edge and lets the first hang off the top -- y = 12 and
-        // -32 -- where taffy packs the pair from y = 0.
+        // -32 -- as taffy does, falling back from `normal` to `flex-start`.
         let placed = |wrap: FlexWrap, height: f32| {
             // A page far larger than the box, so a line placed above it is
             // still measured rather than cropped: the page a thing is
@@ -4898,8 +4985,7 @@ mod tests {
             outer.layout.size =
                 (Dimension::Points(88.0), Dimension::Points(height));
             // A wrap is a flex concept and the scene's default is `block`, so
-            // the container says flex; otherwise `bottom_align_reversed_wraps`
-            // is never reached.
+            // the container says flex; otherwise nothing wraps.
             outer.layout.display = Display::Flex;
             outer.layout.flex_wrap = wrap;
             let outer = scene
@@ -4932,9 +5018,8 @@ mod tests {
             vec![12, 12, 12, -32, -32, -32],
             "an overflowing reversed stack sits on the bottom edge"
         );
-        // Unreversed, and reversed where the lines fit, are taffy's and stay
-        // taffy's: the correction applies only where the safe fallback threw
-        // the reversal away.
+        // Unreversed, the stack starts at the top; reversed where the lines
+        // fit, it sits on the bottom edge.
         assert_eq!(placed(FlexWrap::Wrap, 56.0), vec![0, 0, 0, 44, 44, 44]);
         assert_eq!(
             placed(FlexWrap::WrapReverse, 140.0),
@@ -4952,8 +5037,8 @@ mod tests {
 
         // The node is 200 wide in every scene; only the containing block moves.
         // Six 80x44 children wrap into three lines inside 200 either way -- two
-        // fit across -- so the flow the correction shifts is identical and the
-        // padding is the one thing that differs.
+        // fit across -- so the flow is identical and the padding is the one
+        // thing that differs.
         let placed = |containing: f32| {
             let mut scene = Scene::new(Size::new(900.0, 600.0));
             let mut parent = Node::container();

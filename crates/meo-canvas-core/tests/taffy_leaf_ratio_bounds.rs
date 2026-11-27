@@ -1,4 +1,4 @@
-//! Pins an inherited taffy defect, taffy 0.15.1 `src/compute/leaf.rs`: a
+//! Pins an inherited taffy defect, taffy 0.16.0 `src/compute/leaf.rs`: a
 //! replaced leaf with both sizes `auto` and a ratio takes a minimum through the
 //! ratio but not a maximum, and derives no height from a clamped width. 60x40
 //! art in block flow is 60x40 under `max-height: 20` and 30x40 under

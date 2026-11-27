@@ -35,15 +35,15 @@ meo-skia-canvas = { version = "0.17.3", default-features = false, features = ["p
 # evaluator. It is not what makes `TaffyTree` `!Send`; every length is a tagged
 # pointer with or without it. `flexbox_balance` is off because Chrome ships
 # neither of the `FlexWrap` values it adds.
-taffy = { version = "0.15", default-features = false, features = [
+taffy = { version = "0.16", default-features = false, features = [
     "flexbox",
     "grid",
     "block_layout",
     "std",
     "taffy_tree",
-    "content_size",
     # The tracks each grid item spans, which the inline-axis baseline pass reads.
     "detailed_layout_info",
+    # Not `content_size`: it computes only the scrollable overflow rectangle.
 ] }
 
 # Line break opportunities. `unstable` for the UAX 14 17 rules Chrome's ICU
